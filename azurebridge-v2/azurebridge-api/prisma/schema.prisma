@@ -1,0 +1,610 @@
+// ============================================
+// AZUREBRIDGE DATABASE SCHEMA
+// ============================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ============================================
+// PROJETOS E TIMES
+// ============================================
+
+model Project {
+  id          String  @id @default(cuid())
+  azureId     String  @unique
+  name        String
+  description String? @db.Text
+  state       String // wellFormed, deleting, etc
+  visibility  String // private, public
+
+  // Metadata
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastSyncAt DateTime?
+
+  // Relações
+  sprints     Sprint[]
+  workItems   WorkItem[]
+  teamMembers TeamMember[]
+  reports     Report[]
+  alerts      Alert[]
+  metrics     MetricSnapshot[]
+
+  @@index([azureId])
+  @@index([name])
+  @@map("projects")
+}
+
+model TeamMember {
+  id          String  @id @default(cuid())
+  azureId     String  @unique
+  displayName String
+  uniqueName  String // email
+  imageUrl    String?
+
+  // Role no projeto
+  role     String? // Developer, Tester, PO, SM, etc
+  isActive Boolean @default(true)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Relações
+  capacities TeamCapacity[]
+  workItems  WorkItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([azureId])
+  @@index([uniqueName])
+  @@map("team_members")
+}
+
+model TeamCapacity {
+  id String @id @default(cuid())
+
+  memberId String
+  member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  // Capacidade em horas
+  totalHours     Float @default(0) // Horas totais teóricas (8h/dia * dias úteis)
+  availableHours Float @default(0) // Horas disponíveis (após descontar férias, feriados)
+  allocatedHours Float @default(0) // Horas já alocadas em work items
+
+  // Dias off (JSON: [{ date: "2025-01-15", reason: "Férias" }])
+  daysOff Json?
+
+  // Atividades por dia (JSON: { "Development": 6, "Testing": 2 })
+  activitiesPerDay Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([memberId, sprintId])
+  @@index([sprintId])
+  @@index([memberId])
+  @@map("team_capacities")
+}
+
+// ============================================
+// SPRINTS
+// ============================================
+
+model Sprint {
+  id      String @id @default(cuid())
+  azureId String @unique
+  name    String
+  path    String
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Datas
+  startDate DateTime
+  endDate   DateTime
+
+  // Status
+  state     String // Active, Past, Future
+  timeFrame String // current, past, future
+
+  // Métricas calculadas (cache para performance)
+  totalPlannedHours    Float? @default(0)
+  totalCompletedHours  Float? @default(0)
+  totalRemainingHours  Float? @default(0)
+  totalStoryPoints     Int?   @default(0)
+  completedStoryPoints Int?   @default(0)
+
+  // Capacity vs Commitment
+  teamCapacityHours Float? @default(0)
+  commitmentHours   Float? @default(0)
+
+  // Flags de saúde
+  isOnTrack Boolean @default(true)
+  riskLevel String? // low, medium, high, critical
+
+  // Relações
+  workItems  WorkItem[]
+  capacities TeamCapacity[]
+  snapshots  SprintSnapshot[]
+  alerts     Alert[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastCalculatedAt DateTime?
+
+  @@index([projectId])
+  @@index([azureId])
+  @@index([state])
+  @@index([startDate, endDate])
+  @@index([name])
+  @@map("sprints")
+}
+
+// Snapshots diários da sprint (para burndown histórico)
+model SprintSnapshot {
+  id String @id @default(cuid())
+
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  snapshotDate DateTime
+  snapshotTime DateTime @default(now())
+
+  // Métricas de trabalho (horas)
+  remainingWork Float @default(0)
+  completedWork Float @default(0)
+  totalWork     Float @default(0)
+
+  // Métricas de story points
+  remainingPoints Int @default(0)
+  completedPoints Int @default(0)
+  totalPoints     Int @default(0)
+
+  // Contadores por status
+  todoCount       Int @default(0)
+  inProgressCount Int @default(0)
+  doneCount       Int @default(0)
+  blockedCount    Int @default(0)
+
+  // Scope changes
+  addedCount   Int @default(0)
+  removedCount Int @default(0)
+
+  // Ideal burndown para comparação
+  idealRemaining Float?
+
+  createdAt DateTime @default(now())
+
+  @@unique([sprintId, snapshotDate])
+  @@index([sprintId])
+  @@index([snapshotDate])
+  @@map("sprint_snapshots")
+}
+
+// ============================================
+// WORK ITEMS
+// ============================================
+
+model WorkItem {
+  id      Int @id
+  azureId Int @unique
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+  sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
+  // Hierarquia (PBI → Task/Bug)
+  parentId Int?
+  parent   WorkItem?  @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children WorkItem[] @relation("WorkItemHierarchy")
+
+  // Tipo e Status
+  type   String // Product Backlog Item, Task, Bug, Feature, Epic
+  state  String // New, Approved, Committed, To Do, In Progress, Done, Removed
+  reason String? // Razão da mudança de estado
+
+  // Informações básicas
+  title              String  @db.Text
+  description        String? @db.Text
+  acceptanceCriteria String? @db.Text
+  reproSteps         String? @db.Text // Para bugs
+
+  // Atribuição
+  assignedToId String?
+  assignedTo   TeamMember? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  // Estimativas (horas)
+  originalEstimate Float? @default(0)
+  completedWork    Float? @default(0)
+  remainingWork    Float? @default(0)
+
+  // Story Points (para PBIs)
+  storyPoints Int?
+
+  // Esforço (para Features/Epics)
+  effort Int?
+
+  // Prioridade e Severidade
+  priority Int?    @default(3) // 1 = highest, 4 = lowest
+  severity String? // 1 - Critical, 2 - High, 3 - Medium, 4 - Low
+
+  // Datas
+  createdDate     DateTime
+  changedDate     DateTime
+  closedDate      DateTime?
+  resolvedDate    DateTime?
+  stateChangeDate DateTime?
+  activatedDate   DateTime?
+
+  // Pessoas (histórico)
+  createdBy  String
+  changedBy  String
+  closedBy   String?
+  resolvedBy String?
+
+  // Flags
+  isBlocked Boolean @default(false)
+  isDelayed Boolean @default(false)
+  isRemoved Boolean @default(false)
+
+  // Tags
+  tags String[] @default([])
+
+  // Organização
+  areaPath      String
+  iterationPath String
+
+  // Azure metadata
+  url String
+  rev Int @default(1)
+
+  // Contadores
+  commentCount    Int @default(0)
+  attachmentCount Int @default(0)
+  relationCount   Int @default(0)
+
+  // Relações
+  revisions WorkItemRevision[]
+  comments  WorkItemComment[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastSyncAt DateTime?
+
+  @@index([projectId])
+  @@index([sprintId])
+  @@index([azureId])
+  @@index([type])
+  @@index([state])
+  @@index([assignedToId])
+  @@index([parentId])
+  @@index([createdDate])
+  @@index([changedDate])
+  @@index([isBlocked])
+  @@index([isDelayed])
+  @@map("work_items")
+}
+
+// Histórico de revisões (mudanças)
+model WorkItemRevision {
+  id String @id @default(cuid())
+
+  workItemId Int
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  rev         Int
+  revisedDate DateTime
+  revisedBy   String
+
+  // Campos que mudaram (JSON)
+  // Exemplo: { "System.State": { "oldValue": "To Do", "newValue": "In Progress" }, ... }
+  changes Json
+
+  // Campo específico que mudou (para facilitar queries)
+  changedFields String[] @default([])
+
+  createdAt DateTime @default(now())
+
+  @@unique([workItemId, rev])
+  @@index([workItemId])
+  @@index([revisedDate])
+  @@index([revisedBy])
+  @@map("work_item_revisions")
+}
+
+// Comentários/Discussões
+model WorkItemComment {
+  id      String @id @default(cuid())
+  azureId Int
+
+  workItemId Int
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  text String @db.Text
+
+  createdBy    String
+  createdDate  DateTime
+  modifiedDate DateTime?
+  modifiedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workItemId])
+  @@index([createdDate])
+  @@index([createdBy])
+  @@map("work_item_comments")
+}
+
+// ============================================
+// MÉTRICAS E ANALYTICS
+// ============================================
+
+model MetricSnapshot {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+
+  // Tipo de métrica
+  metricType String // velocity, cycle_time, lead_time, throughput, burndown, cfd
+
+  // Período
+  period      String // sprint_45, 2025-01, 2025-Q1, 2025
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Valor principal da métrica
+  value Float
+
+  // Dados detalhados (JSON flexível)
+  // Exemplo velocity: { "completedPoints": 42, "completedItems": 18, "velocity": 42 }
+  // Exemplo cycle_time: { "avg": 5.2, "median": 4.5, "p90": 8.3, "data": [...] }
+  metadata Json
+
+  snapshotDate DateTime @default(now())
+
+  @@index([projectId, metricType])
+  @@index([sprintId, metricType])
+  @@index([metricType, period])
+  @@index([snapshotDate])
+  @@map("metric_snapshots")
+}
+
+// ============================================
+// RELATÓRIOS
+// ============================================
+
+model Report {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Tipo de relatório
+  type String // rda, sprint_report, custom
+
+  // Período coberto
+  period      String // 2025-01, Sprint 45, Q1 2025
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Título customizado
+  title String
+
+  // Dados estruturados do relatório (JSON)
+  data Json
+
+  // Arquivos gerados
+  pdfUrl  String?
+  docxUrl String?
+  jsonUrl String?
+
+  // Template usado
+  templateId String?
+
+  // Status
+  status String @default("draft") // draft, published, archived
+
+  // Quem gerou
+  generatedBy String
+  generatedAt DateTime @default(now())
+
+  // Aprovação
+  approvedBy String?
+  approvedAt DateTime?
+
+  // Publicação
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+  @@index([period])
+  @@index([status])
+  @@index([generatedAt])
+  @@map("reports")
+}
+
+// Templates de relatórios customizáveis
+model ReportTemplate {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+
+  // Tipo de relatório
+  type String // rda, sprint_report
+
+  // Estrutura do template (JSON)
+  // Define seções, campos, formatação, etc
+  structure Json
+
+  // Configurações de estilo
+  styles Json?
+
+  // Específico de projeto ou global
+  projectId String?
+
+  // Flags
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  // Versão do template
+  version Int @default(1)
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([projectId])
+  @@index([isDefault])
+  @@map("report_templates")
+}
+
+// ============================================
+// ALERTAS E NOTIFICAÇÕES
+// ============================================
+
+model Alert {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+  sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  workItemId Int?
+
+  // Tipo de alerta
+  type String // sprint_risk, blocked_item, capacity_overload, delayed_item, scope_creep
+
+  // Severidade
+  severity String // low, medium, high, critical
+
+  // Mensagem
+  title   String
+  message String @db.Text
+
+  // Dados adicionais específicos do alerta
+  metadata Json?
+
+  // Status
+  status String @default("active") // active, acknowledged, resolved, dismissed
+
+  // Quem reconheceu/resolveu
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+
+  resolvedBy String?
+  resolvedAt DateTime?
+
+  dismissedBy String?
+  dismissedAt DateTime?
+
+  // Quando foi detectado
+  detectedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([sprintId])
+  @@index([workItemId])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([detectedAt])
+  @@map("alerts")
+}
+
+// ============================================
+// CONFIGURAÇÕES E PREFERÊNCIAS
+// ============================================
+
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String @unique // Email ou Azure ID
+
+  // Preferências de UI
+  theme           String @default("light") // light, dark, auto
+  dashboardLayout Json? // Layout customizado do dashboard
+
+  // Favoritos
+  favoriteProjects String[] @default([])
+  favoriteSprints  String[] @default([])
+
+  // Filtros salvos
+  savedFilters Json?
+
+  // Notificações
+  notifications Json? // Preferências de notificação
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_preferences")
+}
+
+// ============================================
+// SYNC E JOBS
+// ============================================
+
+model SyncLog {
+  id String @id @default(cuid())
+
+  projectId String?
+
+  // Tipo de sync
+  syncType String // full_sync, incremental_sync, work_items, sprints, team
+
+  // Status
+  status String // started, running, completed, failed
+
+  // Estatísticas
+  itemsProcessed Int @default(0)
+  itemsCreated   Int @default(0)
+  itemsUpdated   Int @default(0)
+  itemsFailed    Int @default(0)
+
+  // Tempos
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  duration    Int? // em segundos
+
+  // Erros
+  error        String? @db.Text
+  errorDetails Json?
+
+  // Metadata
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([syncType])
+  @@index([status])
+  @@index([startedAt])
+  @@map("sync_logs")
+}

@@ -1,4 +1,4 @@
-# AzureBridge v2.0
+# AzureBridge
 
 Sistema completo de visualização e relatórios para Azure DevOps.
 
@@ -7,8 +7,8 @@ Sistema completo de visualização e relatórios para Azure DevOps.
 ### 1. Configuração
 ```bash
 # Clone o repositório
-git clone <repo-url>
-cd azurebridge-v2
+git clone <repo-url> AzureBridge
+cd AzureBridge
 
 # Copie e configure as variáveis de ambiente
 cp .env.example .env
@@ -57,7 +57,7 @@ make test        # Rodar testes
 
 ## 🏗️ Estrutura
 ````
-azurebridge-v2/
+AzureBridge/
 ├── azurebridge-api/      # Backend (Node.js + TypeScript)
 ├── azurebridge-web/      # Frontend (React + TypeScript)
 ├── docker-compose.yml    # Produção
