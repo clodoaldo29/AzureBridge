@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # ========================================
+  # Backend API
+  # ========================================
+  api:
+    build:
+      context: ./azurebridge-api
+      dockerfile: Dockerfile
+    container_name: azurebridge-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      # Azure DevOps
+      AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
+      AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Features
+      FEATURE_ANALYTICS: ${FEATURE_ANALYTICS:-true}
+      FEATURE_REPORTS: ${FEATURE_REPORTS:-true}
+    depends_on:
+      - redis
+    networks:
+      - azurebridge-network
+    volumes:
+      - api-logs:/app/logs
+
+  # ========================================
+  # Frontend Web
+  # ========================================
+  web:
+    build:
+      context: ./azurebridge-web
+      dockerfile: Dockerfile
+    container_name: azurebridge-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - azurebridge-network
+
+  # ========================================
+  # Redis Cache
+  # ========================================
+  redis:
+    image: redis:7-alpine
+    container_name: azurebridge-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+    networks:
+      - azurebridge-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  azurebridge-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  api-logs:
+    driver: local
