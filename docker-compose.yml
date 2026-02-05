@@ -6,7 +6,7 @@ services:
   # ========================================
   api:
     build:
-      context: ./azurebridge-api
+      context: ./Backend
       dockerfile: Dockerfile
     container_name: azurebridge-api
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
   # ========================================
   web:
     build:
-      context: ./azurebridge-web
+      context: ./Frontend
       dockerfile: Dockerfile
     container_name: azurebridge-web
     restart: unless-stopped
@@ -67,7 +67,7 @@ services:
     networks:
       - azurebridge-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 3

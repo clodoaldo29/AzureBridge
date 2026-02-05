@@ -42,8 +42,8 @@ make up
 
 ## 📚 Documentação
 
-- [Backend API](./azurebridge-api/README.md)
-- [Frontend Web](./azurebridge-web/README.md)
+- [Backend API](./Backend/README.md)
+- [Frontend Web](./Frontend/README.md)
 
 ## 🛠️ Comandos Úteis
 ```bash
@@ -58,8 +58,8 @@ make test        # Rodar testes
 ## 🏗️ Estrutura
 ````
 AzureBridge/
-├── azurebridge-api/      # Backend (Node.js + TypeScript)
-├── azurebridge-web/      # Frontend (React + TypeScript)
+├── Backend/      # Backend (Node.js + TypeScript)
+├── Frontend/     # Frontend (React + TypeScript)
 ├── docker-compose.yml    # Produção
 └── docker-compose.dev.yml # Desenvolvimento
 ````
