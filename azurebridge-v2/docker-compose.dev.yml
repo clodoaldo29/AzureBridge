@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./azurebridge-api
+      dockerfile: Dockerfile
+      target: builder
+    command: npm run dev
+    volumes:
+      - ./azurebridge-api/src:/app/src
+      - ./azurebridge-api/prisma:/app/prisma
+    environment:
+      NODE_ENV: development
+      LOG_PRETTY: "true"
+
+  web:
+    build:
+      context: ./azurebridge-web
+      dockerfile: Dockerfile
+      target: builder
+    command: npm run dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./azurebridge-web/src:/app/src
+      - ./azurebridge-web/public:/app/public
+    environment:
+      VITE_API_URL: http://localhost:3001
+      VITE_ENABLE_DEVTOOLS: "true"

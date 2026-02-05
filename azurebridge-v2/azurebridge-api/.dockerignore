@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Build
+dist/
+*.tsbuildinfo
+.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Tests
+tests/
+coverage/
+.nyc_output/
+*.test.ts
+*.spec.ts
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Database
+prisma/migrations/
+*.db
+*.sqlite
+
+# Temp
+tmp/
+temp/
