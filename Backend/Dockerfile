@@ -4,7 +4,7 @@
 FROM node:20-alpine AS builder
 
 # Install dependencies for native modules
-RUN apk add --no-cache python3 make g++ openssl1.1-compat
+RUN apk add --no-cache python3 make g++ openssl
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN npm prune --production
 FROM node:20-alpine
 
 # Add non-root user
-RUN apk add --no-cache openssl1.1-compat && \
+RUN apk add --no-cache openssl && \
   addgroup -g 1001 -S nodejs && \
   adduser -S nodejs -u 1001
 
