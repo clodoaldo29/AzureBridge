@@ -185,10 +185,16 @@ export class SyncService {
             const project = projects[0];
 
             for (const azureMember of azureMembers) {
+                const azureId = azureMember.identity.id || azureMember.identity.uniqueName;
                 await prisma.teamMember.upsert({
-                    where: { azureId: azureMember.identity.id || azureMember.identity.uniqueName },
+                    where: {
+                        azureId_projectId: {
+                            azureId,
+                            projectId: project.id,
+                        },
+                    },
                     create: {
-                        azureId: azureMember.identity.id || azureMember.identity.uniqueName,
+                        azureId,
                         displayName: azureMember.identity.displayName,
                         uniqueName: azureMember.identity.uniqueName,
                         imageUrl: azureMember.identity.imageUrl,
