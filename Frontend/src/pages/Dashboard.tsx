@@ -87,14 +87,16 @@ export function Dashboard() {
         );
     }
 
+    const formatSprintDate = (date: string) =>
+        new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+
     return (
         <div className="space-y-6 p-6">
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">{currentSprint.name}</h1>
                 <p className="text-gray-500 text-sm mt-1">
-                    {new Date(currentSprint.startDate).toLocaleDateString('pt-BR')} -{' '}
-                    {new Date(currentSprint.endDate).toLocaleDateString('pt-BR')}
+                    {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
                 </p>
             </div>
 
@@ -129,16 +131,12 @@ export function Dashboard() {
             </div>
 
             {/* Main Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
                 {/* Capacity Table */}
                 {capacityData && <CapacityTable data={capacityData} />}
 
                 {/* Burndown Chart */}
-                {burndownData && (
-                    <BurndownChart
-                        data={burndownData.raw}
-                    />
-                )}
+                {burndownData && <BurndownChart data={burndownData.raw} />}
             </div>
         </div>
     );

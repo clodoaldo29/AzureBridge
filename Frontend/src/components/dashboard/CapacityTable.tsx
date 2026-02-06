@@ -10,6 +10,8 @@ interface CapacityTableProps {
 }
 
 export function CapacityTable({ data }: CapacityTableProps) {
+    const membersWithCapacity = data.byMember.filter((member) => member.capacity.available > 0);
+
     return (
         <Card>
             <CardHeader>
@@ -64,7 +66,7 @@ export function CapacityTable({ data }: CapacityTableProps) {
 
                 {/* Members Table */}
                 <div className="space-y-3">
-                    {data.byMember.map((member) => (
+                    {membersWithCapacity.map((member) => (
                         <div key={member.member.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                             <div className="flex items-center gap-4">
                                 <Avatar>
