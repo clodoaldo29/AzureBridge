@@ -1,102 +1,52 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { prisma } from '@/database/client';
-import { z } from 'zod';
+import { sprintService } from '@/services/sprint.service';
+import { sprintQuerySchema, sprintParamsSchema } from '@/schemas/sprint.schema';
 
 export class SprintController {
     /**
      * List sprints
      */
     async listSprints(req: FastifyRequest, reply: FastifyReply) {
-        const querySchema = z.object({
-            projectId: z.string().optional(),
-            state: z.string().optional(), // active, past, future
-            limit: z.coerce.number().optional().default(20)
-        });
-
-        try {
-            const { projectId, state, limit } = querySchema.parse(req.query);
-
-            const where: any = {};
-            if (projectId) where.projectId = projectId;
-            if (state) where.state = state; // or timeFrame depending on usage
-
-            const sprints = await prisma.sprint.findMany({
-                where,
-                orderBy: { startDate: 'desc' },
-                take: limit,
-                include: {
-                    snapshots: {
-                        orderBy: { snapshotDate: 'desc' },
-                        take: 1
-                    }
-                }
-            });
-
-            return reply.send({
-                success: true,
-                data: sprints
-            });
-        } catch (error) {
-            return reply.status(500).send({ success: false, error: 'Failed to list sprints' });
-        }
+        // Validation now handled by Zod; errors caught by global handler
+        const query = sprintQuerySchema.parse(req.query);
+        const sprints = await sprintService.findAll(query);
+        return reply.send({ success: true, data: sprints });
     }
 
     /**
      * Get Sprint Details with Metrics
      */
     async getSprint(req: FastifyRequest, reply: FastifyReply) {
-        const paramsSchema = z.object({ id: z.string() });
+        const { id } = sprintParamsSchema.parse(req.params);
+        const sprint = await sprintService.findById(id);
 
-        try {
-            const { id } = paramsSchema.parse(req.params);
-
-            const sprint = await prisma.sprint.findUnique({
-                where: { id },
-                include: {
-                    capacities: true,
-                    project: true
-                }
-            });
-
-            if (!sprint) return reply.status(404).send({ success: false, error: 'Sprint not found' });
-
-            return reply.send({ success: true, data: sprint });
-        } catch (error) {
-            return reply.status(500).send({ success: false, error: 'Internal Error' });
+        if (!sprint) {
+            return reply.status(404).send({ success: false, error: 'Sprint not found' });
         }
+
+        return reply.send({ success: true, data: sprint });
     }
 
     /**
      * Get Burndown Data (Snapshots)
      */
     async getSprintBurndown(req: FastifyRequest, reply: FastifyReply) {
-        const paramsSchema = z.object({ id: z.string() });
+        const { id } = sprintParamsSchema.parse(req.params);
+        const snapshots = await sprintService.getBurndown(id);
 
-        try {
-            const { id } = paramsSchema.parse(req.params);
+        const remainingSeries = snapshots.map(s => s.remainingWork);
+        const dates = snapshots.map(s => s.snapshotDate);
 
-            const snapshots = await prisma.sprintSnapshot.findMany({
-                where: { sprintId: id },
-                orderBy: { snapshotDate: 'asc' }
-            });
-
-            // Format for frontend (dates, ideal line, actual remaining)
-            const remainingSeries = snapshots.map(s => s.remainingWork);
-            const dates = snapshots.map(s => s.snapshotDate);
-
-            return reply.send({
-                success: true,
-                data: {
-                    labels: dates,
-                    series: [
-                        { name: 'Remaining Work', data: remainingSeries }
-                    ],
-                    raw: snapshots
-                }
-            });
-        } catch (error) {
-            return reply.status(500).send({ success: false, error: 'Failed to fetch burndown' });
-        }
+        return reply.send({
+            success: true,
+            data: {
+                labels: dates,
+                series: [
+                    { name: 'Remaining Work', data: remainingSeries }
+                ],
+                raw: snapshots
+            }
+        });
     }
 }
 

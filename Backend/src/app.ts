@@ -2,6 +2,7 @@ import fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { apiRoutes } from '@/routes/api.routes';
+import { errorHandler } from '@/middleware/error-handler';
 
 export function buildApp() {
     const app = fastify({
@@ -24,6 +25,9 @@ export function buildApp() {
 
     // Routes
     app.register(apiRoutes, { prefix: '/api' });
+
+    // Error Handler
+    app.setErrorHandler(errorHandler);
 
     return app;
 }
