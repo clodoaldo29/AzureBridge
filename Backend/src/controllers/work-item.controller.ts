@@ -1,5 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '@/database/client';
+import { logger } from '@/utils/logger';
+import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 import { z } from 'zod';
 
 export class WorkItemController {
@@ -52,6 +54,19 @@ export class WorkItemController {
                 }
             });
         } catch (error) {
+            if (isMissingDatabaseTableError(error)) {
+                logger.warn('Work items table missing, returning empty list.');
+                return reply.send({
+                    success: true,
+                    data: [],
+                    meta: {
+                        total: 0,
+                        limit: 0,
+                        offset: 0
+                    }
+                });
+            }
+
             return reply.status(500).send({ success: false, error: 'Failed to list work items' });
         }
     }
@@ -135,6 +150,11 @@ export class WorkItemController {
 
             return reply.send({ success: true, data: items });
         } catch (error) {
+            if (isMissingDatabaseTableError(error)) {
+                logger.warn('Work items table missing, returning empty list.');
+                return reply.send({ success: true, data: [] });
+            }
+
             return reply.status(500).send({ success: false, error: 'Failed' });
         }
     }

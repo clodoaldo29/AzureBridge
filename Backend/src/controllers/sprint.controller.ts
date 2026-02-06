@@ -1,6 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { sprintService } from '@/services/sprint.service';
 import { sprintQuerySchema, sprintParamsSchema } from '@/schemas/sprint.schema';
+import { logger } from '@/utils/logger';
+import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 
 export class SprintController {
     /**
@@ -9,8 +11,17 @@ export class SprintController {
     async listSprints(req: FastifyRequest, reply: FastifyReply) {
         // Validation now handled by Zod; errors caught by global handler
         const query = sprintQuerySchema.parse(req.query);
-        const sprints = await sprintService.findAll(query);
-        return reply.send({ success: true, data: sprints });
+        try {
+            const sprints = await sprintService.findAll(query);
+            return reply.send({ success: true, data: sprints });
+        } catch (error) {
+            if (isMissingDatabaseTableError(error)) {
+                logger.warn('Sprints table missing, returning empty list.');
+                return reply.send({ success: true, data: [] });
+            }
+
+            throw error;
+        }
     }
 
     /**
