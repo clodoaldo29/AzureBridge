@@ -45,7 +45,7 @@ model Project {
 
 model TeamMember {
   id           String   @id @default(cuid())
-  azureId      String   @unique
+  azureId      String
   displayName  String
   uniqueName   String   // email
   imageUrl     String?
@@ -66,6 +66,7 @@ model TeamMember {
   
   @@index([projectId])
   @@index([azureId])
+  @@unique([azureId, projectId])
   @@index([uniqueName])
   @@map("team_members")
 }
