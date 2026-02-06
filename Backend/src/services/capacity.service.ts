@@ -268,32 +268,34 @@ export class CapacityService {
         });
 
         // Build response
-        const byMember = sprint.capacities.map(cap => {
-            const planned = plannedByMember[cap.memberId] || { totalHours: 0, items: 0 };
+        const byMember = sprint.capacities
+            .filter(cap => cap.member)
+            .map(cap => {
+                const planned = plannedByMember[cap.memberId] || { totalHours: 0, items: 0 };
 
-            return {
-                member: {
-                    id: cap.memberId,
-                    displayName: cap.member.displayName,
-                    imageUrl: cap.member.imageUrl,
-                    uniqueName: cap.member.uniqueName
-                },
-                capacity: {
-                    total: cap.totalHours,
-                    available: cap.availableHours,
-                    daysOffCount: (cap.daysOff as any[])?.length || 0
-                },
-                planned: {
-                    total: planned.totalHours,
-                    itemsCount: planned.items
-                },
-                balance: cap.availableHours - planned.totalHours,
-                // Utilization percentage
-                utilization: cap.availableHours > 0
-                    ? Math.round((planned.totalHours / cap.availableHours) * 100)
-                    : 0
-            };
-        });
+                return {
+                    member: {
+                        id: cap.memberId,
+                        displayName: cap.member.displayName,
+                        imageUrl: cap.member.imageUrl,
+                        uniqueName: cap.member.uniqueName
+                    },
+                    capacity: {
+                        total: cap.totalHours,
+                        available: cap.availableHours,
+                        daysOffCount: (cap.daysOff as any[])?.length || 0
+                    },
+                    planned: {
+                        total: planned.totalHours,
+                        itemsCount: planned.items
+                    },
+                    balance: cap.availableHours - planned.totalHours,
+                    // Utilization percentage
+                    utilization: cap.availableHours > 0
+                        ? Math.round((planned.totalHours / cap.availableHours) * 100)
+                        : 0
+                };
+            });
 
         // Sort by utilization desc
         byMember.sort((a, b) => b.utilization - a.utilization);
