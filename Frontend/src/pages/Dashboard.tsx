@@ -80,14 +80,6 @@ export function Dashboard() {
         );
     }
 
-    if (!currentSprint) {
-        return (
-            <div className="flex items-center justify-center h-screen">
-                <div className="text-gray-500">Nenhuma sprint ativa encontrada no momento.</div>
-            </div>
-        );
-    }
-
     const formatSprintDate = (date: string) =>
         new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 
@@ -96,10 +88,18 @@ export function Dashboard() {
             {/* Header */}
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{currentSprint.name}</h1>
-                    <p className="text-gray-500 text-sm mt-1">
-                        {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
-                    </p>
+                    <h1 className="text-2xl font-bold text-gray-900">
+                        {currentSprint ? currentSprint.name : 'Dashboard'}
+                    </h1>
+                    {currentSprint ? (
+                        <p className="text-gray-500 text-sm mt-1">
+                            {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
+                        </p>
+                    ) : (
+                        <p className="text-gray-500 text-sm mt-1">
+                            Selecione um projeto com sprint ativa para visualizar os indicadores.
+                        </p>
+                    )}
                 </div>
                 <Select
                     value={selectedProjectId || ''}
@@ -117,45 +117,52 @@ export function Dashboard() {
                     </SelectContent>
                 </Select>
             </div>
+            {currentSprint ? (
+                <>
+                    {/* Stats Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard
+                            title="Capacidade Total"
+                            value={`${capacityData?.summary.totalAvailable || 0}h`}
+                            icon={Users}
+                        />
+                        <StatCard
+                            title="Planejado"
+                            value={`${capacityData?.summary.totalPlanned || 0}h`}
+                            icon={Target}
+                        />
+                        <StatCard
+                            title="Concluído"
+                            value={`${currentSprint.totalCompletedHours || 0}h`}
+                            icon={CheckCircle2}
+                        />
+                        <StatCard
+                            title="Impedimentos"
+                            value={`${blockedItems?.length || 0}`}
+                            icon={AlertTriangle}
+                        />
+                    </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                    title="Capacidade Total"
-                    value={`${capacityData?.summary.totalAvailable || 0}h`}
-                    icon={Users}
-                />
-                <StatCard
-                    title="Planejado"
-                    value={`${capacityData?.summary.totalPlanned || 0}h`}
-                    icon={Target}
-                />
-                <StatCard
-                    title="Concluído"
-                    value={`${currentSprint.totalCompletedHours || 0}h`}
-                    icon={CheckCircle2}
-                />
-                <StatCard
-                    title="Impedimentos"
-                    value={`${blockedItems?.length || 0}`}
-                    icon={AlertTriangle}
-                />
-            </div>
+                    {/* Sprint Health + Blocked Items */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {healthScore !== null && <SprintHealthCard score={healthScore} />}
+                        {blockedItems && <BlockersAlert blockedItems={blockedItems} />}
+                    </div>
 
-            {/* Sprint Health + Blocked Items */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {healthScore !== null && <SprintHealthCard score={healthScore} />}
-                {blockedItems && <BlockersAlert blockedItems={blockedItems} />}
-            </div>
+                    {/* Main Content */}
+                    <div className="space-y-6">
+                        {/* Capacity Table */}
+                        {capacityData && <CapacityTable data={capacityData} />}
 
-            {/* Main Content */}
-            <div className="space-y-6">
-                {/* Capacity Table */}
-                {capacityData && <CapacityTable data={capacityData} />}
-
-                {/* Burndown Chart */}
-                {burndownData && <BurndownChart data={burndownData.raw} />}
-            </div>
+                        {/* Burndown Chart */}
+                        {burndownData && <BurndownChart data={burndownData.raw} />}
+                    </div>
+                </>
+            ) : (
+                <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-white py-16 text-gray-500">
+                    Nenhuma sprint ativa encontrada no momento.
+                </div>
+            )}
         </div>
     );
 }
