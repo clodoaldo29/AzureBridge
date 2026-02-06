@@ -21,10 +21,11 @@ async function incrementalSync() {
 
         // Get last sync timestamp from database
         const lastSync = await prisma.syncLog.findFirst({
-            orderBy: { syncedAt: 'desc' }
+            where: { status: 'completed', syncType: 'incremental_sync' },
+            orderBy: { completedAt: 'desc' }
         });
 
-        const since = lastSync?.syncedAt || new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24h if no sync log
+        const since = lastSync?.completedAt || new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24h if no sync log
         console.log(`📅 Syncing changes since: ${since.toISOString()}\n`);
 
         let totalUpdated = 0;
@@ -161,17 +162,21 @@ async function incrementalSync() {
         }
 
         // Save sync log
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+
         await prisma.syncLog.create({
             data: {
-                syncType: 'INCREMENTAL',
-                syncedAt: new Date(),
+                syncType: 'incremental_sync',
+                status: 'completed',
+                startedAt: new Date(startTime),
+                completedAt: new Date(),
+                duration,
+                itemsProcessed: totalUpdated + totalNew,
                 itemsUpdated: totalUpdated,
                 itemsCreated: totalNew,
-                status: 'SUCCESS',
+                metadata: { since },
             }
         });
-
-        const duration = Math.floor((Date.now() - startTime) / 1000);
 
         console.log('═══════════════════════════════════════════════════════════');
         console.log('✅ INCREMENTAL SYNC COMPLETED!');
@@ -189,10 +194,11 @@ async function incrementalSync() {
         // Save error log
         await prisma.syncLog.create({
             data: {
-                syncType: 'INCREMENTAL',
-                syncedAt: new Date(),
-                status: 'FAILED',
-                errorMessage: error.message,
+                syncType: 'incremental_sync',
+                status: 'failed',
+                startedAt: new Date(startTime),
+                completedAt: new Date(),
+                error: error instanceof Error ? error.message : 'Unknown error',
             }
         });
     } finally {
