@@ -22,30 +22,28 @@ export function Header() {
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
             <div className="flex items-center justify-between h-16 px-6">
                 <div className="flex items-center gap-4">
+                    {/* Project Selector */}
+                    <Select
+                        value={selectedProjectId || ''}
+                        onValueChange={(value: string) => setSelectedProjectId(value)}
+                    >
+                        <SelectTrigger className="w-[280px]">
+                            <SelectValue placeholder="Selecione um projeto..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {projects?.data?.map((project) => (
+                                <SelectItem key={project.id} value={project.id}>
+                                    {project.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
                             <span className="text-white font-bold text-sm">AB</span>
                         </div>
                         <h1 className="text-xl font-bold text-gray-900">AzureBridge</h1>
-                    </div>
-
-                    {/* Project Selector */}
-                    <div className="ml-4">
-                        <Select
-                            value={selectedProjectId || ''}
-                            onValueChange={(value: string) => setSelectedProjectId(value)}
-                        >
-                            <SelectTrigger className="w-[280px]">
-                                <SelectValue placeholder="Selecione um projeto..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {projects?.data?.map((project) => (
-                                    <SelectItem key={project.id} value={project.id}>
-                                        {project.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
                     </div>
                 </div>
 
