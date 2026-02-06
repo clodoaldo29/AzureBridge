@@ -1,6 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '@/database/client';
 import { projectParamsSchema } from '@/schemas/project.schema';
+import { logger } from '@/utils/logger';
+import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 
 export class ProjectController {
     /**
@@ -8,23 +10,32 @@ export class ProjectController {
      */
     async listProjects(_req: FastifyRequest, reply: FastifyReply) {
         // Keeping prisma direct here as it's simple, or move to project.service if strict
-        // For now, removing try/catch to use global handler
-        const projects = await prisma.project.findMany({
-            where: {
-                state: { not: 'deleting' }
-            },
-            orderBy: { name: 'asc' },
-            include: {
-                _count: {
-                    select: { sprints: true, workItems: true }
+        // Use a narrow guard for missing tables to keep the UI usable when migrations aren't applied.
+        try {
+            const projects = await prisma.project.findMany({
+                where: {
+                    state: { not: 'deleting' }
+                },
+                orderBy: { name: 'asc' },
+                include: {
+                    _count: {
+                        select: { sprints: true, workItems: true }
+                    }
                 }
-            }
-        });
+            });
 
-        return reply.send({
-            success: true,
-            data: projects
-        });
+            return reply.send({
+                success: true,
+                data: projects
+            });
+        } catch (error) {
+            if (isMissingDatabaseTableError(error)) {
+                logger.warn('Projects table missing, returning empty list.');
+                return reply.send({ success: true, data: [] });
+            }
+
+            throw error;
+        }
     }
 
     /**
