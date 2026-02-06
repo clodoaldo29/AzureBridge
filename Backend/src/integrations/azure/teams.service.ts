@@ -18,7 +18,7 @@ export class TeamsService {
             const projects = await coreApi.getProjects();
 
             logger.info(`Fetched ${projects.length} projects from Azure DevOps`);
-            return projects as AzureProject[];
+            return projects as unknown as AzureProject[];
         } catch (error) {
             logger.error('Failed to fetch projects', error);
             throw error;
@@ -36,7 +36,7 @@ export class TeamsService {
             const project = await coreApi.getProject(projectId);
 
             logger.info(`Fetched project ${projectId} from Azure DevOps`);
-            return project as AzureProject;
+            return project as unknown as AzureProject;
         } catch (error) {
             logger.error('Failed to fetch project', { projectId, error });
             return null;

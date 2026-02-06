@@ -30,7 +30,7 @@ async function main() {
     // ========================================
     console.log('📄 Creating report templates...');
 
-    const rdaTemplate = await prisma.reportTemplate.create({
+    await prisma.reportTemplate.create({
         data: {
             name: 'RDA Padrão Instituto',
             description: 'Template padrão para Relatório Demonstrativo Anual',
@@ -81,7 +81,7 @@ async function main() {
         },
     });
 
-    const sprintReportTemplate = await prisma.reportTemplate.create({
+    await prisma.reportTemplate.create({
         data: {
             name: 'Sprint Report Padrão',
             description: 'Template para relatório de sprint',

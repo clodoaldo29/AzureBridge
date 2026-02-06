@@ -6,7 +6,7 @@ import {
 } from '@/repositories';
 import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
-import type { AzureWorkItem, AzureSprint, AzureTeamMember } from '@/integrations/azure/types';
+import type { AzureWorkItem } from '@/integrations/azure/types';
 
 /**
  * Sync Service
@@ -154,7 +154,7 @@ export class SyncService {
                     name: azureProject.name,
                     description: azureProject.description,
                     state: azureProject.state,
-                    visibility: azureProject.visibility,
+                    visibility: azureProject.visibility === 'public' ? 1 : 0,
                 });
                 count++;
             }

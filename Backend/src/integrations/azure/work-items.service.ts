@@ -6,6 +6,8 @@ import type {
     AzureComment,
     WorkItemQueryOptions,
 } from './types';
+import { TeamContext } from 'azure-devops-node-api/interfaces/CoreInterfaces';
+import { WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 
 /**
  * Azure DevOps Work Items Service
@@ -22,7 +24,6 @@ export class WorkItemsService {
         try {
             const client = getAzureDevOpsClient();
             const witApi = await client.getWorkItemTrackingApi();
-            const config = client.getConfig();
 
             const fields = options.fields || [
                 'System.Id',
@@ -56,15 +57,20 @@ export class WorkItemsService {
                 'System.Parent',
             ];
 
+            // Mapping simplisticly for now
+            const expandValue = options.expand ?
+                (options.expand === 'all' ? WorkItemExpand.Relations : WorkItemExpand.Relations)
+                : WorkItemExpand.Relations;
+
             const workItems = await witApi.getWorkItems(
                 ids,
                 fields,
                 options.asOf,
-                options.expand || 'relations'
+                expandValue
             );
 
             logger.info(`Fetched ${workItems.length} work items from Azure DevOps`);
-            return workItems as AzureWorkItem[];
+            return workItems as unknown as AzureWorkItem[];
         } catch (error) {
             logger.error('Failed to fetch work items', { ids, error });
             throw error;
@@ -80,9 +86,13 @@ export class WorkItemsService {
             const witApi = await client.getWorkItemTrackingApi();
             const config = client.getConfig();
 
+            const teamContext: TeamContext = {
+                project: config.project
+            };
+
             const result = await witApi.queryByWiql(
                 { query: wiql },
-                config.project
+                teamContext
             );
 
             const ids = result.workItems?.map((wi) => wi.id!) || [];
@@ -143,12 +153,12 @@ export class WorkItemsService {
         try {
             const client = getAzureDevOpsClient();
             const witApi = await client.getWorkItemTrackingApi();
-            const config = client.getConfig();
 
-            const updates = await witApi.getUpdates(workItemId, config.project);
+            // Fixed: passed only ID (library infers project or it takes just ID)
+            const updates = await witApi.getUpdates(workItemId);
 
             logger.info(`Fetched ${updates.length} updates for work item ${workItemId}`);
-            return updates as AzureWorkItemUpdate[];
+            return updates as unknown as AzureWorkItemUpdate[];
         } catch (error) {
             logger.error('Failed to fetch work item updates', { workItemId, error });
             throw error;
@@ -164,10 +174,11 @@ export class WorkItemsService {
             const witApi = await client.getWorkItemTrackingApi();
             const config = client.getConfig();
 
-            const comments = await witApi.getComments(workItemId, config.project);
+            // Fixed: swapped arguments to match (project, workItemId)
+            const comments = await witApi.getComments(config.project, workItemId);
 
             logger.info(`Fetched ${comments.comments?.length || 0} comments for work item ${workItemId}`);
-            return (comments.comments || []) as AzureComment[];
+            return (comments.comments || []) as unknown as AzureComment[];
         } catch (error) {
             logger.error('Failed to fetch work item comments', { workItemId, error });
             throw error;
@@ -224,7 +235,7 @@ export class WorkItemsService {
                 id,
                 undefined,
                 undefined,
-                1, // Expand relations
+                WorkItemExpand.Relations, // Expand relations
                 undefined
             );
 

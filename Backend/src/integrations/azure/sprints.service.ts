@@ -2,6 +2,7 @@ import { getAzureDevOpsClient } from './client';
 import { logger } from '@/utils/logger';
 import type { AzureSprint, AzureCapacity, SprintQueryOptions } from './types';
 import { TreeStructureGroup } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { TeamContext } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 
 /**
  * Azure DevOps Sprints Service
@@ -19,7 +20,13 @@ export class SprintsService {
             const config = client.getConfig();
 
             const team = config.team || config.project;
-            const iterations = await workApi.getTeamIterations(config.project, team);
+
+            const teamContext: TeamContext = {
+                project: config.project,
+                team: team
+            };
+
+            const iterations = await workApi.getTeamIterations(teamContext);
 
             let sprints = iterations as AzureSprint[];
 
@@ -150,7 +157,12 @@ export class SprintsService {
                         ORDER BY [System.IterationPath]`
             };
 
-            const result = await witApi.queryByWiql(wiql, config.project);
+            const teamContext: TeamContext = {
+                project: config.project
+            };
+
+            // queryByWiql expects (wiql, teamContext?)
+            const result = await witApi.queryByWiql(wiql, teamContext);
 
             if (!result.workItems || result.workItems.length === 0) {
                 logger.warn('No work items found to discover sprints');
@@ -204,9 +216,15 @@ export class SprintsService {
             const config = client.getConfig();
 
             const team = config.team || config.project;
+
+            const teamContext: TeamContext = {
+                project: config.project,
+                team: team
+            };
+
+            // Correct call: (teamContext, iterationId)
             const sprint = await workApi.getTeamIteration(
-                config.project,
-                team,
+                teamContext,
                 sprintId
             );
 
@@ -236,14 +254,27 @@ export class SprintsService {
             const config = client.getConfig();
 
             const team = config.team || config.project;
-            const capacities = await workApi.getCapacitiesWithIdentityRef(
-                config.project,
-                team,
-                sprintId
-            );
+            const teamContext: TeamContext = {
+                project: config.project,
+                team: team
+            };
 
-            logger.info(`Fetched ${capacities.length} capacity entries for sprint ${sprintId}`);
+            // Use 'any' cast because the Typedef might not include getCapacitiesWithIdentityRefAndTotals or similar
+            // But we know it's a Team Capacity call. 
+            // The standard method is getCapacities(teamContext, iterationId)
+            let capacities;
+            if ((workApi as any).getCapacitiesWithIdentityRefAndTotals) {
+                capacities = await (workApi as any).getCapacitiesWithIdentityRefAndTotals(teamContext, sprintId);
+            } else if ((workApi as any).getCapacities) {
+                capacities = await (workApi as any).getCapacities(teamContext, sprintId);
+            } else {
+                throw new Error("Capacity API method not found");
+            }
+
+            // Adjust return type if it returns an wrapper object
+            if (capacities.teamMembers) return capacities.teamMembers as AzureCapacity[];
             return capacities as AzureCapacity[];
+
         } catch (error) {
             logger.error('Failed to fetch sprint capacity', { sprintId, error });
             throw error;
