@@ -14,12 +14,17 @@
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "tsx src/database/seeds/index.ts",
     "db:studio": "prisma studio",
+    "db:reset": "tsx scripts/reset-db.ts && npm run db:seed",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.js",
     "lint": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:connection": "node test-connection.js",
+    "test:integration": "tsx --tsconfig tsconfig.json test-integration.ts",
+    "test:sync": "tsx --tsconfig tsconfig.json test-sync.ts",
+    "debug:iterations": "node debug-iterations.js"
   },
   "keywords": [
     "azure-devops",
