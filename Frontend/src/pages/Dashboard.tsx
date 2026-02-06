@@ -7,6 +7,7 @@ import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
 import { CapacityTable } from '@/components/dashboard/CapacityTable';
 import { BlockersAlert } from '@/components/dashboard/BlockersAlert';
 import { BurndownChart } from '@/components/charts/BurndownChart';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Target, Users, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { calculateSprintHealth } from '@/utils/calculations';
 import { useAppStore } from '@/stores/appStore';
@@ -15,7 +16,7 @@ import { api } from '@/services/api';
 import type { Project } from '@/types';
 
 export function Dashboard() {
-    const { selectedProjectId } = useAppStore();
+    const { selectedProjectId, setSelectedProjectId } = useAppStore();
 
     // Fetch all projects to get project name
     const { data: projectsResponse } = useQuery<{ data: Project[] }>({
@@ -93,11 +94,28 @@ export function Dashboard() {
     return (
         <div className="space-y-6 p-6">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">{currentSprint.name}</h1>
-                <p className="text-gray-500 text-sm mt-1">
-                    {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
-                </p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">{currentSprint.name}</h1>
+                    <p className="text-gray-500 text-sm mt-1">
+                        {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
+                    </p>
+                </div>
+                <Select
+                    value={selectedProjectId || ''}
+                    onValueChange={(value: string) => setSelectedProjectId(value)}
+                >
+                    <SelectTrigger className="w-[280px]">
+                        <SelectValue placeholder="Selecione um projeto..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {projects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                                {project.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
 
             {/* Stats Cards */}

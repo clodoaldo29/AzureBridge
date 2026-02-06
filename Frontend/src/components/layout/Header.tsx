@@ -1,44 +1,10 @@
 import { Bell, Search, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/services/api';
-import { useAppStore } from '@/stores/appStore';
-import type { Project } from '@/types';
-
 export function Header() {
-    const { selectedProjectId, setSelectedProjectId } = useAppStore();
-
-    // Fetch all projects
-    const { data: projects } = useQuery<{ data: Project[] }>({
-        queryKey: ['projects'],
-        queryFn: async () => {
-            const response = await api.get('/projects');
-            return response.data;
-        },
-    });
-
     return (
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
             <div className="flex items-center justify-between h-16 px-6">
                 <div className="flex items-center gap-4">
-                    {/* Project Selector */}
-                    <Select
-                        value={selectedProjectId || ''}
-                        onValueChange={(value: string) => setSelectedProjectId(value)}
-                    >
-                        <SelectTrigger className="w-[280px]">
-                            <SelectValue placeholder="Selecione um projeto..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {projects?.data?.map((project) => (
-                                <SelectItem key={project.id} value={project.id}>
-                                    {project.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
                             <span className="text-white font-bold text-sm">AB</span>
