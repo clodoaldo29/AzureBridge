@@ -26,6 +26,7 @@ async function incrementalSync() {
         });
 
         const since = lastSync?.completedAt || new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24h if no sync log
+        const sinceDateOnly = since.toISOString().slice(0, 10);
         console.log(`📅 Syncing changes since: ${since.toISOString()}\n`);
 
         let totalUpdated = 0;
@@ -46,7 +47,7 @@ async function incrementalSync() {
                 query: `
           SELECT [System.Id]
           FROM WorkItems
-          WHERE [System.ChangedDate] >= '${since.toISOString()}'
+          WHERE [System.ChangedDate] >= '${sinceDateOnly}'
           ORDER BY [System.ChangedDate] DESC
         `
             };
