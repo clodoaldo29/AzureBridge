@@ -29,7 +29,11 @@ export function Dashboard() {
     const selectedProject = projects.find(p => p.id === selectedProjectId);
 
     // Fetch current sprints (Active)
-    const { data: sprints, isLoading: sprintsLoading } = useSprints({ state: 'Active' });
+    const {
+        data: sprints,
+        isLoading: sprintsLoading,
+        isError: sprintsError,
+    } = useSprints({ state: 'Active' });
 
     // Filter sprints by selected project name in path, or show first sprint if no project selected
     const currentSprint = selectedProject
@@ -37,9 +41,11 @@ export function Dashboard() {
         : sprints?.[0];
 
     // Fetch capacity data for current sprint
-    const { data: capacityData, isLoading: capacityLoading } = useCapacityComparison(
-        currentSprint?.id || ''
-    );
+    const {
+        data: capacityData,
+        isLoading: capacityLoading,
+        isError: capacityError,
+    } = useCapacityComparison(currentSprint?.id || '');
 
     // Fetch burndown data
     const { data: burndownData } = useSprintBurndown(currentSprint?.id || '');
@@ -56,6 +62,19 @@ export function Dashboard() {
         return (
             <div className="flex items-center justify-center h-screen">
                 <div className="text-gray-500">Carregando...</div>
+            </div>
+        );
+    }
+
+    if (sprintsError || capacityError) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-center text-gray-500">
+                    <div className="text-lg font-semibold">Não foi possível carregar os dados.</div>
+                    <p className="mt-2 text-sm">
+                        Verifique sua conexão com a API e tente novamente.
+                    </p>
+                </div>
             </div>
         );
     }
