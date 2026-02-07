@@ -36,9 +36,9 @@ export function Dashboard() {
         isError: sprintsError,
     } = useSprints({ state: 'Active' });
 
-    // Filter sprints by selected project name in path, or show first sprint if no project selected
+    // Filter sprints by selected project ID (more reliable than path comparison)
     const currentSprint = selectedProject
-        ? sprints?.find(sprint => sprint.path.startsWith(selectedProject.name))
+        ? sprints?.find(sprint => sprint.projectId === selectedProject.id)
         : sprints?.[0];
 
     // Fetch capacity data for current sprint

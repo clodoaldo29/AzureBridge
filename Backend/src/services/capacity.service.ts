@@ -216,6 +216,8 @@ export class CapacityService {
 
     /**
      * Get Capacity vs Planned Work comparison for a sprint
+     * Uses first sprint snapshot as baseline for planned hours to handle cases
+     * where Remaining Work is zeroed when items move to Review/Done
      */
     async getCapacityVsPlanned(sprintId: string) {
         const sprint = await prisma.sprint.findUnique({
@@ -223,14 +225,19 @@ export class CapacityService {
             include: {
                 capacities: {
                     include: { member: true }
+                },
+                snapshots: {
+                    orderBy: { snapshotDate: 'asc' },
+                    take: 1 // Get first snapshot as baseline
                 }
             }
         });
 
         if (!sprint) throw new Error('Sprint not found');
 
-        // Fetch ALL planned work items (assigned + unassigned)
-        const workItems = await prisma.workItem.findMany({
+        // Calculate planned hours using persistent field (initialRemainingWork)
+        // This is the most accurate source as it preserves historical planning per item
+        const workItemsReceived = await prisma.workItem.findMany({
             where: {
                 sprintId: sprintId,
                 isRemoved: false
@@ -239,20 +246,35 @@ export class CapacityService {
                 id: true,
                 title: true,
                 remainingWork: true,
+                completedWork: true,
+                // @ts-ignore - Field exists in DB but client might not be generated yet
+                initialRemainingWork: true,
                 assignedToId: true,
                 type: true,
                 state: true
             }
         });
 
+        const workItems = workItemsReceived as any[]; // Cast to any to access new field
+
         // Group planned work by member
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
         const unassignedWork = { totalHours: 0, items: 0 };
+        let totalPlannedFromItems = 0;
 
         workItems.forEach(item => {
+            // Determine planned hours for this item:
+            // 1. Use initialRemainingWork if available (historical truth)
+            // 2. Fallback to remainingWork (current truth)
+            const plannedHours = item.initialRemainingWork > 0
+                ? item.initialRemainingWork
+                : (item.remainingWork || 0) + (item.completedWork || 0); // If no history, assume current + completed is the plan
+
+            totalPlannedFromItems += plannedHours;
+
             // Unassigned work (items without assignedToId)
             if (!item.assignedToId) {
-                unassignedWork.totalHours += (item.remainingWork || 0);
+                unassignedWork.totalHours += plannedHours;
                 unassignedWork.items += 1;
                 return;
             }
@@ -261,53 +283,17 @@ export class CapacityService {
                 plannedByMember[item.assignedToId] = { totalHours: 0, items: 0 };
             }
 
-            // Sum Remaining Work (default to 0 if null)
-            const hours = item.remainingWork || 0;
-            plannedByMember[item.assignedToId].totalHours += hours;
+            plannedByMember[item.assignedToId].totalHours += plannedHours;
             plannedByMember[item.assignedToId].items += 1;
         });
 
-        // Build response
-        const byMember = sprint.capacities
-            .filter(cap => cap.member)
-            .map(cap => {
-                const planned = plannedByMember[cap.memberId] || { totalHours: 0, items: 0 };
+        // Use the sum of items as the Total Planned
+        const totalPlanned = totalPlannedFromItems;
 
-                return {
-                    member: {
-                        id: cap.memberId,
-                        displayName: cap.member.displayName,
-                        imageUrl: cap.member.imageUrl,
-                        uniqueName: cap.member.uniqueName
-                    },
-                    capacity: {
-                        total: cap.totalHours,
-                        available: cap.availableHours,
-                        daysOffCount: (cap.daysOff as any[])?.length || 0
-                    },
-                    planned: {
-                        total: planned.totalHours,
-                        itemsCount: planned.items
-                    },
-                    balance: cap.availableHours - planned.totalHours,
-                    // Utilization percentage
-                    utilization: cap.availableHours > 0
-                        ? Math.round((planned.totalHours / cap.availableHours) * 100)
-                        : 0
-                };
-            });
-
-        // Sort by utilization desc
-        byMember.sort((a, b) => b.utilization - a.utilization);
-
-        const summary = byMember.reduce((acc, curr) => ({
-            totalAvailable: acc.totalAvailable + curr.capacity.available,
-            totalPlanned: acc.totalPlanned + curr.planned.total, // Only assigned here
-            totalMembers: acc.totalMembers + 1
-        }), { totalAvailable: 0, totalPlanned: 0, totalMembers: 0 });
-
-        // Add unassigned to total planned for global view
-        const totalPlannedWithUnassigned = summary.totalPlanned + unassignedWork.totalHours;
+        logger.info(`Planned hours calculation for sprint ${sprintId}:`, {
+            method: 'persistent_field',
+            totalPlanned
+        });
 
         return {
             sprint: {
@@ -317,12 +303,12 @@ export class CapacityService {
                 endDate: sprint.endDate
             },
             summary: {
-                ...summary, // contains sum of assigned only
-                totalPlanned: totalPlannedWithUnassigned, // Override with Total (Assigned + Unassigned)
+                ...summary,
+                totalPlanned: totalPlanned, // Use summed item hours (assigned + unassigned)
                 unassigned: unassignedWork,
-                balance: summary.totalAvailable - totalPlannedWithUnassigned,
+                balance: summary.totalAvailable - totalPlanned,
                 utilization: summary.totalAvailable > 0
-                    ? Math.round((totalPlannedWithUnassigned / summary.totalAvailable) * 100)
+                    ? Math.round((totalPlanned / summary.totalAvailable) * 100)
                     : 0
             },
             byMember

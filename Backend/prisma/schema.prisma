@@ -233,6 +233,7 @@ model WorkItem {
   originalEstimate Float?  @default(0)
   completedWork    Float?  @default(0)
   remainingWork    Float?  @default(0)
+  initialRemainingWork Float? @default(0) // Valor recuperado do histórico (primeira estimativa)
   
   // Story Points (para PBIs)
   storyPoints      Int?
