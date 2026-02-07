@@ -5,7 +5,7 @@ interface StatCardProps {
     title: string;
     value: string | number;
     icon: LucideIcon;
-    description?: string;
+    description?: string | React.ReactNode;
     trend?: {
         value: number;
         isPositive: boolean;
@@ -24,7 +24,11 @@ export function StatCard({ title, value, icon: Icon, description, trend, color =
             </CardHeader>
             <CardContent>
                 <div className="text-2xl font-bold">{value}</div>
-                {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+                {description && (
+                    <div className="text-xs text-gray-500 mt-1">
+                        {description}
+                    </div>
+                )}
                 {trend && (
                     <div className="flex items-center gap-1 mt-2">
                         <span

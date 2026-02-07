@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
 import { Toaster } from '@/components/ui/toaster';
+import { ServerCheck } from '@/components/common/ServerCheck';
 
 type PlaceholderPageProps = {
     title: string;
@@ -19,7 +20,7 @@ function PlaceholderPage({ title, description }: PlaceholderPageProps) {
 
 export default function App() {
     return (
-        <>
+        <ServerCheck>
             <Routes>
                 <Route element={<AppLayout />}>
                     <Route index element={<Dashboard />} />
@@ -45,6 +46,6 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
             <Toaster />
-        </>
+        </ServerCheck>
     );
 }

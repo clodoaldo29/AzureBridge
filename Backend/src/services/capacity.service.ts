@@ -257,12 +257,17 @@ export class CapacityService {
 
         const workItems = workItemsReceived as any[]; // Cast to any to access new field
 
+
         // Group planned work by member
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
         const unassignedWork = { totalHours: 0, items: 0 };
         let totalPlannedFromItems = 0;
+        let totalRemainingFromItems = 0;
 
         workItems.forEach(item => {
+            // Determine planned hours for this item:
+            // 1. Use initialRemainingWork if available (historical truth)
+            // 2. Fallback to remainingWork (current truth)
             // Determine planned hours for this item:
             // 1. Use initialRemainingWork if available (historical truth)
             // 2. Fallback to remainingWork (current truth)
@@ -271,6 +276,7 @@ export class CapacityService {
                 : (item.remainingWork || 0) + (item.completedWork || 0); // If no history, assume current + completed is the plan
 
             totalPlannedFromItems += plannedHours;
+            totalRemainingFromItems += (item.remainingWork || 0);
 
             // Unassigned work (items without assignedToId)
             if (!item.assignedToId) {
@@ -290,9 +296,23 @@ export class CapacityService {
         // Use the sum of items as the Total Planned
         const totalPlanned = totalPlannedFromItems;
 
+        // Calculate total remaining
+        const totalRemaining = totalRemainingFromItems;
+        let totalAddedScope = 0;
+
+        workItems.forEach(item => {
+            const start = item.initialRemainingWork || 0;
+            const current = item.remainingWork || 0;
+            if (current > start) {
+                totalAddedScope += (current - start);
+            }
+        });
+
         logger.info(`Planned hours calculation for sprint ${sprintId}:`, {
             method: 'persistent_field',
-            totalPlanned
+            totalPlanned,
+            totalRemaining,
+            totalAddedScope
         });
 
         return {
@@ -305,6 +325,8 @@ export class CapacityService {
             summary: {
                 totalAvailable: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0),
                 totalPlanned: totalPlanned,
+                totalRemaining: totalRemaining,
+                totalAddedScope: totalAddedScope,
                 unassigned: unassignedWork,
                 balance: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) - totalPlanned,
                 utilization: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) > 0

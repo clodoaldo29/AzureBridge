@@ -119,6 +119,8 @@ export interface CapacityComparison {
     summary: {
         totalAvailable: number;
         totalPlanned: number;
+        totalRemaining: number;
+        totalAddedScope: number;
         totalMembers: number;
         unassigned: {
             totalHours: number;

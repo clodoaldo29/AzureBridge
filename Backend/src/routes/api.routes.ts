@@ -5,14 +5,30 @@ import { workItemController } from '@/controllers/work-item.controller';
 import { syncController } from '@/controllers/sync.controller';
 import { dashboardController } from '@/controllers/dashboard.controller';
 import { capacityController } from '@/controllers/capacity.controller';
+import { logger } from '@/utils/logger';
 
 export async function apiRoutes(fastify: FastifyInstance) {
     // Health Check
-    fastify.get('/health', async () => ({
-        status: 'ok',
-        timestamp: new Date(),
-        version: '2.0.0'
-    }));
+    fastify.get('/health', async () => {
+        try {
+            // Check database connectivity
+            const { PrismaClient } = await import('@prisma/client');
+            const prisma = new PrismaClient();
+            await prisma.$queryRaw`SELECT 1`;
+
+            return {
+                status: 'ok',
+                database: 'connected',
+                timestamp: new Date(),
+                version: '2.0.0'
+            };
+        } catch (error) {
+            logger.error('Database health check failed:', error);
+            const err = new Error('Database not ready');
+            (err as any).statusCode = 503;
+            throw err;
+        }
+    });
 
     // Projects
     fastify.get('/projects', projectController.listProjects);
