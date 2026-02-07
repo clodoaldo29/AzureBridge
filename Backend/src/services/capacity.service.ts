@@ -303,15 +303,24 @@ export class CapacityService {
                 endDate: sprint.endDate
             },
             summary: {
-                ...summary,
-                totalPlanned: totalPlanned, // Use summed item hours (assigned + unassigned)
+                totalAvailable: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0),
+                totalPlanned: totalPlanned,
                 unassigned: unassignedWork,
-                balance: summary.totalAvailable - totalPlanned,
-                utilization: summary.totalAvailable > 0
-                    ? Math.round((totalPlanned / summary.totalAvailable) * 100)
+                balance: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) - totalPlanned,
+                utilization: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) > 0
+                    ? Math.round((totalPlanned / sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0)) * 100)
                     : 0
             },
-            byMember
+            byMember: sprint.capacities.map(cap => {
+                const planned = plannedByMember[cap.memberId] ? plannedByMember[cap.memberId].totalHours : 0;
+                return {
+                    member: cap.member,
+                    capacity: cap.availableHours || 0,
+                    planned,
+                    balance: (cap.availableHours || 0) - planned,
+                    utilization: (cap.availableHours || 0) > 0 ? Math.round((planned / (cap.availableHours || 0)) * 100) : 0
+                };
+            })
         };
     }
 }
