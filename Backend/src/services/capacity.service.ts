@@ -324,6 +324,7 @@ export class CapacityService {
 
         // Group planned work by member
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
+        const completedByMember: Record<string, number> = {};
         const unassignedWork = { totalHours: 0, items: 0 };
         let totalPlannedInitialFromItems = 0;
         let totalPlannedCurrentFromItems = 0;
@@ -381,6 +382,7 @@ export class CapacityService {
 
             plannedByMember[item.assignedToId].totalHours += plannedFinal;
             plannedByMember[item.assignedToId].items += 1;
+            completedByMember[item.assignedToId] = (completedByMember[item.assignedToId] || 0) + completedForItem;
         });
 
         // Freeze initial planned by sprint baseline (first snapshot), fallback to items sum.
@@ -451,10 +453,19 @@ export class CapacityService {
             },
             byMember: sprint.capacities.map(cap => {
                 const planned = plannedByMember[cap.memberId] ? plannedByMember[cap.memberId].totalHours : 0;
+                const completed = completedByMember[cap.memberId] || 0;
+                const capacity = cap.availableHours || 0;
+                const completionPct = capacity > 0 ? Math.round((completed / capacity) * 100) : 0;
+                const remainingToCapacity = Math.max(0, capacity - completed);
+                const overCapacity = Math.max(0, completed - capacity);
                 return {
                     member: cap.member,
-                    capacity: cap.availableHours || 0,
+                    capacity,
                     planned,
+                    completed,
+                    completionPct,
+                    remainingToCapacity,
+                    overCapacity,
                     balance: (cap.availableHours || 0) - planned,
                     utilization: (cap.availableHours || 0) > 0 ? Math.round((planned / (cap.availableHours || 0)) * 100) : 0
                 };

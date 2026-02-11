@@ -1,77 +1,175 @@
 # AzureBridge
 
-Sistema completo de visualização e relatórios para Azure DevOps.
+Plataforma completa de monitoramento, análise e visualização de projetos Azure DevOps. Consolida dados de sprints, work items, capacidade de time e métricas de entrega em um dashboard em tempo real.
 
-## 🚀 Quick Start
+## Funcionalidades
 
-### 1. Configuração
+- **Dashboard em tempo real** — visão consolidada de sprints ativas com métricas de capacidade, progresso e saúde
+- **Burndown Chart interativo** — gráfico de burn com linha ideal adaptativa (recalculada a cada mudança de escopo), linha real, projeção de velocidade e barras de scope creep
+- **Sprint Health Score** — score 0–100 calculado automaticamente com base em utilização de capacidade, desvio de progresso, blockers e tracking
+- **Capacidade por membro** — horas disponíveis vs. concluídas por pessoa na sprint
+- **Blockers em destaque** — painel de work items bloqueados com tempo de bloqueio
+- **Sincronização automática** — sync incremental a cada hora e sync completo diário via container scheduler
+- **Snapshots históricos** — estado diário da sprint salvo para reconstrução do burndown a qualquer momento
+- **Suporte a múltiplos projetos** — troca de projeto via seletor no dashboard
+
+## Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Azure DevOps                         │
+│            (Projects, Sprints, Work Items, Teams)           │
+└──────────────────────────┬──────────────────────────────────┘
+                           │  azure-devops-node-api
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      AzureBridge API                        │
+│                   (Fastify + TypeScript)                    │
+│                                                             │
+│  Controllers → Services → Repositories → Prisma ORM        │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │  Job Queue  │  │ Cache Layer  │  │  Snapshot Engine  │  │
+│  │  (BullMQ)   │  │   (Redis)    │  │   (Daily Cron)    │  │
+│  └─────────────┘  └──────────────┘  └───────────────────┘  │
+└──────────┬───────────────────────────────────┬──────────────┘
+           │  PostgreSQL (Supabase)             │  REST API
+           ▼                                   ▼
+┌────────────────────┐             ┌───────────────────────┐
+│     Database       │             │   AzureBridge Web     │
+│  (15+ tabelas)     │             │  (React + TailwindCSS)│
+└────────────────────┘             └───────────────────────┘
+```
+
+## Stack
+
+| Camada | Tecnologia |
+|---|---|
+| Backend | Node.js 20, TypeScript, Fastify |
+| ORM | Prisma 5 |
+| Banco de dados | PostgreSQL 16 (Supabase) |
+| Cache / Filas | Redis 7, BullMQ |
+| Frontend | React 18, TypeScript, Vite |
+| UI | TailwindCSS, shadcn/ui, Recharts |
+| Infraestrutura | Docker, Docker Compose |
+| Integração | azure-devops-node-api |
+
+## Pré-requisitos
+
+- Docker e Docker Compose
+- Conta no [Supabase](https://supabase.com) (ou PostgreSQL próprio)
+- Personal Access Token do Azure DevOps com permissões: `Work Items (Read)`, `Project and Team (Read)`, `Identity (Read)`
+
+## Quick Start
+
+### 1. Configuração do ambiente
+
 ```bash
-# Clone o repositório
 git clone <repo-url>
 cd AzureBridge
 
-# Copie e configure as variáveis de ambiente
-cp .env.example .env
-# Edite .env com suas credenciais
-
-# Instale dependências
-make install
+cp Backend/.env.example Backend/.env
+# Edite Backend/.env com suas credenciais (ver docs/DEPLOYMENT.md)
 ```
 
-### 2. Desenvolvimento
+Variáveis obrigatórias no `Backend/.env`:
+
+```env
+AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
+AZURE_DEVOPS_PAT=seu-pat-aqui
+DATABASE_URL=postgresql://...
+DIRECT_DATABASE_URL=postgresql://...
+REDIS_HOST=redis
+```
+
+### 2. Desenvolvimento local
+
 ```bash
-# Inicie o ambiente de desenvolvimento
-make dev
-
-# Acesse:
-# - Frontend: http://localhost:5173
-# - Backend: http://localhost:3001
-# - Redis: localhost:6379
+make install    # instala dependências (Backend e Frontend)
+make dev        # sobe todos os containers em modo dev
 ```
 
-### 3. Produção
+Acesse:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:3001
+- Health check: http://localhost:3001/health
+
+### 3. Primeiro sync
+
+Após subir o ambiente, execute o sync inicial para carregar os projetos:
+
 ```bash
-# Build
-make build
-
-# Start
-make up
-
-# Acesse: http://localhost
+docker exec -it azurebridge-api npx tsx scripts/auto-sync.ts
 ```
 
-## 📚 Documentação
+Para carga completa (bootstrap inicial):
 
-- [Backend API](./Backend/README.md)
-- [Frontend Web](./Frontend/README.md)
-
-## 🛠️ Comandos Úteis
 ```bash
-make help        # Ver todos os comandos
-make logs        # Ver logs
-make down        # Parar containers
-make clean       # Limpar tudo
-make db-migrate  # Rodar migrations
-make test        # Rodar testes
+docker exec -it azurebridge-auto-sync sh -c "AUTO_SYNC_MODE=bootstrap npx tsx scripts/auto-sync.ts"
 ```
 
-## 🏗️ Estrutura
-````
+### 4. Produção
+
+```bash
+make build   # build das imagens
+make up      # sobe em produção
+```
+
+Acesse: http://localhost
+
+## Comandos úteis
+
+```bash
+make help          # lista todos os comandos disponíveis
+make logs          # acompanha logs de todos os containers
+make down          # para todos os containers
+make clean         # para e remove containers, volumes e imagens
+make db-migrate    # executa migrations do banco
+make db-studio     # abre o Prisma Studio (UI do banco)
+make test          # roda os testes do backend
+make lint          # roda os linters
+```
+
+## Estrutura do projeto
+
+```
 AzureBridge/
-├── Backend/      # Backend (Node.js + TypeScript)
-├── Frontend/     # Frontend (React + TypeScript)
-├── docker-compose.yml    # Produção
-└── docker-compose.dev.yml # Desenvolvimento
-````
+├── Backend/                  # API Node.js + TypeScript
+│   ├── src/
+│   │   ├── controllers/      # Handlers HTTP
+│   │   ├── services/         # Lógica de negócio
+│   │   ├── repositories/     # Acesso ao banco
+│   │   ├── integrations/     # Clientes Azure DevOps
+│   │   ├── jobs/             # Workers BullMQ
+│   │   ├── cache/            # Redis
+│   │   └── routes/           # Definição das rotas
+│   ├── prisma/               # Schema e migrations
+│   └── scripts/              # Sync, backfill, manutenção
+├── Frontend/                 # React + Vite
+│   └── src/
+│       ├── features/         # Módulos por feature
+│       ├── components/       # Componentes compartilhados
+│       ├── services/         # API client e queries
+│       └── stores/           # Estado global (Zustand)
+├── docs/                     # Documentação técnica
+├── docker-compose.yml        # Produção
+├── docker-compose.dev.yml    # Desenvolvimento
+└── Makefile                  # Comandos de build e dev
+```
 
-## 📦 Stack
+## Documentação
 
-- **Backend:** Node.js 20, TypeScript, Fastify, Prisma, PostgreSQL
-- **Frontend:** React 18, TypeScript, Vite, TailwindCSS, shadcn/ui
-- **Cache:** Redis 7
-- **Database:** PostgreSQL 16 (Supabase)
-- **DevOps:** Docker, Docker Compose
+| Documento | Descrição |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Arquitetura detalhada do sistema |
+| [docs/API.md](docs/API.md) | Referência completa da API REST |
+| [docs/DATABASE.md](docs/DATABASE.md) | Schema do banco de dados |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deployment e variáveis de ambiente |
+| [docs/USER-MANUAL.md](docs/USER-MANUAL.md) | Manual do usuário e guia do dashboard |
+| [Backend/README.md](Backend/README.md) | Documentação do backend |
+| [Frontend/README.md](Frontend/README.md) | Documentação do frontend |
+| [Backend/scripts/README.md](Backend/scripts/README.md) | Scripts de sync e manutenção |
 
-## 📄 License
+## Licença
 
 MIT

@@ -5,6 +5,7 @@ import { useSprintBurndown } from '@/services/queries/sprints';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
 import { CapacityTable } from '@/components/dashboard/CapacityTable';
+import { MemberCapacityProgress } from '@/components/dashboard/MemberCapacityProgress';
 import { BlockersAlert } from '@/components/dashboard/BlockersAlert';
 import { BurndownChart } from '@/components/charts/BurndownChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -208,6 +209,7 @@ export function Dashboard() {
                     <div className="space-y-6">
                         {/* Capacity Table */}
                         {capacityData && <CapacityTable data={capacityData} />}
+                        {capacityData && <MemberCapacityProgress data={capacityData} />}
 
                         {/* Burndown Chart */}
                         {burndownData && (

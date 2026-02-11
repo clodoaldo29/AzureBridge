@@ -16,7 +16,9 @@ export const formatRelativeTime = (date: string | Date) => {
 export const formatHours = (hours: number) => {
     if (hours === 0) return '0h';
     if (hours < 1) return `${Math.round(hours * 60)}min`;
-    return `${hours.toFixed(1)}h`;
+    const rounded = Math.round(hours * 10) / 10;
+    if (Number.isInteger(rounded)) return `${rounded.toFixed(0)}h`;
+    return `${rounded.toFixed(1)}h`;
 };
 
 export const formatPercentage = (value: number, decimals = 0) => {

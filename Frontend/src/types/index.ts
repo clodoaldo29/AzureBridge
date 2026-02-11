@@ -96,15 +96,19 @@ export interface MemberCapacity {
         imageUrl?: string;
         uniqueName: string;
     };
-    capacity: {
+    capacity: number | {
         total: number;
         available: number;
         daysOffCount: number;
     };
-    planned: {
+    planned: number | {
         total: number;
         itemsCount: number;
     };
+    completed?: number;
+    completionPct?: number;
+    remainingToCapacity?: number;
+    overCapacity?: number;
     balance: number;
     utilization: number;
 }
