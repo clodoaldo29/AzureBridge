@@ -234,6 +234,8 @@ model WorkItem {
   completedWork    Float?  @default(0)
   remainingWork    Float?  @default(0)
   initialRemainingWork Float? @default(0) // Valor recuperado do histórico (primeira estimativa)
+  lastRemainingWork Float? @default(0) // Último Remaining Work registrado (histórico)
+  doneRemainingWork Float? @default(0) // Remaining Work no momento em que ficou Done
   
   // Story Points (para PBIs)
   storyPoints      Int?

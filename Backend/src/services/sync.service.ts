@@ -302,6 +302,13 @@ export class SyncService {
         for (const azureWI of azureWorkItems) {
             try {
                 const fields = azureWI.fields;
+                const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
+                const completedWork = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
+                const state = (fields['System.State'] || '').toString();
+                const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
+                const doneRemainingWork = isDone
+                    ? (remainingWork > 0 ? remainingWork : completedWork)
+                    : null;
 
                 // Find sprint by iteration path
                 const sprint = await prisma.sprint.findFirst({
@@ -327,8 +334,12 @@ export class SyncService {
                     acceptanceCriteria: fields['System.AcceptanceCriteria'],
                     reproSteps: fields['Microsoft.VSTS.TCM.ReproSteps'],
                     originalEstimate: fields['Microsoft.VSTS.Scheduling.OriginalEstimate'],
-                    completedWork: fields['Microsoft.VSTS.Scheduling.CompletedWork'],
-                    remainingWork: fields['Microsoft.VSTS.Scheduling.RemainingWork'],
+                    completedWork,
+                    remainingWork,
+                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    lastRemainingWork: remainingWork,
+                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    doneRemainingWork,
                     storyPoints: fields['Microsoft.VSTS.Scheduling.StoryPoints'],
                     priority: fields['Microsoft.VSTS.Common.Priority'],
                     severity: fields['Microsoft.VSTS.Common.Severity'],

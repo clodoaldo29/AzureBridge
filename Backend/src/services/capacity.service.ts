@@ -5,6 +5,17 @@ import { logger } from '@/utils/logger';
 const prisma = new PrismaClient();
 
 export class CapacityService {
+    private mergeDayOffRanges(memberDaysOff: any[], teamDaysOff: any[]): any[] {
+        const merged = [...(memberDaysOff || []), ...(teamDaysOff || [])];
+        const seen = new Set<string>();
+        return merged.filter((r: any) => {
+            if (!r?.start || !r?.end) return false;
+            const key = `${new Date(r.start).toISOString()}|${new Date(r.end).toISOString()}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
     /**
      * Sync capacity for a specific sprint
      */
@@ -135,6 +146,7 @@ export class CapacityService {
                     const availableDays = Math.max(0, netSprintDays - individualDaysOffCount);
                     const totalHours = capacityPerDay * netSprintDays;
                     const availableHours = capacityPerDay * availableDays;
+                    const mergedDaysOff = this.mergeDayOffRanges(cap.daysOff || [], teamDaysOff || []);
 
                     // Create or Update Capacity
                     await prisma.teamCapacity.upsert({
@@ -150,13 +162,13 @@ export class CapacityService {
                             totalHours,
                             availableHours,
                             allocatedHours: 0,
-                            daysOff: cap.daysOff || [],
+                            daysOff: mergedDaysOff,
                             activitiesPerDay: cap.activities || []
                         },
                         update: {
                             totalHours,
                             availableHours,
-                            daysOff: cap.daysOff || [],
+                            daysOff: mergedDaysOff,
                             activitiesPerDay: cap.activities || []
                         }
                     });
@@ -214,6 +226,54 @@ export class CapacityService {
         return count;
     }
 
+    private collectBusinessDayOffDates(
+        capacities: Array<{ daysOff: unknown }>,
+        sprintStart: Date,
+        sprintEnd: Date
+    ): string[] {
+        const dayOffSet = new Set<string>();
+        const startMs = Date.UTC(
+            sprintStart.getUTCFullYear(),
+            sprintStart.getUTCMonth(),
+            sprintStart.getUTCDate()
+        );
+        const endMs = Date.UTC(
+            sprintEnd.getUTCFullYear(),
+            sprintEnd.getUTCMonth(),
+            sprintEnd.getUTCDate()
+        );
+
+        for (const cap of capacities) {
+            const ranges = (cap.daysOff as any[]) || [];
+            for (const r of ranges) {
+                if (!r?.start || !r?.end) continue;
+                const rangeStart = new Date(r.start);
+                const rangeEnd = new Date(r.end);
+                const cur = new Date(Date.UTC(
+                    rangeStart.getUTCFullYear(),
+                    rangeStart.getUTCMonth(),
+                    rangeStart.getUTCDate()
+                ));
+                const end = new Date(Date.UTC(
+                    rangeEnd.getUTCFullYear(),
+                    rangeEnd.getUTCMonth(),
+                    rangeEnd.getUTCDate()
+                ));
+
+                while (cur <= end) {
+                    const curMs = cur.getTime();
+                    const day = cur.getUTCDay();
+                    if (curMs >= startMs && curMs <= endMs && day !== 0 && day !== 6) {
+                        dayOffSet.add(cur.toISOString().slice(0, 10));
+                    }
+                    cur.setUTCDate(cur.getUTCDate() + 1);
+                }
+            }
+        }
+
+        return Array.from(dayOffSet).sort();
+    }
+
     /**
      * Get Capacity vs Planned Work comparison for a sprint
      * Uses first sprint snapshot as baseline for planned hours to handle cases
@@ -249,6 +309,10 @@ export class CapacityService {
                 completedWork: true,
                 // @ts-ignore - Field exists in DB but client might not be generated yet
                 initialRemainingWork: true,
+                // @ts-ignore - Field exists in DB but client might not be generated yet
+                lastRemainingWork: true,
+                // @ts-ignore - Field exists in DB but client might not be generated yet
+                doneRemainingWork: true,
                 assignedToId: true,
                 type: true,
                 state: true
@@ -261,8 +325,10 @@ export class CapacityService {
         // Group planned work by member
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
         const unassignedWork = { totalHours: 0, items: 0 };
-        let totalPlannedFromItems = 0;
+        let totalPlannedInitialFromItems = 0;
+        let totalPlannedCurrentFromItems = 0;
         let totalRemainingFromItems = 0;
+        let totalCompletedFromItems = 0;
 
         workItems.forEach(item => {
             // Determine planned hours for this item:
@@ -271,16 +337,40 @@ export class CapacityService {
             // Determine planned hours for this item:
             // 1. Use initialRemainingWork if available (historical truth)
             // 2. Fallback to remainingWork (current truth)
-            const plannedHours = item.initialRemainingWork > 0
-                ? item.initialRemainingWork
-                : (item.remainingWork || 0) + (item.completedWork || 0); // If no history, assume current + completed is the plan
+            const currentRemaining = item.remainingWork || 0;
+            const currentCompleted = item.completedWork || 0;
+            const currentTotal = currentRemaining + currentCompleted;
 
-            totalPlannedFromItems += plannedHours;
-            totalRemainingFromItems += (item.remainingWork || 0);
+            const initialFromHistory = (item as any).initialRemainingWork || 0;
+            const lastFromHistory = (item as any).lastRemainingWork || 0;
+            const doneFromHistory = (item as any).doneRemainingWork || 0;
+
+            const state = (item.state || '').toLowerCase();
+            const isDone = state === 'done' || state === 'closed' || state === 'completed';
+
+            const plannedInitial = initialFromHistory > 0
+                ? initialFromHistory
+                : (lastFromHistory > 0 ? lastFromHistory : currentTotal);
+
+            const plannedFinal = isDone
+                ? (doneFromHistory > 0
+                    ? doneFromHistory
+                    : (lastFromHistory > 0 ? lastFromHistory : currentTotal))
+                : (lastFromHistory > 0 ? lastFromHistory : currentRemaining);
+
+            totalPlannedInitialFromItems += plannedInitial;
+            totalPlannedCurrentFromItems += plannedFinal;
+            totalRemainingFromItems += currentRemaining;
+
+            const completedForItem = isDone
+                ? (doneFromHistory > 0 ? doneFromHistory : (lastFromHistory > 0 ? lastFromHistory : currentCompleted))
+                : 0;
+
+            totalCompletedFromItems += completedForItem;
 
             // Unassigned work (items without assignedToId)
             if (!item.assignedToId) {
-                unassignedWork.totalHours += plannedHours;
+                unassignedWork.totalHours += plannedFinal;
                 unassignedWork.items += 1;
                 return;
             }
@@ -289,20 +379,39 @@ export class CapacityService {
                 plannedByMember[item.assignedToId] = { totalHours: 0, items: 0 };
             }
 
-            plannedByMember[item.assignedToId].totalHours += plannedHours;
+            plannedByMember[item.assignedToId].totalHours += plannedFinal;
             plannedByMember[item.assignedToId].items += 1;
         });
 
-        // Use the sum of items as the Total Planned
-        const totalPlanned = totalPlannedFromItems;
+        // Freeze initial planned by sprint baseline (first snapshot), fallback to items sum.
+        const baselineInitialFromSnapshot = sprint.snapshots[0]?.totalWork || 0;
+        const totalPlannedInitial = baselineInitialFromSnapshot > 0
+            ? baselineInitialFromSnapshot
+            : totalPlannedInitialFromItems;
+        const totalPlannedCurrent = totalPlannedCurrentFromItems;
+        const totalPlannedDelta = totalPlannedCurrent - totalPlannedInitial;
+        const dayOffDates = this.collectBusinessDayOffDates(
+            sprint.capacities.map(c => ({ daysOff: c.daysOff })),
+            new Date(sprint.startDate),
+            new Date(sprint.endDate)
+        );
+
+        // For backward compatibility, keep totalPlanned as current plan
+        const totalPlanned = totalPlannedCurrent;
 
         // Calculate total remaining
         const totalRemaining = totalRemainingFromItems;
         let totalAddedScope = 0;
 
         workItems.forEach(item => {
-            const start = item.initialRemainingWork || 0;
-            const current = item.remainingWork || 0;
+            const start = (item as any).initialRemainingWork || 0;
+            const last = (item as any).lastRemainingWork || 0;
+            const done = (item as any).doneRemainingWork || 0;
+            const state = (item.state || '').toLowerCase();
+            const isDone = state === 'done' || state === 'closed' || state === 'completed';
+            const current = isDone
+                ? (done > 0 ? done : (last > 0 ? last : (item.remainingWork || 0)))
+                : (last > 0 ? last : (item.remainingWork || 0));
             if (current > start) {
                 totalAddedScope += (current - start);
             }
@@ -310,7 +419,9 @@ export class CapacityService {
 
         logger.info(`Planned hours calculation for sprint ${sprintId}:`, {
             method: 'persistent_field',
-            totalPlanned,
+            totalPlannedInitial,
+            totalPlannedCurrent,
+            totalPlannedDelta,
             totalRemaining,
             totalAddedScope
         });
@@ -325,8 +436,13 @@ export class CapacityService {
             summary: {
                 totalAvailable: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0),
                 totalPlanned: totalPlanned,
+                totalPlannedInitial,
+                totalPlannedCurrent,
+                totalPlannedDelta,
                 totalRemaining: totalRemaining,
+                totalCompleted: totalCompletedFromItems,
                 totalAddedScope: totalAddedScope,
+                dayOffDates,
                 unassigned: unassignedWork,
                 balance: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) - totalPlanned,
                 utilization: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) > 0

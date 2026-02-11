@@ -2,6 +2,34 @@ import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 
 export class SnapshotService {
+    private toUtcDay(date: Date): Date {
+        const d = new Date(date);
+        d.setUTCHours(0, 0, 0, 0);
+        return d;
+    }
+
+    private isWeekend(date: Date): boolean {
+        const day = date.getUTCDay();
+        return day === 0 || day === 6;
+    }
+
+    private extractDayOffSet(capacities: Array<{ daysOff: unknown }>): Set<string> {
+        const set = new Set<string>();
+        for (const cap of capacities) {
+            const ranges = (cap.daysOff as any[]) || [];
+            for (const r of ranges) {
+                if (!r?.start || !r?.end) continue;
+                const start = this.toUtcDay(new Date(r.start));
+                const end = this.toUtcDay(new Date(r.end));
+                for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
+                    if (!this.isWeekend(dt)) {
+                        set.add(dt.toISOString().slice(0, 10));
+                    }
+                }
+            }
+        }
+        return set;
+    }
     /**
      * Capture daily snapshot for all active sprints
      */
@@ -12,7 +40,7 @@ export class SnapshotService {
             // 1. Find all active sprints
             const activeSprints = await prisma.sprint.findMany({
                 where: {
-                    state: 'active'
+                    state: { in: ['active', 'Active'] }
                 },
                 include: {
                     project: true
@@ -43,23 +71,38 @@ export class SnapshotService {
      */
     async createSprintSnapshot(sprintId: string): Promise<void> {
         try {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // Normalize to start of day
+            const today = this.toUtcDay(new Date()); // Always normalize to UTC day
 
-            // Check if snapshot already exists for today
-            const existing = await prisma.sprintSnapshot.findUnique({
-                where: {
-                    sprintId_snapshotDate: {
-                        sprintId,
-                        snapshotDate: today
+            const sprint = await prisma.sprint.findUnique({
+                where: { id: sprintId },
+                include: {
+                    capacities: {
+                        select: { daysOff: true }
                     }
                 }
             });
 
-            if (existing) {
-                logger.info(`Snapshot for sprint ${sprintId} on ${today.toISOString()} already exists.`);
+            if (!sprint) {
+                logger.warn(`Sprint not found for snapshot: ${sprintId}`);
                 return;
             }
+
+            // Never create snapshots on weekends or configured day-off dates
+            const dayOffSet = this.extractDayOffSet(sprint.capacities);
+            const todayIso = today.toISOString().slice(0, 10);
+            if (this.isWeekend(today) || dayOffSet.has(todayIso)) {
+                logger.info(`Skipping snapshot for ${sprintId} on non-working day (${todayIso}).`);
+                return;
+            }
+
+            // Defensive cleanup: active sprints may have historical backfill rows in future dates.
+            // Keeping them causes false negative scope deltas when scope increases today.
+            await prisma.sprintSnapshot.deleteMany({
+                where: {
+                    sprintId,
+                    snapshotDate: { gt: today }
+                }
+            });
 
             // Get work items metrics
             const workItems = await prisma.workItem.findMany({
@@ -71,6 +114,12 @@ export class SnapshotService {
                     state: true,
                     remainingWork: true,
                     completedWork: true,
+                    // @ts-ignore
+                    initialRemainingWork: true,
+                    // @ts-ignore
+                    lastRemainingWork: true,
+                    // @ts-ignore
+                    doneRemainingWork: true,
                     storyPoints: true,
                     type: true
                 }
@@ -91,17 +140,33 @@ export class SnapshotService {
             // Note: blocked status not directly in state string usually, but for now we aggregate by state
 
             for (const item of workItems) {
-                // Sum Hours
-                remainingWork += item.remainingWork || 0;
-                completedWork += item.completedWork || 0;
+                const remaining = item.remainingWork || 0;
+                const completed = item.completedWork || 0;
+                const state = item.state.toLowerCase();
+                const isDone = state === 'done' || state === 'closed' || state === 'completed';
+                const initial = (item as any).initialRemainingWork || 0;
+                const last = (item as any).lastRemainingWork || 0;
+                const done = (item as any).doneRemainingWork || 0;
+
+                // Use current planned scope for this day, so snapshot totalWork reflects scope changes.
+                const currentTotal = remaining + completed;
+                const plannedCurrent = isDone
+                    ? (done > 0 ? done : (last > 0 ? last : currentTotal))
+                    : (last > 0 ? last : remaining);
+                const plannedBaseline = initial > 0 ? initial : (last > 0 ? last : currentTotal);
+                const resolved = isDone
+                    ? (done > 0 ? done : (last > 0 ? last : completed))
+                    : Math.max(0, plannedBaseline - remaining);
+
+                remainingWork += remaining;
+                totalWork += Math.max(0, plannedCurrent);
+                completedWork += Math.max(0, resolved);
 
                 // Sum Points (usually only PBI/Bug)
                 const points = item.storyPoints || 0;
                 totalPoints += points;
 
                 // Simple State Mapping (Adjust as needed based on your process)
-                const state = item.state.toLowerCase();
-
                 if (state === 'done' || state === 'closed' || state === 'completed') {
                     completedPoints += points;
                     doneCount++;
@@ -115,13 +180,35 @@ export class SnapshotService {
                 }
             }
 
-            totalWork = remainingWork + completedWork;
+            // Keep consistency: total = current planned scope; completed = total - remaining
+            if (totalWork <= 0) {
+                totalWork = remainingWork + completedWork;
+            }
+            completedWork = Math.max(0, totalWork - remainingWork);
 
-            // Save Snapshot
-            await prisma.sprintSnapshot.create({
-                data: {
+            // Save or refresh same-day snapshot to capture intra-day scope changes.
+            await prisma.sprintSnapshot.upsert({
+                where: {
+                    sprintId_snapshotDate: {
+                        sprintId,
+                        snapshotDate: today
+                    }
+                },
+                create: {
                     sprintId,
                     snapshotDate: today,
+                    remainingWork,
+                    completedWork,
+                    totalWork,
+                    remainingPoints,
+                    completedPoints,
+                    totalPoints,
+                    todoCount,
+                    inProgressCount,
+                    doneCount,
+                    blockedCount
+                },
+                update: {
                     remainingWork,
                     completedWork,
                     totalWork,

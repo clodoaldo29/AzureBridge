@@ -119,8 +119,13 @@ export interface CapacityComparison {
     summary: {
         totalAvailable: number;
         totalPlanned: number;
+        totalPlannedInitial?: number;
+        totalPlannedCurrent?: number;
+        totalPlannedDelta?: number;
         totalRemaining: number;
+        totalCompleted?: number;
         totalAddedScope: number;
+        dayOffDates?: string[];
         totalMembers: number;
         unassigned: {
             totalHours: number;

@@ -201,21 +201,27 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
     // Upsert
     const existing = await prisma.workItem.findUnique({ where: { id } });
 
+    const remainingWork = f['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
+    const completedWork = f['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
+    const state = (f['System.State'] || '').toString();
+
     await prisma.workItem.upsert({
         where: { id },
         create: {
             id,
             azureId: id,
             type: f['System.WorkItemType'],
-            state: f['System.State'],
+            state,
             reason: f['System.Reason'] || null,
             title: f['System.Title'],
             description: f['System.Description'] || null,
             acceptanceCriteria: f['System.AcceptanceCriteria'] || null,
             reproSteps: f['Microsoft.VSTS.TCM.ReproSteps'] || null,
             originalEstimate: f['Microsoft.VSTS.Scheduling.OriginalEstimate'] || null,
-            completedWork: f['Microsoft.VSTS.Scheduling.CompletedWork'] || null,
-            remainingWork: f['Microsoft.VSTS.Scheduling.RemainingWork'] || null,
+            completedWork,
+            remainingWork,
+            // @ts-ignore - Field exists in DB but client might not be generated yet
+            lastRemainingWork: remainingWork,
             storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
             priority: f['Microsoft.VSTS.Common.Priority'] || 3,
             severity: f['Microsoft.VSTS.Common.Severity'] || null,
@@ -236,13 +242,15 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             sprintId: sprint?.id
         },
         update: {
-            state: f['System.State'],
+            state,
             title: f['System.Title'],
             description: f['System.Description'] || null,
             changedDate: d(f['System.ChangedDate'])!,
             changedBy: f['System.ChangedBy']?.displayName || 'Unknown',
-            completedWork: f['Microsoft.VSTS.Scheduling.CompletedWork'] || null,
-            remainingWork: f['Microsoft.VSTS.Scheduling.RemainingWork'] || null,
+            completedWork,
+            remainingWork,
+            // @ts-ignore - Field exists in DB but client might not be generated yet
+            lastRemainingWork: remainingWork,
             storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
             sprintId: sprint?.id,
             rev: azItem.rev
@@ -279,49 +287,95 @@ async function syncHierarchy(azItem: any, prisma: PrismaClient): Promise<boolean
 async function checkHistoryNeeded(id: number, prisma: PrismaClient): Promise<boolean> {
     const item = await prisma.workItem.findUnique({
         where: { id },
-        select: { initialRemainingWork: true } // @ts-ignore
+        // @ts-ignore
+        select: { initialRemainingWork: true, lastRemainingWork: true, doneRemainingWork: true, state: true }
     });
     // Check if handling the field via raw query or if schema supports it
     // Assuming schema has it based on context
     const initial = (item as any)?.initialRemainingWork;
-    return (initial === null || initial === 0);
+    const last = (item as any)?.lastRemainingWork;
+    const done = (item as any)?.doneRemainingWork;
+    const state = ((item as any)?.state || '').toLowerCase();
+    const isDone = state === 'done' || state === 'closed' || state === 'completed';
+
+    return (
+        initial === null || initial === 0 ||
+        last === null || last === 0 ||
+        (isDone && (done === null || done === 0))
+    );
 }
 
 async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Promise<boolean> {
     try {
         const revisions = await witApi.getRevisions(id);
         let initialRemainingWork = 0;
-        let found = false;
+        let lastRemainingWork = 0;
+        let doneRemainingWork = 0;
+        let foundInitial = false;
+        let lastSeenRemaining = 0;
+        let lastNonZeroRemaining = 0;
 
         for (const rev of revisions) {
-            const val = rev.fields?.['Microsoft.VSTS.Scheduling.RemainingWork'];
-            if (val !== undefined && val > 0) {
-                initialRemainingWork = val;
-                found = true;
-                break;
+            const remaining = rev.fields?.['Microsoft.VSTS.Scheduling.RemainingWork'];
+            const state = (rev.fields?.['System.State'] || '').toString().toLowerCase();
+
+            if (remaining !== undefined) {
+                lastRemainingWork = remaining;
+                lastSeenRemaining = remaining;
+                if (remaining > 0) lastNonZeroRemaining = remaining;
+            }
+
+            if (!foundInitial && remaining !== undefined && remaining > 0) {
+                initialRemainingWork = remaining;
+                foundInitial = true;
+            }
+
+            const isDone = state === 'done' || state === 'closed' || state === 'completed';
+            if (isDone && doneRemainingWork === 0) {
+                if (remaining !== undefined && remaining > 0) {
+                    doneRemainingWork = remaining;
+                } else if (lastNonZeroRemaining > 0) {
+                    doneRemainingWork = lastNonZeroRemaining;
+                } else if (lastSeenRemaining > 0) {
+                    doneRemainingWork = lastSeenRemaining;
+                }
             }
         }
 
-        // If not found in history, fallback to current (handled by 'backfill' script logic too)
-        // But for 'smart sync', if we don't find history, we might just set it to current 
-        // to avoid re-querying every time.
-        if (!found) {
-            const current = await witApi.getWorkItem(id);
-            const rw = current.fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
-            const cw = current.fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
-            initialRemainingWork = rw + cw;
+        const current = await witApi.getWorkItem(id);
+        const currentRemaining = current.fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
+        const currentCompleted = current.fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
+        const currentState = (current.fields['System.State'] || '').toString().toLowerCase();
+
+        if (!foundInitial) {
+            initialRemainingWork = currentRemaining + currentCompleted;
         }
 
-        if (initialRemainingWork > 0) {
-            await prisma.workItem.update({
-                where: { id },
-                data: {
-                    // @ts-ignore
-                    initialRemainingWork
-                }
-            });
-            return true;
+        if (!lastRemainingWork) {
+            lastRemainingWork = lastNonZeroRemaining || currentRemaining;
         }
+
+        if (!doneRemainingWork) {
+            const isDone = currentState === 'done' || currentState === 'closed' || currentState === 'completed';
+            if (isDone) {
+                doneRemainingWork = currentRemaining > 0
+                    ? currentRemaining
+                    : (lastNonZeroRemaining > 0 ? lastNonZeroRemaining : currentCompleted);
+            }
+        }
+
+        await prisma.workItem.update({
+            where: { id },
+            data: {
+                // @ts-ignore
+                initialRemainingWork,
+                // @ts-ignore
+                lastRemainingWork,
+                // @ts-ignore
+                doneRemainingWork
+            }
+        });
+        return true;
     } catch (e) {
         // failed
     }

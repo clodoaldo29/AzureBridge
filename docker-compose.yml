@@ -36,6 +36,39 @@ services:
       - api-logs:/app/logs
 
   # ========================================
+  # Auto Sync Scheduler
+  # ========================================
+  auto-sync:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile.scheduler
+    container_name: azurebridge-auto-sync
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      # Azure DevOps
+      AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
+      AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      # Redis (if needed by any scripts)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Scheduler
+      AUTO_SYNC_CRON_HOURLY: ${AUTO_SYNC_CRON_HOURLY:-0 * * * *}
+      AUTO_SYNC_CRON_DAILY: ${AUTO_SYNC_CRON_DAILY:-0 2 * * *}
+      AUTO_SYNC_RUN_ON_START: ${AUTO_SYNC_RUN_ON_START:-false}
+      AUTO_SYNC_RUN_ON_START_MODE: ${AUTO_SYNC_RUN_ON_START_MODE:-daily}
+      TZ: ${TZ:-UTC}
+    depends_on:
+      - redis
+    networks:
+      - azurebridge-network
+
+  # ========================================
   # Frontend Web
   # ========================================
   web:

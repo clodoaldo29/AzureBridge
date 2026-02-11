@@ -1,0 +1,23 @@
+# ========================================
+# Auto Sync Scheduler
+# ========================================
+FROM node:20-alpine
+
+RUN apk add --no-cache openssl tzdata
+
+WORKDIR /app
+
+# Install dependencies (including dev deps for tsx)
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm install && npm cache clean --force
+
+# Copy source and scripts
+COPY . .
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+ENV NODE_ENV=production
+
+CMD ["sh", "scripts/auto-sync-cron.sh"]

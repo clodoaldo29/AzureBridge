@@ -26,6 +26,10 @@ export class WorkItemRepository {
                     originalEstimate: data.originalEstimate,
                     completedWork: data.completedWork,
                     remainingWork: data.remainingWork,
+                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    lastRemainingWork: (data as any).lastRemainingWork,
+                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    doneRemainingWork: (data as any).doneRemainingWork,
                     storyPoints: data.storyPoints,
                     effort: data.effort,
                     priority: data.priority,

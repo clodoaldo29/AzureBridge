@@ -23,11 +23,7 @@
     "lint": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
-    "test:connection": "node test-connection.js",
-    "test:integration": "tsx --tsconfig tsconfig.json test-integration.ts",
-    "test:sync": "tsx --tsconfig tsconfig.json test-sync.ts",
-    "sync:smart": "tsx scripts/sync/smart-sync.ts",
-    "debug:iterations": "node debug-iterations.js"
+    "sync:smart": "tsx scripts/sync/smart-sync.ts"
   },
   "keywords": [
     "azure-devops",
