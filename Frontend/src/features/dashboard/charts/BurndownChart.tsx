@@ -26,7 +26,8 @@ interface BurndownChartProps {
 
 type ChartPoint = {
     dayKey: string;
-    label: string;
+    axisLabel: string;
+    tooltipLabel: string;
     dateLabel: string;
     dateMs: number;
     ideal: number;
@@ -37,6 +38,18 @@ type ChartPoint = {
     isFuture: boolean;
     totalWork: number;
 };
+
+const UI_COLORS = {
+    bg: '#FFFFFF',
+    bgSoft: '#F8FAFC',
+    border: '#E5E7EB',
+    text: '#111827',
+    muted: '#6B7280',
+    mutedSoft: '#94A3B8',
+    tooltipText: '#4B5563',
+    grid: 'rgba(148,163,184,0.35)',
+    axisLine: '#E2E8F0',
+} as const;
 
 function toUtcDayMs(value: string | Date): number {
     const d = new Date(value);
@@ -61,17 +74,38 @@ function shortDatePtBr(dateMs: number): string {
     });
 }
 
+function capitalizeFirst(value: string): string {
+    if (!value) return value;
+    return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 const TooltipRow = ({ color, label, value }: { color: string; label: string; value: string }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 10, height: 3, borderRadius: 2, background: color }} />
-            <span style={{ color: '#A0AEC0' }}>{label}</span>
+            <span style={{ color: UI_COLORS.mutedSoft }}>{label}</span>
         </div>
         <span style={{ fontWeight: 600, color }}>{value}</span>
     </div>
 );
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+    const raw = String(payload?.value || '');
+    const [day = '', date = ''] = raw.split('|');
+
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <text x={0} y={0} dy={14} textAnchor="middle" fill={UI_COLORS.muted} fontSize={11} fontWeight={600}>
+                {day}
+            </text>
+            <text x={0} y={0} dy={30} textAnchor="middle" fill={UI_COLORS.muted} fontSize={10}>
+                {date}
+            </text>
+        </g>
+    );
+};
+
+const CustomTooltip = ({ active, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null;
     const point = payload[0]?.payload as ChartPoint | undefined;
     if (!point) return null;
@@ -79,12 +113,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     return (
         <div
             style={{
-                background: '#FFFFFF',
-                border: '1px solid #E5E7EB',
+                background: UI_COLORS.bg,
+                border: `1px solid ${UI_COLORS.border}`,
                 borderRadius: 12,
                 padding: '14px 18px',
                 fontSize: 12,
-                color: '#4B5563',
+                color: UI_COLORS.tooltipText,
                 minWidth: 210,
                 boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
             }}
@@ -93,22 +127,22 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                 style={{
                     fontWeight: 700,
                     fontSize: 13,
-                    color: '#111827',
+                    color: UI_COLORS.text,
                     marginBottom: 10,
                     paddingBottom: 8,
-                    borderBottom: '1px solid #E5E7EB',
+                    borderBottom: `1px solid ${UI_COLORS.border}`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
                 }}
             >
-                {label}
+                {point.tooltipLabel}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <TooltipRow color="#63B3ED" label="Ideal" value={`${point.ideal}h`} />
                 {point.actual !== null && <TooltipRow color="#F6AD55" label="Remaining" value={`${point.actual}h`} />}
-                {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projecao" value={`${point.projected}h`} />}
+                {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projeção" value={`${point.projected}h`} />}
                 {point.scopeAdded > 0 && <TooltipRow color="#FC8181" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
             </div>
         </div>
@@ -153,22 +187,22 @@ const MetricCard = ({
 }) => (
     <div
         style={{
-            background: '#FFFFFF',
-            border: '1px solid #E5E7EB',
+            background: UI_COLORS.bg,
+            border: `1px solid ${UI_COLORS.border}`,
             borderRadius: 12,
             padding: '14px 18px',
             flex: 1,
             minWidth: 120,
         }}
     >
-        <div style={{ fontSize: 10, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600, marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: UI_COLORS.muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600, marginBottom: 8 }}>
             {label}
         </div>
         <div style={{ fontSize: 24, fontWeight: 800, color: accent, lineHeight: 1 }}>
             {value}
-            <span style={{ fontSize: 12, fontWeight: 400, color: '#6B7280', marginLeft: 3 }}>{unit}</span>
+            <span style={{ fontSize: 12, fontWeight: 400, color: UI_COLORS.muted, marginLeft: 3 }}>{unit}</span>
         </div>
-        {sublabel && <div style={{ fontSize: 10, color: '#6B7280', marginTop: 6 }}>{sublabel}</div>}
+        {sublabel && <div style={{ fontSize: 10, color: UI_COLORS.muted, marginTop: 6 }}>{sublabel}</div>}
     </div>
 );
 
@@ -183,7 +217,7 @@ const LegendToggle = ({
     checked: boolean;
     onToggle: () => void;
 }) => (
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6B7280' }}>
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: UI_COLORS.muted }}>
         <input type="checkbox" checked={checked} onChange={onToggle} style={{ accentColor: color }} />
         <span style={{ color }}>{label}</span>
     </label>
@@ -253,7 +287,8 @@ export function BurndownChart({
 
             return {
                 dayKey: `D${idx + 1}`,
-                label: `D${idx + 1} - ${weekdayPtBr(ms)} ${shortDatePtBr(ms)}`,
+                axisLabel: `D${idx + 1}|${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
+                tooltipLabel: `D${idx + 1} - ${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
                 dateLabel: shortDatePtBr(ms),
                 dateMs: ms,
                 ideal,
@@ -309,7 +344,7 @@ export function BurndownChart({
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
         const remNow = Math.max(0, Math.round(currentRemaining ?? (todayIdx >= 0 ? (points[todayIdx].actual || 0) : totalHours)));
         const burnedTotal = Math.max(0, totalHours - remNow);
-        const workedDays = Math.max(0, lastActualIdx);
+        const workedDays = lastActualIdx >= 0 ? lastActualIdx + 1 : 0;
         const avgBurnValue = workedDays > 0 ? burnedTotal / workedDays : 0;
         if (lastActualIdx >= 0) {
             const anchorIdx = lastActualIdx;
@@ -374,16 +409,16 @@ export function BurndownChart({
     if (!model) return null;
 
     return (
-        <div style={{ background: '#FFFFFF', borderRadius: 12, padding: 24, color: '#111827', maxWidth: '100%', margin: '0 auto', border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)' }}>
+        <div style={{ background: UI_COLORS.bg, borderRadius: 12, padding: 24, color: UI_COLORS.text, maxWidth: '100%', margin: '0 auto', border: `1px solid ${UI_COLORS.border}`, boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                    <div style={{ fontSize: 10, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 600, marginBottom: 6 }}>
-                        Sprint Burndown - {model.daysTotal} dias uteis
+                    <div style={{ fontSize: 10, color: UI_COLORS.muted, textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 600, marginBottom: 6 }}>
+                        Sprint Burndown - {model.daysTotal} dias úteis
                     </div>
-                    <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: '#111827', letterSpacing: '-0.3px' }}>
-                        Analise de Burn da Sprint
+                    <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: UI_COLORS.text, letterSpacing: '-0.2px' }}>
+                        Análise de Burn da Sprint
                     </h2>
-                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12, color: UI_COLORS.muted, marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         <span>Inicial: {Math.round(plannedInitial ?? model.totalHours)}h</span>
                         <span>Final: {model.totalHours}h</span>
                         <span style={{ color: '#FC8181' }}>Delta +{Math.max(0, Math.round(plannedDelta ?? 0))}h</span>
@@ -394,19 +429,19 @@ export function BurndownChart({
 
             <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
                 <MetricCard label="Restante" value={model.remNow} unit="h" accent="#F6AD55" sublabel={`de ${model.totalHours}h planejadas`} />
-                <MetricCard label="Concluido" value={model.burnedTotal} unit="h" accent="#48BB78" sublabel={`${model.completionPct}% da sprint`} />
-                <MetricCard label="Vel. Media" value={model.avgBurn.toFixed(1)} unit="h/dia" accent="#63B3ED" sublabel={`necessario: ${model.neededIdealVelocity.toFixed(1)}h/dia`} />
+                <MetricCard label="Concluído" value={model.burnedTotal} unit="h" accent="#48BB78" sublabel={`${model.completionPct}% da sprint`} />
+                <MetricCard label="Vel. Média" value={model.avgBurn.toFixed(1)} unit="h/dia" accent="#63B3ED" sublabel={`necessário: ${model.neededIdealVelocity.toFixed(1)}h/dia`} />
                 <MetricCard label="Dias Restantes" value={model.remainingDays} unit="dias" accent="#9F7AEA" sublabel={`trabalhados: ${model.workedDays} de ${model.daysTotal}`} />
             </div>
 
             <div style={{ display: 'flex', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
                 <LegendToggle label="Ideal" color="#63B3ED" checked={showIdeal} onToggle={() => setShowIdeal(!showIdeal)} />
                 <LegendToggle label="Remaining" color="#F6AD55" checked={showActual} onToggle={() => setShowActual(!showActual)} />
-                <LegendToggle label="Projecao" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
-                <LegendToggle label="Mudancas de Escopo" color="#FC8181" checked={showScope} onToggle={() => setShowScope(!showScope)} />
+                <LegendToggle label="Projeção" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
+                <LegendToggle label="Mudanças de Escopo" color="#FC8181" checked={showScope} onToggle={() => setShowScope(!showScope)} />
             </div>
 
-            <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '18px 12px 12px 0', border: '1px solid #E5E7EB' }}>
+            <div style={{ background: UI_COLORS.bgSoft, borderRadius: 12, padding: '18px 12px 12px 0', border: `1px solid ${UI_COLORS.border}` }}>
                 <ResponsiveContainer width="100%" height={400}>
                     <ComposedChart data={model.points} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                         <defs>
@@ -416,16 +451,24 @@ export function BurndownChart({
                             </linearGradient>
                         </defs>
 
-                        <CartesianGrid strokeDasharray="3 6" stroke="rgba(148,163,184,0.35)" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 6" stroke={UI_COLORS.grid} vertical={false} />
 
-                        <XAxis dataKey="label" stroke="#94A3B8" tick={{ fill: '#64748B', fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} angle={-40} textAnchor="end" height={65} />
-                        <YAxis stroke="#94A3B8" tick={{ fill: '#64748B', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} width={50} domain={[0, (max: number) => Math.max(100, Math.ceil(max / 10) * 10)]} />
+                        <XAxis
+                            dataKey="axisLabel"
+                            stroke={UI_COLORS.mutedSoft}
+                            tickLine={false}
+                            axisLine={{ stroke: UI_COLORS.axisLine }}
+                            tick={<CustomXAxisTick />}
+                            interval={0}
+                            height={48}
+                        />
+                        <YAxis stroke={UI_COLORS.mutedSoft} tick={{ fill: UI_COLORS.muted, fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} width={50} domain={[0, (max: number) => Math.max(100, Math.ceil(max / 10) * 10)]} />
 
                         <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(59,130,246,0.2)', strokeWidth: 1 }} />
 
                         {showIdeal && <Area type="monotone" dataKey="ideal" stroke="#63B3ED" strokeWidth={2} fill="url(#idealGrad)" dot={false} activeDot={<ActiveDot />} strokeOpacity={0.7} name="Ideal" />}
                         {showActual && <Line type="monotone" dataKey="actual" stroke="#F6AD55" strokeWidth={2} dot={false} activeDot={<ActiveDot />} connectNulls={false} name="Remaining" />}
-                        {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projecao" />}
+                        {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projeção" />}
                         {showScope && (
                             <Bar dataKey="scopeAdded" fill="rgba(252,129,129,0.6)" barSize={8}>
                                 <LabelList dataKey="scopeAdded" content={<ScopeBarLabel />} />

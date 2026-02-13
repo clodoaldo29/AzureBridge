@@ -62,6 +62,7 @@ services:
       AUTO_SYNC_CRON_DAILY: ${AUTO_SYNC_CRON_DAILY:-0 2 * * *}
       AUTO_SYNC_RUN_ON_START: ${AUTO_SYNC_RUN_ON_START:-false}
       AUTO_SYNC_RUN_ON_START_MODE: ${AUTO_SYNC_RUN_ON_START_MODE:-daily}
+      AUTO_SYNC_NEW_PROJECTS: ${AUTO_SYNC_NEW_PROJECTS:-false}
       TZ: ${TZ:-UTC}
     depends_on:
       - redis
@@ -75,6 +76,8 @@ services:
     build:
       context: ./Frontend
       dockerfile: Dockerfile
+      args:
+        VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
     container_name: azurebridge-web
     restart: unless-stopped
     ports:

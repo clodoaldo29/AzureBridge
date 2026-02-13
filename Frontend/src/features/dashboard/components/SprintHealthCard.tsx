@@ -49,22 +49,22 @@ export function SprintHealthCard({ score, factors, reasons }: SprintHealthCardPr
 
                 {factors && (
                     <div className="space-y-2 pt-4 border-t">
-                        <h4 className="text-sm font-medium text-gray-700">Fatores</h4>
+                        <h4 className="text-sm font-medium text-foreground">Fatores</h4>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                             <div className="flex justify-between">
-                                <span className="text-gray-600">Capacidade:</span>
+                                <span className="text-muted-foreground">Capacidade:</span>
                                 <span className="font-medium">{factors.capacity}/30</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-600">Progresso:</span>
+                                <span className="text-muted-foreground">Progresso:</span>
                                 <span className="font-medium">{factors.progress}/40</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-600">Qualidade:</span>
+                                <span className="text-muted-foreground">Qualidade:</span>
                                 <span className="font-medium">{factors.quality}/20</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-600">Blockers:</span>
+                                <span className="text-muted-foreground">Blockers:</span>
                                 <span className="font-medium">{factors.blockers}/10</span>
                             </div>
                         </div>
@@ -72,15 +72,15 @@ export function SprintHealthCard({ score, factors, reasons }: SprintHealthCardPr
                 )}
 
                 <div className="space-y-1 pt-4 border-t">
-                    <h4 className="text-sm font-medium text-gray-700">Por que essa nota?</h4>
+                    <h4 className="text-sm font-medium text-foreground">Por que essa nota?</h4>
                     {reasons && reasons.length > 0 ? (
                         reasons.map((r, i) => (
-                            <div key={i} className="text-xs text-gray-600">
+                            <div key={i} className="text-xs text-muted-foreground">
                                 {r}
                             </div>
                         ))
                     ) : (
-                        <div className="text-xs text-gray-600">Sem penalidades.</div>
+                        <div className="text-xs text-muted-foreground">Sem penalidades.</div>
                     )}
                 </div>
 

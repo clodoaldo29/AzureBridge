@@ -23,6 +23,7 @@ export const useWorkItems = (params?: {
             const { data } = await api.get<ApiListResponse<WorkItem>>('/work-items', { params });
             return data;
         },
+        refetchInterval: 30000,
     });
 };
 

@@ -29,4 +29,5 @@ services:
       - ./Frontend/public:/app/public
     environment:
       VITE_API_URL: http://localhost:3001
+      VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       VITE_ENABLE_DEVTOOLS: "true"

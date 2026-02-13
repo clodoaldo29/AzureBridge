@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Loader2, ServerCrash } from 'lucide-react';
 
 interface ServerCheckProps {
@@ -50,13 +50,13 @@ export function ServerCheck({ children }: ServerCheckProps) {
     }
 
     return (
-        <div className="flex h-screen w-full flex-col items-center justify-center bg-white text-gray-600">
+        <div className="flex h-screen w-full flex-col items-center justify-center bg-background text-muted-foreground">
             <div className="w-full max-w-md p-8 flex flex-col items-center">
                 {error ? (
                     <div className="flex flex-col items-center gap-4 text-center">
                         <ServerCrash className="h-16 w-16 text-red-500 mb-2" />
-                        <h2 className="text-2xl font-bold text-gray-900">Ops! O sistema está offline</h2>
-                        <p className="text-gray-500">{error}</p>
+                        <h2 className="text-2xl font-bold text-foreground">Ops! O sistema está offline</h2>
+                        <p className="text-muted-foreground">{error}</p>
                         <button
                             onClick={() => window.location.reload()}
                             className="mt-6 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-md active:scale-95"
@@ -73,12 +73,12 @@ export function ServerCheck({ children }: ServerCheckProps) {
                             </div>
                         </div>
                         <div className="text-center space-y-2">
-                            <h2 className="text-2xl font-bold text-gray-900">AzureBridge</h2>
+                            <h2 className="text-2xl font-bold text-foreground">AzureBridge</h2>
                             <p className="text-lg font-medium text-blue-600 animate-pulse">Conectando ao Servidor...</p>
                             <div className="w-48 h-1.5 bg-gray-100 rounded-full overflow-hidden mt-4 mx-auto">
                                 <div className="h-full bg-blue-600 animate-progress-indeterminate"></div>
                             </div>
-                            <p className="text-xs text-gray-400 mt-6">Aguardando inicialização dos serviços em nuvem.</p>
+                            <p className="text-xs text-muted-foreground mt-6">Aguardando inicialização dos serviços em nuvem.</p>
                         </div>
                     </div>
                 )}
@@ -86,3 +86,4 @@ export function ServerCheck({ children }: ServerCheckProps) {
         </div>
     );
 }
+

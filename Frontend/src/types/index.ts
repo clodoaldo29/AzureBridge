@@ -54,10 +54,13 @@ export interface WorkItem {
     type: string;
     state: string;
     title: string;
+    url?: string;
     description?: string;
     assignedToId?: string;
     assignedTo?: TeamMember;
     originalEstimate?: number;
+    initialRemainingWork?: number;
+    lastRemainingWork?: number;
     completedWork?: number;
     remainingWork?: number;
     storyPoints?: number;
@@ -66,6 +69,7 @@ export interface WorkItem {
     isDelayed: boolean;
     tags: string[];
     createdDate: string;
+    activatedDate?: string;
     changedDate: string;
     closedDate?: string;
     projectId: string;

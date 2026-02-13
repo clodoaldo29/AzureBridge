@@ -13,23 +13,23 @@ export function CapacityTable({ data }: CapacityTableProps) {
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <CardTitle>Capacidade vs Planejado</CardTitle>
-                    <div className="text-sm text-gray-500">
-                        {data.sprint.name} · {formatPercentage(data.summary.utilization)} utilizacao
+                    <div className="text-sm text-muted-foreground">
+                        {data.sprint.name} · {formatPercentage(data.summary.utilization)} utilização
                     </div>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-muted/40 rounded-lg">
                     <div>
-                        <div className="text-xs text-gray-600 mb-1">Total Disponivel</div>
+                        <div className="text-xs text-muted-foreground mb-1">Total Disponível</div>
                         <div className="text-lg font-semibold">{formatHours(data.summary.totalAvailable)}</div>
                     </div>
                     <div>
-                        <div className="text-xs text-gray-600 mb-1">Total Planejado</div>
+                        <div className="text-xs text-muted-foreground mb-1">Total Planejado</div>
                         <div className="text-lg font-semibold">{formatHours(data.summary.totalPlanned)}</div>
                     </div>
                     <div>
-                        <div className="text-xs text-gray-600 mb-1">Balanco</div>
+                        <div className="text-xs text-muted-foreground mb-1">Balanço</div>
                         <div
                             className={cn(
                                 'text-lg font-semibold',
@@ -46,7 +46,7 @@ export function CapacityTable({ data }: CapacityTableProps) {
                     <div className="mb-2 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                         <div className="flex items-center justify-between">
                             <div>
-                                <div className="text-sm font-medium text-amber-900">Trabalho Nao Alocado</div>
+                                <div className="text-sm font-medium text-amber-900">Trabalho Não Alocado</div>
                                 <div className="text-xs text-amber-700">
                                     {data.summary.unassigned.items} items · {formatHours(data.summary.unassigned.totalHours)}
                                 </div>

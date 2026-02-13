@@ -3,6 +3,7 @@ import { getAzureDevOpsClient } from '@/integrations/azure/client';
 import { logger } from '@/utils/logger';
 
 const prisma = new PrismaClient();
+const DONUT_ALLOWED_TYPES = new Set(['Task', 'Bug', 'Test Suite', 'Test Case', 'Test Plan']);
 
 export class CapacityService {
     private mergeDayOffRanges(memberDaysOff: any[], teamDaysOff: any[]): any[] {
@@ -372,7 +373,10 @@ export class CapacityService {
             // Unassigned work (items without assignedToId)
             if (!item.assignedToId) {
                 unassignedWork.totalHours += plannedFinal;
-                unassignedWork.items += 1;
+                // Keep hours logic unchanged; align item count with donut type filter.
+                if (DONUT_ALLOWED_TYPES.has(String(item.type || ''))) {
+                    unassignedWork.items += 1;
+                }
                 return;
             }
 

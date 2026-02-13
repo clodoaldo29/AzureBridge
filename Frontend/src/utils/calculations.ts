@@ -1,4 +1,4 @@
-import type { Sprint, CapacityComparison, SprintSnapshot } from '@/types';
+﻿import type { Sprint, CapacityComparison, SprintSnapshot } from '@/types';
 
 export const calculateSprintHealth = (
     sprint: Sprint,
@@ -122,3 +122,4 @@ export const getHealthStatus = (
         icon: 'XCircle',
     };
 };
+

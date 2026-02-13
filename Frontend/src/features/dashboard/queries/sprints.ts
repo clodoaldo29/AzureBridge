@@ -24,6 +24,7 @@ export const useSprints = (params?: {
             const { data } = await api.get<ApiListResponse<Sprint>>('/sprints', { params });
             return data.data;
         },
+        refetchInterval: 30000,
     });
 };
 
@@ -52,5 +53,6 @@ export const useSprintBurndown = (id: string) => {
             return data.data;
         },
         enabled: !!id,
+        refetchInterval: 60000,
     });
 };

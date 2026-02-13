@@ -146,7 +146,9 @@ async function main() {
                 lastRemainingWork: true,
                 // @ts-ignore - Field exists in DB but client might not be generated yet
                 doneRemainingWork: true,
-                state: true
+                state: true,
+                activatedDate: true,
+                closedDate: true,
             }
         });
 
@@ -235,6 +237,25 @@ async function main() {
 
             const realCompleted = Math.max(0, totalWork - realRemaining);
 
+            // Calculate state counts for this day using activatedDate/closedDate
+            let todoCount = 0;
+            let inProgressCount = 0;
+            let doneCount = 0;
+            const dayEnd = dayKey + 24 * 60 * 60 * 1000;
+
+            for (const item of workItems as any[]) {
+                const closedTs = item.closedDate ? toUTCDateOnly(new Date(item.closedDate)).getTime() : null;
+                const activatedTs = item.activatedDate ? toUTCDateOnly(new Date(item.activatedDate)).getTime() : null;
+
+                if (closedTs !== null && closedTs < dayEnd) {
+                    doneCount++;
+                } else if (activatedTs !== null && activatedTs < dayEnd) {
+                    inProgressCount++;
+                } else {
+                    todoCount++;
+                }
+            }
+
             snapshotRows.push({
                 sprintId: sprint.id,
                 snapshotDate: day,
@@ -244,9 +265,9 @@ async function main() {
                 remainingPoints: 0,
                 completedPoints: 0,
                 totalPoints: 0,
-                todoCount: 0,
-                inProgressCount: 0,
-                doneCount: 0,
+                todoCount,
+                inProgressCount,
+                doneCount,
                 blockedCount: 0,
                 idealRemaining
             });

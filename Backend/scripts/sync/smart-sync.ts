@@ -1,4 +1,4 @@
-
+﻿
 import { PrismaClient } from '@prisma/client';
 import * as azdev from 'azure-devops-node-api';
 import 'dotenv/config';
@@ -18,9 +18,25 @@ interface SyncStats {
     errors: number;
 }
 
-async function smartSync() {
+const DB_RETRY_DELAYS_MS = [5000, 15000, 30000];
+
+function isTransientDbError(error: any): boolean {
+    const msg = String(error?.message || error || '');
+    return (
+        msg.includes('PrismaClientInitializationError') ||
+        msg.includes('Can\'t reach database server') ||
+        msg.includes('Connection terminated unexpectedly') ||
+        msg.includes('Timed out fetching a new connection')
+    );
+}
+
+async function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runSmartSyncAttempt() {
     console.log('🧠 COMPLETE SMART SYNC - Updates + Hierarchy + History\n');
-    console.log('═══════════════════════════════════════════════════════════\n');
+    console.log('============================================================\n');
 
     const startTime = Date.now();
     const stats: SyncStats = {
@@ -45,7 +61,7 @@ async function smartSync() {
         const connection = new azdev.WebApi(orgUrl, authHandler);
         const witApi = await connection.getWorkItemTrackingApi();
 
-        // 2. Determinar "Since" (último sync incremental bem sucedido)
+        // 2. Determine "Since" (last successful incremental/smart sync)
         const lastSync = await prisma.syncLog.findFirst({
             where: {
                 status: 'completed',
@@ -88,7 +104,11 @@ async function smartSync() {
 
         if (changedIds.length === 0) {
             console.log('✅ No changes found in Azure DevOps.');
-            await logSync(startTime, stats, 'smart_sync', 'completed', 0);
+            try {
+                await logSync(startTime, stats, 'smart_sync', 'completed', 0);
+            } catch (logError: any) {
+                console.error('⚠️ Failed to write sync log (completed/no changes):', logError?.message || logError);
+            }
             return;
         }
 
@@ -142,9 +162,9 @@ async function smartSync() {
             console.log(''); // Newline after batch
         }
 
-        console.log('\n═══════════════════════════════════════════════════════════');
+        console.log('\n============================================================');
         console.log('✅ SMART SYNC COMPLETED!');
-        console.log('═══════════════════════════════════════════════════════════');
+        console.log('============================================================');
         console.log(`📊 Stats:`);
         console.log(`   Evaluated: ${stats.totalEvaluated}`);
         console.log(`   Basic Updates: ${stats.updatedBasic}`);
@@ -152,14 +172,39 @@ async function smartSync() {
         console.log(`   History Recovered: ${stats.updatedHistory}`);
         console.log(`   Errors: ${stats.errors}`);
 
-        await logSync(startTime, stats, 'smart_sync', 'completed', stats.totalEvaluated);
-
+        try {
+            await logSync(startTime, stats, 'smart_sync', 'completed', stats.totalEvaluated);
+        } catch (logError: any) {
+            console.error('⚠️ Failed to write sync log (completed):', logError?.message || logError);
+        }
     } catch (error: any) {
         console.error('\n❌ Smart sync failed:', error);
-        await logSync(startTime, stats, 'smart_sync', 'failed', 0, error.message);
-        process.exit(1);
-    } finally {
-        await prisma.$disconnect();
+        try {
+            await logSync(startTime, stats, 'smart_sync', 'failed', 0, error.message);
+        } catch (logError: any) {
+            console.error('❌ Failed to write sync log:', logError?.message || logError);
+        }
+        throw error;
+    }
+}
+
+async function smartSync() {
+    for (let attempt = 1; attempt <= DB_RETRY_DELAYS_MS.length + 1; attempt++) {
+        try {
+            await runSmartSyncAttempt();
+            return;
+        } catch (error: any) {
+            const retriable = isTransientDbError(error);
+            const hasNextAttempt = attempt <= DB_RETRY_DELAYS_MS.length;
+            if (!retriable || !hasNextAttempt) {
+                console.error('\n❌ Smart sync failed after retries.');
+                process.exit(1);
+            }
+
+            const delay = DB_RETRY_DELAYS_MS[attempt - 1];
+            console.warn(`\n⚠️ Database unavailable (attempt ${attempt}). Retrying in ${Math.floor(delay / 1000)}s...`);
+            await sleep(delay);
+        }
     }
 }
 
@@ -314,10 +359,13 @@ async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Pr
         let foundInitial = false;
         let lastSeenRemaining = 0;
         let lastNonZeroRemaining = 0;
+        let closedDate: Date | null = null;
+        let previousState = '';
 
         for (const rev of revisions) {
             const remaining = rev.fields?.['Microsoft.VSTS.Scheduling.RemainingWork'];
             const state = (rev.fields?.['System.State'] || '').toString().toLowerCase();
+            const changedDate = rev.fields?.['System.ChangedDate'];
 
             if (remaining !== undefined) {
                 lastRemainingWork = remaining;
@@ -331,6 +379,12 @@ async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Pr
             }
 
             const isDone = state === 'done' || state === 'closed' || state === 'completed';
+
+            // Capture closedDate: first transition into a done state
+            if (isDone && !closedDate && previousState !== state && changedDate) {
+                closedDate = new Date(changedDate);
+            }
+
             if (isDone && doneRemainingWork === 0) {
                 if (remaining !== undefined && remaining > 0) {
                     doneRemainingWork = remaining;
@@ -340,6 +394,8 @@ async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Pr
                     doneRemainingWork = lastSeenRemaining;
                 }
             }
+
+            previousState = state;
         }
 
         const current = await witApi.getWorkItem(id);
@@ -364,16 +420,18 @@ async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Pr
             }
         }
 
+        const updateData: any = {
+            initialRemainingWork,
+            lastRemainingWork,
+            doneRemainingWork,
+        };
+        if (closedDate) {
+            updateData.closedDate = closedDate;
+        }
+
         await prisma.workItem.update({
             where: { id },
-            data: {
-                // @ts-ignore
-                initialRemainingWork,
-                // @ts-ignore
-                lastRemainingWork,
-                // @ts-ignore
-                doneRemainingWork
-            }
+            data: updateData,
         });
         return true;
     } catch (e) {
@@ -382,4 +440,6 @@ async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Pr
     return false;
 }
 
-smartSync();
+smartSync().finally(async () => {
+    await prisma.$disconnect();
+});

@@ -5,6 +5,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+ARG VITE_AZURE_DEVOPS_ORG_URL
+ENV VITE_AZURE_DEVOPS_ORG_URL=${VITE_AZURE_DEVOPS_ORG_URL}
+
 # Copy package files
 COPY package*.json ./
 

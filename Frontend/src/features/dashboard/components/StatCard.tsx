@@ -13,31 +13,38 @@ interface StatCardProps {
     color?: string;
 }
 
+const colorStyles: Record<string, { bg: string; icon: string }> = {
+    blue: { bg: 'bg-blue-50', icon: 'text-blue-600' },
+    green: { bg: 'bg-green-50', icon: 'text-green-600' },
+    amber: { bg: 'bg-amber-50', icon: 'text-amber-600' },
+    red: { bg: 'bg-red-50', icon: 'text-red-600' },
+    gray: { bg: 'bg-muted', icon: 'text-muted-foreground' },
+};
+
 export function StatCard({ title, value, icon: Icon, description, trend, color = 'blue' }: StatCardProps) {
+    const palette = colorStyles[color] || colorStyles.blue;
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
-                <div className={`p-2 rounded-lg bg-${color}-50`}>
-                    <Icon className={`w-4 h-4 text-${color}-600`} />
+                <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+                <div className={`p-2 rounded-lg ${palette.bg}`}>
+                    <Icon className={`w-4 h-4 ${palette.icon}`} />
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="text-2xl font-bold">{value}</div>
+                <div className="text-2xl font-bold text-foreground">{value}</div>
                 {description && (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                         {description}
                     </div>
                 )}
                 {trend && (
                     <div className="flex items-center gap-1 mt-2">
-                        <span
-                            className={`text-xs font-medium ${trend.isPositive ? 'text-green-600' : 'text-red-600'
-                                }`}
-                        >
+                        <span className={`text-xs font-medium ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                             {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
                         </span>
-                        <span className="text-xs text-gray-500">vs sprint anterior</span>
+                        <span className="text-xs text-muted-foreground">vs sprint anterior</span>
                     </div>
                 )}
             </CardContent>

@@ -2,6 +2,11 @@ import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 
 export class SnapshotService {
+    private isPbiType(type?: string | null): boolean {
+        const t = String(type || '').trim().toLowerCase();
+        return t === 'product backlog item' || t === 'user story' || t === 'pbi';
+    }
+
     private toUtcDay(date: Date): Date {
         const d = new Date(date);
         d.setUTCHours(0, 0, 0, 0);
@@ -121,7 +126,8 @@ export class SnapshotService {
                     // @ts-ignore
                     doneRemainingWork: true,
                     storyPoints: true,
-                    type: true
+                    type: true,
+                    isBlocked: true
                 }
             });
 
@@ -137,7 +143,6 @@ export class SnapshotService {
             let inProgressCount = 0;
             let doneCount = 0;
             let blockedCount = 0;
-            // Note: blocked status not directly in state string usually, but for now we aggregate by state
 
             for (const item of workItems) {
                 const remaining = item.remainingWork || 0;
@@ -147,6 +152,7 @@ export class SnapshotService {
                 const initial = (item as any).initialRemainingWork || 0;
                 const last = (item as any).lastRemainingWork || 0;
                 const done = (item as any).doneRemainingWork || 0;
+                const isPbi = this.isPbiType(item.type);
 
                 // Use current planned scope for this day, so snapshot totalWork reflects scope changes.
                 const currentTotal = remaining + completed;
@@ -166,18 +172,22 @@ export class SnapshotService {
                 const points = item.storyPoints || 0;
                 totalPoints += points;
 
-                // Simple State Mapping (Adjust as needed based on your process)
-                if (state === 'done' || state === 'closed' || state === 'completed') {
-                    completedPoints += points;
-                    doneCount++;
-                } else if (state === 'in progress' || state === 'committed' || state === 'active') {
-                    remainingPoints += points;
-                    inProgressCount++;
-                } else {
-                    // New, To Do, Approved
-                    remainingPoints += points;
-                    todoCount++;
+                // CFD counts exclude PBI/User Story by rule.
+                if (!isPbi) {
+                    if ((item as any).isBlocked) blockedCount++;
+                    if (state === 'done' || state === 'closed' || state === 'completed') {
+                        doneCount++;
+                    } else if (state === 'in progress' || state === 'committed' || state === 'active') {
+                        inProgressCount++;
+                    } else {
+                        // New, To Do, Approved
+                        todoCount++;
+                    }
                 }
+
+                // Points remain unchanged (not used by CFD visual stacks)
+                if (state === 'done' || state === 'closed' || state === 'completed') completedPoints += points;
+                else remainingPoints += points;
             }
 
             // Keep consistency: total = current planned scope; completed = total - remaining

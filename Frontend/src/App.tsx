@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+﻿import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
 import { Toaster } from '@/components/ui/toaster';
@@ -12,8 +12,8 @@ type PlaceholderPageProps = {
 function PlaceholderPage({ title, description }: PlaceholderPageProps) {
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
-            <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
-            <p className="max-w-md text-sm text-gray-500">{description}</p>
+            <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
+            <p className="max-w-md text-sm text-muted-foreground">{description}</p>
         </div>
     );
 }
@@ -49,3 +49,4 @@ export default function App() {
         </ServerCheck>
     );
 }
+

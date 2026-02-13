@@ -1,13 +1,17 @@
-import { useSprints } from '@/services/queries/sprints';
+﻿import { useSprints } from '@/services/queries/sprints';
 import { useCapacityComparison } from '@/services/queries/capacity';
-import { useBlockedWorkItems } from '@/services/queries/workItems';
+import { useBlockedWorkItems, useWorkItems } from '@/services/queries/workItems';
 import { useSprintBurndown } from '@/services/queries/sprints';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
 import { CapacityTable } from '@/components/dashboard/CapacityTable';
 import { MemberCapacityProgress } from '@/components/dashboard/MemberCapacityProgress';
-import { BlockersAlert } from '@/components/dashboard/BlockersAlert';
+import { WorkItemAgingCard } from '../components/WorkItemAgingCard';
 import { BurndownChart } from '@/components/charts/BurndownChart';
+import { CumulativeFlowChart } from '../charts/CumulativeFlowChart';
+import { WorkItemsByStateChart } from '../charts/WorkItemsByStateChart';
+import { WorkItemsByTypeChart } from '../charts/WorkItemsByTypeChart';
+import { WorkItemsByMemberChart } from '../charts/WorkItemsByMemberChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Target, Users, CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
 import { calculateSprintHealthDetails } from '@/utils/calculations';
@@ -15,6 +19,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Project, Sprint } from '@/types';
+import { useEffect, useMemo } from 'react';
 
 export function Dashboard() {
     const { selectedProjectId, setSelectedProjectId } = useAppStore();
@@ -28,7 +33,6 @@ export function Dashboard() {
         },
     });
     const projects = projectsResponse?.data || [];
-    const selectedProject = projects.find(p => p.id === selectedProjectId);
 
     // Fetch current sprints (Active)
     const {
@@ -36,6 +40,28 @@ export function Dashboard() {
         isLoading: sprintsLoading,
         isError: sprintsError,
     } = useSprints({ state: 'Active' });
+
+    const activeProjectIds = useMemo(
+        () => new Set((sprints || []).map((sprint: Sprint) => sprint.projectId)),
+        [sprints]
+    );
+    const activeProjects = useMemo(
+        () => projects.filter((project) => activeProjectIds.has(project.id)),
+        [projects, activeProjectIds]
+    );
+    const selectedProject = activeProjects.find((p) => p.id === selectedProjectId);
+
+    useEffect(() => {
+        if (!activeProjects.length) {
+            if (selectedProjectId) setSelectedProjectId('');
+            return;
+        }
+
+        const hasValidSelection = activeProjects.some((p) => p.id === selectedProjectId);
+        if (!hasValidSelection) {
+            setSelectedProjectId(activeProjects[0].id);
+        }
+    }, [activeProjects, selectedProjectId, setSelectedProjectId]);
 
     // Filter sprints by selected project ID (more reliable than path comparison)
     const currentSprint = selectedProject
@@ -55,6 +81,12 @@ export function Dashboard() {
     // Fetch blocked work items
     const { data: blockedItems } = useBlockedWorkItems();
 
+    // Fetch all work items for the current sprint (donuts)
+    const { data: workItemsResponse } = useWorkItems(
+        currentSprint ? { sprintId: currentSprint.id, limit: 500 } : undefined
+    );
+    const sprintWorkItems = workItemsResponse?.data || [];
+
     // Calculate sprint health score
     const healthDetails = currentSprint
         ? calculateSprintHealthDetails(currentSprint, capacityData, burndownData?.raw)
@@ -64,19 +96,25 @@ export function Dashboard() {
     if (sprintsLoading || capacityLoading) {
         return (
             <div className="flex items-center justify-center h-screen">
-                <div className="text-gray-500">Carregando...</div>
+                <div className="text-muted-foreground">Carregando...</div>
             </div>
         );
     }
 
-    if (sprintsError || capacityError) {
+    if ((sprintsError || capacityError) && !sprints?.length && !capacityData) {
         return (
             <div className="flex items-center justify-center h-screen">
-                <div className="text-center text-gray-500">
+                <div className="text-center text-muted-foreground">
                     <div className="text-lg font-semibold">Não foi possível carregar os dados.</div>
                     <p className="mt-2 text-sm">
                         Verifique sua conexão com a API e tente novamente.
                     </p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                        Tentar novamente
+                    </button>
                 </div>
             </div>
         );
@@ -96,15 +134,15 @@ export function Dashboard() {
             {/* Header */}
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">
+                    <h1 className="text-2xl font-bold text-foreground">
                         {currentSprint ? currentSprint.name : 'Dashboard'}
                     </h1>
                     {currentSprint ? (
-                        <p className="text-gray-500 text-sm mt-1">
+                        <p className="text-muted-foreground text-sm mt-1">
                             {formatSprintDate(currentSprint.startDate)} - {formatSprintDate(currentSprint.endDate)}
                         </p>
                     ) : (
-                        <p className="text-gray-500 text-sm mt-1">
+                        <p className="text-muted-foreground text-sm mt-1">
                             Selecione um projeto com sprint ativa para visualizar os indicadores.
                         </p>
                     )}
@@ -117,7 +155,7 @@ export function Dashboard() {
                         <SelectValue placeholder="Selecione um projeto..." />
                     </SelectTrigger>
                     <SelectContent>
-                        {projects.map((project) => (
+                        {activeProjects.map((project) => (
                             <SelectItem key={project.id} value={project.id}>
                                 {project.name}
                             </SelectItem>
@@ -139,7 +177,7 @@ export function Dashboard() {
                             value={`${plannedCurrent}h`}
                             icon={Target}
                             description={
-                                <span className="text-gray-500 text-xs">
+                                <span className="text-muted-foreground text-xs">
                                     Inicial: {plannedInitial}h | Final: {plannedCurrent}h | Delta {plannedDelta >= 0 ? '+' : ''}{plannedDelta}h
                                 </span>
                             }
@@ -163,10 +201,10 @@ export function Dashboard() {
 
                     {/* Sprint Progress Bar based on Planned vs Remaining */}
                     {capacityData && plannedCurrent > 0 && (
-                        <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
+                        <div className="bg-card rounded-lg shadow p-4 border border-border">
                             <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-sm font-medium text-gray-500">Progresso da Sprint (Baseado em Horas)</h3>
-                                <span className="text-sm font-bold text-gray-900">
+                                <h3 className="text-sm font-medium text-muted-foreground">Progresso da Sprint (Baseado em Horas)</h3>
+                                <span className="text-sm font-bold text-foreground">
                                     {Math.max(0, Math.round((completedHours / plannedCurrent) * 100))}%
                                 </span>
                             </div>
@@ -180,7 +218,7 @@ export function Dashboard() {
                                 ></div>
                             </div>
                             <div className="flex justify-between items-start mt-2">
-                                <p className="text-xs text-gray-400">
+                                <p className="text-xs text-muted-foreground">
                                     {completedHours}h concluídas de {plannedCurrent}h planejadas
                                 </p>
                                 {/* Scope Creep Warning Message */}
@@ -194,7 +232,7 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    {/* Sprint Health + Blocked Items */}
+                    {/* Sprint Health + Work Item Aging */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {healthScore !== null && (
                             <SprintHealthCard
@@ -202,14 +240,42 @@ export function Dashboard() {
                                 reasons={healthDetails?.penalties}
                             />
                         )}
-                        {blockedItems && <BlockersAlert blockedItems={blockedItems} />}
+                        <WorkItemAgingCard
+                            workItems={sprintWorkItems}
+                            capacityData={capacityData}
+                            sprintStartDate={currentSprint.startDate}
+                            sprintEndDate={currentSprint.endDate}
+                            dayOffDates={capacityData?.summary.dayOffDates || []}
+                            projectName={selectedProject?.name}
+                        />
                     </div>
+
+                    {/* Work Items Distribution Donuts */}
+                    {sprintWorkItems.length > 0 && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <WorkItemsByStateChart workItems={sprintWorkItems} />
+                            <WorkItemsByTypeChart workItems={sprintWorkItems} />
+                            <WorkItemsByMemberChart workItems={sprintWorkItems} />
+                        </div>
+                    )}
 
                     {/* Main Content */}
                     <div className="space-y-6">
                         {/* Capacity Table */}
                         {capacityData && <CapacityTable data={capacityData} />}
                         {capacityData && <MemberCapacityProgress data={capacityData} />}
+
+                        {/* Cumulative Flow Diagram */}
+                        {burndownData && (
+                            <div className="pt-2">
+                                <CumulativeFlowChart
+                                    data={burndownData.raw}
+                                    sprintStartDate={currentSprint.startDate}
+                                    sprintEndDate={currentSprint.endDate}
+                                    dayOffDates={capacityData?.summary.dayOffDates || []}
+                                />
+                            </div>
+                        )}
 
                         {/* Burndown Chart */}
                         {burndownData && (
@@ -229,10 +295,12 @@ export function Dashboard() {
                     </div>
                 </>
             ) : (
-                <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-white py-16 text-gray-500">
+                <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-card py-16 text-muted-foreground">
                     Nenhuma sprint ativa encontrada no momento.
                 </div>
             )}
         </div>
     );
 }
+
+

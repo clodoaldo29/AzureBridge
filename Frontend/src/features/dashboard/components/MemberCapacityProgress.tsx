@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+﻿import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatHours, formatPercentage } from '@/utils/formatters';
 import {
     Bar,
@@ -46,16 +46,16 @@ const TooltipContent = ({ active, payload }: any) => {
     if (!active || !payload?.length) return null;
     const row = payload[0].payload as ChartRow;
     return (
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
-            <div className="mb-2 font-semibold text-gray-900">{row.name}</div>
-            <div className="space-y-1 text-gray-600">
-                <div>Capacidade: <span className="font-medium text-gray-800">{formatHours(row.capacity)}</span></div>
-                <div>Concluido: <span className="font-medium text-gray-800">{formatHours(row.completed)}</span></div>
-                <div>Restante: <span className="font-medium text-gray-800">{formatHours(row.remainingToCapacity)}</span></div>
+        <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-sm">
+            <div className="mb-2 font-semibold text-foreground">{row.name}</div>
+            <div className="space-y-1 text-muted-foreground">
+                <div>Capacidade: <span className="font-medium text-foreground">{formatHours(row.capacity)}</span></div>
+                <div>Concluído: <span className="font-medium text-foreground">{formatHours(row.completed)}</span></div>
+                <div>Restante: <span className="font-medium text-foreground">{formatHours(row.remainingToCapacity)}</span></div>
                 {row.overCapacity > 0 && (
                     <div>Excedente: <span className="font-medium text-amber-700">+{formatHours(row.overCapacity)}</span></div>
                 )}
-                <div>Percentual: <span className="font-medium text-gray-800">{formatPercentage(row.pct)}</span></div>
+                <div>Percentual: <span className="font-medium text-foreground">{formatPercentage(row.pct)}</span></div>
             </div>
         </div>
     );
@@ -94,28 +94,28 @@ export function MemberCapacityProgress({ data }: MemberCapacityProgressProps) {
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <CardTitle>Capacidade por Pessoa</CardTitle>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-muted-foreground">
                         {formatHours(totalCompleted)} de {formatHours(totalCapacity)} · {formatPercentage(teamPct)}
                     </div>
                 </div>
             </CardHeader>
             <CardContent>
                 <div className="mb-4 flex flex-wrap items-center gap-4 text-xs">
-                    <div className="flex items-center gap-2 text-gray-600">
+                    <div className="flex items-center gap-2 text-muted-foreground">
                         <span className="inline-block h-2 w-2 rounded-full bg-blue-600" />
-                        Concluido
+                        Concluído
                     </div>
-                    <div className="flex items-center gap-2 text-gray-600">
+                    <div className="flex items-center gap-2 text-muted-foreground">
                         <span className="inline-block h-2 w-2 rounded-full bg-gray-300" />
                         Restante para capacidade
                     </div>
-                    <div className="flex items-center gap-2 text-gray-600">
+                    <div className="flex items-center gap-2 text-muted-foreground">
                         <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
                         Excedente
                     </div>
                 </div>
 
-                <div className="rounded-lg border border-gray-100 bg-gray-50/30 p-3">
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <ResponsiveContainer width="100%" height={chartHeight}>
                         <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 20, left: 24, bottom: 8 }}>
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E5E7EB" />
@@ -147,3 +147,5 @@ export function MemberCapacityProgress({ data }: MemberCapacityProgressProps) {
         </Card>
     );
 }
+
+
