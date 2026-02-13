@@ -249,6 +249,21 @@ docker exec -it azurebridge-api npx tsx scripts/sync/sync-all-projects.js
 # Forçar recalculo de burndown de uma sprint
 docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-burndown.ts
 
+# Recuperar closedDate para items Done (via revisões Azure DevOps)
+docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-closed-dates.ts
+
+# Reconstruir contadores de estado nos snapshots
+docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-snapshot-counts.ts
+
+# Verificar estado do banco (sprints, WIs, snapshots)
+docker exec -it azurebridge-api npx tsx scripts/maintenance/check-db-state.ts
+
+# Validar contadores dos snapshots
+docker exec -it azurebridge-api npx tsx scripts/maintenance/validate-snapshot-counts.ts
+
+# Corrigir snapshots com contadores zerados
+docker exec -it azurebridge-api npx tsx scripts/maintenance/fix-snapshot-counts.ts
+
 # Reset do banco (apenas dev)
 docker exec -it azurebridge-api npm run db:reset
 ```
@@ -309,3 +324,25 @@ Ou execute o backfill para gerar histórico:
 ```bash
 docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-burndown.ts
 ```
+
+### CFD mostrando todos os itens em "A Fazer"
+
+Se o Cumulative Flow Diagram mostra todos os items como "A Fazer" em todos os dias, os contadores dos snapshots provavelmente estão zerados. Execute os scripts de recuperação:
+
+```bash
+# 1. Recuperar closedDate dos items Done
+docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-closed-dates.ts
+
+# 2. Reconstruir contadores nos snapshots
+docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-snapshot-counts.ts
+```
+
+### Work Item Aging sem links para Azure DevOps
+
+Configure `VITE_AZURE_DEVOPS_ORG_URL` no arquivo `.env` do frontend com a URL da sua organização:
+
+```env
+VITE_AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
+```
+
+Essa variável é necessária para que os links "Abrir no Azure DevOps" funcionem no modal de detalhes do Work Item Aging.

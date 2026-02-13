@@ -196,7 +196,13 @@ Grupos de endpoints:
 
 ## Scripts de manutenção
 
-Ver documentação em [scripts/README.md](scripts/README.md).
+O diretório `scripts/` contém scripts de sincronização, backfill, manutenção e diagnóstico, incluindo:
+
+- **Backfill**: recuperação de `closedDate` via revisões, reconstrução de contadores de snapshots, geração de burndown histórico
+- **Manutenção**: verificação de estado do banco, validação de snapshots, correção de contadores, execução manual de snapshots
+- **Sync**: sincronização incremental (smart-sync) e completa, com captura automática de `closedDate`
+
+Ver documentação completa em [scripts/README.md](scripts/README.md).
 
 ## Docker
 

@@ -4,6 +4,19 @@ Este documento explica como usar o dashboard do AzureBridge e o significado de c
 
 ---
 
+## Verificação de conexão
+
+Ao abrir o AzureBridge, o sistema verifica automaticamente a conexão com o servidor backend. Durante essa verificação:
+
+- A tela exibe "Conectando ao Servidor..." com uma barra de progresso animada
+- O frontend faz polling a cada 2 segundos no endpoint `/api/health`
+- Se o servidor responder com sucesso, o dashboard é exibido normalmente
+- Se após ~2 minutos o servidor não responder, uma tela de erro aparece com o botão "Tentar Novamente"
+
+> Essa verificação é útil quando os serviços em nuvem (Supabase, containers) estão inicializando.
+
+---
+
 ## Navegação básica
 
 ### Seletor de projeto
@@ -167,27 +180,42 @@ Se houver work items da sprint sem responsável (`assignedTo` vazio), um alerta 
 
 ## Capacidade por Pessoa
 
-Painel com uma linha por membro do time, mostrando o progresso individual de entrega na sprint.
+Gráfico de barras horizontais empilhadas que mostra o progresso individual de cada membro do time na sprint.
 
-### Para cada membro
+### Cabeçalho
 
-- **Nome e avatar** — identificação do membro
-- **Horas concluídas / capacidade** — ex: `Concluído 20h de 40h`
-- **Barra de progresso** — percentual visual preenchido conforme entrega
-- **Badge de status:**
+No topo, exibe os totais do time:
+- **Xh de Yh · Z%** — horas concluídas, capacidade total e percentual geral
 
-| Status | Quando aparece | Cor |
-|---|---|---|
-| Dentro | Conclusão < 85% da capacidade | Azul |
-| No limite | Conclusão entre 85% e 100% | Verde |
-| Acima | Conclusão > 100% da capacidade | Âmbar |
+### Legenda
 
-- **Restante para capacidade** — horas que faltam para atingir a meta de capacidade
-- **Meta** — capacidade disponível do membro (ou "Acima: +Xh" se ultrapassou)
+Três indicadores de cores:
+
+| Cor | Significado |
+|---|---|
+| Azul | Horas concluídas (dentro da capacidade) |
+| Cinza | Horas restantes para atingir a capacidade |
+| Âmbar | Horas excedentes (acima da capacidade) |
+
+### Barras
+
+Cada membro tem uma barra horizontal empilhada com até três segmentos:
+- **Azul** — trabalho concluído até o limite da capacidade disponível
+- **Cinza** — espaço restante até a capacidade
+- **Âmbar** — horas que ultrapassaram a capacidade (sobrecarga)
+
+### Tooltip
+
+Ao passar o mouse sobre uma barra, o tooltip exibe:
+- Capacidade disponível do membro
+- Horas concluídas
+- Horas restantes
+- Horas excedentes (se houver)
+- Percentual de conclusão
 
 ### Ordenação
 
-Os membros são ordenados do maior para o menor percentual de conclusão.
+Os membros são ordenados do maior para o menor percentual de conclusão. Membros com capacidade zero são omitidos do gráfico.
 
 ---
 
@@ -300,6 +328,151 @@ Um desvio **positivo** significa que há mais trabalho restante do que deveria h
 
 ---
 
+## Fluxo Acumulado da Sprint (Cumulative Flow Diagram)
+
+Gráfico de áreas empilhadas que mostra a evolução diária da quantidade de work items em cada estado ao longo da sprint.
+
+### Camadas
+
+O gráfico empilha quatro camadas, de baixo para cima:
+
+| Camada | Cor | Dado |
+|---|---|---|
+| Concluído | Verde (`#48BB78`) | `doneCount` do snapshot |
+| Bloqueado | Vermelho (`#FC8181`) | `blockedCount` (subconjunto de In Progress) |
+| Em Progresso | Azul (`#63B3ED`) | `inProgressCount` menos bloqueados |
+| A Fazer | Cinza (`#CBD5E1`) | `todoCount` do snapshot |
+
+> A camada "Bloqueado" só aparece se houver pelo menos um item bloqueado em algum dia da sprint.
+
+### Badge de total
+
+No canto superior direito, um badge exibe a quantidade total de itens na sprint.
+
+### Eixo X
+
+Apenas dias úteis são exibidos (fins de semana e dias off configurados são excluídos). Os rótulos aparecem no formato `Seg 03/02` (dia da semana abreviado + data).
+
+### Tooltip
+
+Ao passar o mouse sobre o gráfico, o tooltip exibe os valores de cada camada mais o total do dia.
+
+### Como interpretar
+
+- **Banda "Concluído" crescendo** — time está entregando, progresso saudável
+- **Banda "A Fazer" alargando** — o time não está puxando trabalho, possível impedimento
+- **Banda "Em Progresso" alargando** — itens ficando travados, possível gargalo
+- **Banda "Bloqueado" aparecendo** — impedimentos ativos que precisam ser resolvidos
+- **Todas as bandas convergindo para "Concluído" no final** — sprint bem-sucedida
+
+### Dados
+
+O CFD usa os mesmos snapshots diários do Burndown (`GET /sprints/:id/burndown`), especificamente os campos `todoCount`, `inProgressCount`, `doneCount` e `blockedCount` de cada `SprintSnapshot`.
+
+---
+
+## Distribuição de Work Items
+
+Três gráficos donut lado a lado que mostram como os work items da sprint estão distribuídos.
+
+> Estes gráficos filtram apenas tipos operacionais: Task, Bug, Test Suite, Test Case e Test Plan. PBIs, Features e Epics são excluídos.
+
+### Work Items por Estado
+
+Donut que agrupa os work items pelo estado atual (New, To Do, In Progress, Done, etc.).
+
+**Cores por estado:**
+
+| Estado | Cor |
+|---|---|
+| New | Cinza |
+| To Do / Active / Approved | Azul claro |
+| Committed | Azul |
+| In Progress | Laranja |
+| In Test | Roxo |
+| Done / Closed | Verde |
+| Removed | Vermelho |
+
+O centro do donut exibe a contagem total de itens. A legenda abaixo mostra cada estado com sua contagem.
+
+### Work Items por Tipo
+
+Donut que agrupa os work items pelo tipo.
+
+**Cores por tipo:**
+
+| Tipo | Cor |
+|---|---|
+| Task | Azul |
+| Bug | Vermelho |
+| Test Suite | Roxo escuro |
+| Test Case | Roxo médio |
+| Test Plan | Roxo claro |
+
+### Work Items por Membro
+
+Donut que agrupa os work items pelo responsável (assignedTo).
+
+- Cada membro recebe uma cor de uma paleta de 15 cores
+- Itens sem responsável aparecem como "Não Alocados" em cinza
+- Nomes são abreviados automaticamente: primeiro nome quando único, primeiro + último quando há ambiguidade
+
+---
+
+## Work Item Aging
+
+Painel que analisa o "envelhecimento" de Tasks que estão "In Progress", comparando o tempo real gasto com o tempo esperado baseado no esforço e capacidade do responsável.
+
+### Cards de resumo
+
+Três cards coloridos mostram a distribuição:
+
+| Card | Cor | Condição |
+|---|---|---|
+| Crítico | Vermelho | Ratio > 1.2 (item levando mais de 120% do esperado) |
+| Atenção | Âmbar | Ratio entre 1.0 e 1.2 (item levando mais que o esperado) |
+| No prazo | Verde | Ratio ≤ 1.0 (item dentro do esperado) |
+
+### Como o ratio é calculado
+
+```
+ratio = horas úteis reais em progresso / horas esperadas
+```
+
+**Horas úteis reais:** contabiliza apenas horas de trabalho (8h-17h, excluindo almoço 12h-13h), em dias úteis (sem fins de semana e sem dias off da sprint), desde a data de ativação (`activatedDate`) até agora.
+
+**Horas esperadas:** derivadas do esforço planejado e da capacidade diária do responsável:
+```
+esforço = max(initialRemainingWork, originalEstimate, completedWork+remainingWork, lastRemainingWork)
+         mínimo: 1h
+
+capacidade por hora = capacidade diária do membro / 8h
+horas esperadas = esforço / capacidade por hora
+```
+
+A capacidade diária vem dos dados de capacidade da sprint (`CapacityComparison`). Se o membro não tiver capacidade definida, usa a média do time (fallback: 5h/dia).
+
+### Modal de detalhes
+
+Ao clicar em "Ver críticos", "Ver atenção" ou "Ver no prazo", abre um modal com a lista filtrada de work items. Para cada item:
+
+- **ID e título** — identificação do work item
+- **Responsável** — membro alocado
+- **Esforço** — horas planejadas
+- **Capacidade/dia** — capacidade diária do responsável
+- **Badge** — dias reais / dias esperados
+- **Botão "Ver detalhes"** — expande detalhes adicionais:
+  - Horas previstas
+  - Início em progresso
+  - Dias e horas úteis em atraso
+  - Link "Abrir no Azure DevOps" (requer `VITE_AZURE_DEVOPS_ORG_URL` configurada no `.env`)
+
+### Filtros do modal
+
+No topo do modal, botões permitem alternar entre: Todos, Críticos, Atenção e No prazo.
+
+---
+
 ## Dicas de uso
 
 **A velocidade necessária é muito maior que a atual?**
@@ -316,3 +489,15 @@ Indica que itens novos estão sendo adicionados durante a sprint. Isso impacta a
 
 **Os dados não estão atualizando?**
 O sync automático ocorre a cada hora. Para forçar uma atualização imediata, um administrador pode disparar um sync incremental via API (`POST /sync/incremental`) ou aguardar o próximo ciclo.
+
+**O CFD mostra bandas alargando?**
+Indica gargalo no fluxo. Se a banda "A Fazer" cresce, o time não está puxando trabalho. Se "Em Progresso" cresce, há itens travados. Verifique os blockers e redistribua tarefas.
+
+**Muitos itens no Aging "Crítico"?**
+Revise as estimativas de esforço ou verifique se a capacidade diária dos membros está correta no Azure DevOps. Itens sem estimativa recebem um mínimo de 1h, o que pode distorcer o ratio.
+
+**A distribuição por membro está desigual?**
+Use o gráfico "Work Items por Membro" para identificar sobrecarga e redistribuir tarefas. Itens "Não Alocados" não entram no cálculo de capacidade.
+
+**Os links "Abrir no Azure DevOps" não funcionam no Aging?**
+Configure a variável `VITE_AZURE_DEVOPS_ORG_URL` no arquivo `.env` do frontend com a URL da sua organização (ex: `https://dev.azure.com/sua-organizacao`).

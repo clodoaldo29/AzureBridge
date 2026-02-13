@@ -30,9 +30,17 @@ src/
 │       │   ├── CapacityTable.tsx
 │       │   ├── MemberCapacityProgress.tsx
 │       │   ├── SprintHealthCard.tsx
-│       │   └── StatCard.tsx
-│       └── charts/
-│           └── BurndownChart.tsx
+│       │   ├── StatCard.tsx
+│       │   └── WorkItemAgingCard.tsx
+│       ├── charts/
+│       │   ├── BurndownChart.tsx
+│       │   ├── CumulativeFlowChart.tsx
+│       │   ├── WorkItemsByMemberChart.tsx
+│       │   ├── WorkItemsByStateChart.tsx
+│       │   └── WorkItemsByTypeChart.tsx
+│       └── queries/
+│           ├── sprints.ts          # useSprints, useSprintBurndown
+│           └── workItems.ts        # useWorkItems, useBlockedWorkItems
 │
 ├── components/                 # Componentes compartilhados
 │   ├── layout/
@@ -53,10 +61,8 @@ src/
 │
 ├── services/
 │   ├── api.ts                  # Instância Axios configurada
-│   └── queries/                # Hooks React Query
-│       ├── capacity.ts         # useCapacityComparison
-│       ├── sprints.ts          # useSprints, useSprintBurndown
-│       └── workItems.ts        # useBlockedWorkItems
+│   └── queries/                # Hooks React Query (legado, migrado para features/)
+│       └── capacity.ts         # useCapacityComparison
 │
 ├── stores/
 │   └── appStore.ts             # Estado global: projeto selecionado
@@ -79,7 +85,20 @@ Crie um arquivo `.env` na pasta `Frontend/` com base no `.env.example`:
 
 ```env
 VITE_API_URL=http://localhost:3001
+VITE_API_VERSION=v1
+VITE_AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
 ```
+
+| Variável | Obrigatória | Descrição |
+|---|---|---|
+| `VITE_API_URL` | Sim | URL base do backend |
+| `VITE_API_VERSION` | Não | Versão da API (default: v1) |
+| `VITE_AZURE_DEVOPS_ORG_URL` | Não | URL da organização Azure DevOps (para links no Work Item Aging) |
+| `VITE_ENABLE_ANALYTICS` | Não | Habilita analytics (default: true) |
+| `VITE_ENABLE_REPORTS` | Não | Habilita relatórios (default: true) |
+| `VITE_ENABLE_WIKI` | Não | Habilita wiki (default: true) |
+| `VITE_ENABLE_DEVTOOLS` | Não | Habilita devtools (default: true em dev) |
+| `VITE_LOG_LEVEL` | Não | Nível de log (default: debug em dev) |
 
 Em produção, o Nginx do container serve o frontend e faz proxy das chamadas à API. Ver [nginx.conf](nginx.conf).
 
@@ -107,9 +126,27 @@ Todos os dados do dashboard são carregados via React Query com os hooks em `src
 | Hook | Endpoint | Descrição |
 |---|---|---|
 | `useSprints` | `GET /sprints` | Lista sprints (filtrável por estado) |
-| `useSprintBurndown` | `GET /sprints/:id/burndown` | Dados de burndown da sprint |
-| `useCapacityComparison` | `GET /sprints/:id/capacity/comparison` | Capacidade vs planejado |
+| `useSprintBurndown` | `GET /sprints/:id/burndown` | Dados de burndown e snapshots da sprint |
+| `useCapacityComparison` | `GET /sprints/:id/capacity/comparison` | Capacidade vs planejado por membro |
+| `useWorkItems` | `GET /work-items` | Lista work items com filtros (sprintId, type, state, limit) |
 | `useBlockedWorkItems` | `GET /work-items/blocked` | Work items bloqueados |
+
+## Componentes do Dashboard
+
+| Componente | Pasta | Descrição |
+|---|---|---|
+| `StatCard` | components/ | Cards de métricas no topo (capacidade, planejamento, restante, concluído, impedimentos) |
+| `SprintHealthCard` | components/ | Score de saúde da sprint (0-100) com penalidades |
+| `BlockersAlert` | components/ | Painel de work items bloqueados |
+| `CapacityTable` | components/ | Tabela capacidade vs planejado por membro |
+| `MemberCapacityProgress` | components/ | Gráfico de barras horizontais empilhadas por pessoa |
+| `WorkItemAgingCard` | components/ | Aging de Tasks em progresso com modal de detalhes |
+| `BurndownChart` | charts/ | Burndown interativo com ideal, remaining, projeção e scope creep |
+| `CumulativeFlowChart` | charts/ | CFD com 4 camadas empilhadas (Done, Blocked, InProgress, ToDo) |
+| `WorkItemsByStateChart` | charts/ | Donut de work items por estado |
+| `WorkItemsByTypeChart` | charts/ | Donut de work items por tipo |
+| `WorkItemsByMemberChart` | charts/ | Donut de work items por responsável |
+| `ServerCheck` | common/ | Health check de conexão com o backend na inicialização |
 
 ## Estado global
 

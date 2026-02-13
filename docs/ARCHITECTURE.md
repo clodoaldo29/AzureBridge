@@ -160,26 +160,34 @@ capacityController.getComparison()
 ```
 App.tsx (React Router)
   │
-  └── AppLayout (Header + Sidebar)
+  └── ServerCheck (health check na inicialização)
         │
-        └── Dashboard (features/dashboard/pages/Dashboard.tsx)
+        └── AppLayout (Header + Sidebar)
               │
-              ├── Seletor de projeto (Zustand: selectedProjectId)
-              │
-              ├── Data fetching (React Query)
-              │     ├── useSprints({ state: 'Active' })
-              │     ├── useCapacityComparison(sprintId)
-              │     ├── useSprintBurndown(sprintId)
-              │     └── useBlockedWorkItems()
-              │
-              └── Componentes
-                    ├── StatCard (×5) — métricas do topo
-                    ├── ProgressBar — progresso da sprint em horas
-                    ├── SprintHealthCard — score e penalidades
-                    ├── BlockersAlert — work items bloqueados
-                    ├── CapacityTable — capacidade vs planejado
-                    ├── MemberCapacityProgress — progresso por pessoa
-                    └── BurndownChart — gráfico de burndown interativo
+              └── Dashboard (features/dashboard/pages/Dashboard.tsx)
+                    │
+                    ├── Seletor de projeto (Zustand: selectedProjectId)
+                    │
+                    ├── Data fetching (React Query)
+                    │     ├── useSprints({ state: 'Active' })
+                    │     ├── useCapacityComparison(sprintId)
+                    │     ├── useSprintBurndown(sprintId)
+                    │     ├── useBlockedWorkItems()
+                    │     └── useWorkItems({ sprintId, limit: 500 })
+                    │
+                    └── Componentes
+                          ├── StatCard (×5) — métricas do topo
+                          ├── ProgressBar — progresso da sprint em horas
+                          ├── SprintHealthCard — score e penalidades
+                          ├── WorkItemAgingCard — aging de items In Progress
+                          ├── WorkItemsByStateChart — donut por estado
+                          ├── WorkItemsByTypeChart — donut por tipo
+                          ├── WorkItemsByMemberChart — donut por membro
+                          ├── BlockersAlert — work items bloqueados
+                          ├── CapacityTable — capacidade vs planejado
+                          ├── MemberCapacityProgress — barras horizontais por pessoa
+                          ├── CumulativeFlowChart — fluxo acumulado (CFD)
+                          └── BurndownChart — gráfico de burndown interativo
 ```
 
 ---
@@ -208,6 +216,16 @@ O frontend recebe os snapshots e constrói o gráfico no cliente:
 2. Linha **Remaining**: `remainingWork` de cada snapshot
 3. Linha **Projeção**: extrapolação linear pela velocidade média (`burnedTotal / workedDays`)
 4. Barras **Escopo**: diferença positiva em `totalWork` entre dias consecutivos
+
+### Dados do Cumulative Flow Diagram (CFD)
+
+Os mesmos `SprintSnapshot` também alimentam o CFD via os campos de contagem de estado:
+- `todoCount` — work items ainda não iniciados
+- `inProgressCount` — work items em andamento
+- `doneCount` — work items concluídos
+- `blockedCount` — work items bloqueados (subconjunto de inProgress)
+
+Esses contadores são calculados pelo `SnapshotService` com base em `activatedDate` e `closedDate` dos work items. O `blockedCount` usa o campo `isBlocked` do work item.
 
 ---
 

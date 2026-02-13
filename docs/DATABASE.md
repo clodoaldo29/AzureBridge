@@ -187,9 +187,17 @@ Work item do Azure DevOps (Task, Bug, PBI, Feature, Epic).
 | `isBlocked` | Boolean | Se está impedido |
 | `isDelayed` | Boolean | Se está atrasado |
 | `isRemoved` | Boolean | Se foi removido da sprint |
+| `createdDate` | DateTime | Data de criação do work item |
+| `changedDate` | DateTime | Data da última alteração |
+| `activatedDate` | DateTime? | Data em que foi movido para "In Progress" (usado pelo CFD e Aging) |
+| `closedDate` | DateTime? | Data em que foi concluído (recuperado via revisões Azure DevOps) |
+| `resolvedDate` | DateTime? | Data de resolução |
+| `stateChangeDate` | DateTime? | Data da última mudança de estado |
 | `tags` | String[] | Tags do Azure |
 | `areaPath` | String | Área do projeto |
 | `iterationPath` | String | Iteração (sprint) no Azure |
+| `commentCount` | Int | Quantidade de comentários |
+| `attachmentCount` | Int | Quantidade de anexos |
 
 ---
 
