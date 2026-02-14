@@ -23,7 +23,10 @@
     "lint": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
-    "sync:smart": "tsx scripts/sync/smart-sync.ts"
+    "sync:smart": "tsx scripts/sync/smart-sync.ts",
+    "sync:hourly": "tsx scripts/hourly-sync.ts",
+    "sync:daily": "tsx scripts/daily-sync.ts",
+    "sync:full": "tsx scripts/full-sync.ts"
   },
   "keywords": [
     "azure-devops",

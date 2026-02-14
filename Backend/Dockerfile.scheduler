@@ -1,16 +1,18 @@
 # ========================================
 # Auto Sync Scheduler
 # ========================================
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-RUN apk add --no-cache openssl tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  openssl tzdata ca-certificates cron && \
+  rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Install dependencies (including dev deps for tsx)
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm install && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # Copy source and scripts
 COPY . .

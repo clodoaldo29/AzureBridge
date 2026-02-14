@@ -94,16 +94,18 @@ auto-sync (bootstrap mode)
 Executado automaticamente a cada hora pelo container `auto-sync`:
 
 ```
-smart-sync.ts
+hourly-sync.ts (AUTO_SYNC_MODE=hourly)
   │
-  ├── Busca work items alterados desde o último sync
-  │     (usa campo `changedDate` para filtrar)
+  ├── smart-sync.ts
+  │     ├── Busca work items alterados desde o último sync (WIQL + changedDate)
+  │     ├── Atualiza work items e hierarquia
+  │     └── Captura closedDate via revisões para items Done
   │
-  ├── Atualiza work items e hierarquia
+  ├── run-snapshot.ts
+  │     └── Captura estado atual → salva em sprint_snapshots
   │
-  ├── Recalcula métricas da sprint ativa
-  │
-  └── Atualiza `lastSyncAt` no SyncLog
+  └── rebuild-active-burndown-event-model.ts
+        └── Reconstrói burndown via modelo de eventos (revisões)
 ```
 
 ### 3. Sync diário (daily)
@@ -111,17 +113,21 @@ smart-sync.ts
 Executado uma vez por dia pelo container `auto-sync`:
 
 ```
-auto-sync.ts (daily mode)
+daily-sync.ts (AUTO_SYNC_MODE=daily)
   │
-  ├── sync incremental (smart-sync)
-  │
-  ├── sync de membros e capacidade
-  │
-  ├── run-snapshot.ts
-  │     └── Captura estado atual → salva em `sprint_snapshots`
-  │
-  └── cálculo de métricas (velocity, cycle time)
+  ├── sync-all-projects.js → atualiza projetos e sprints
+  ├── sync-all-team-members.js → atualiza membros
+  ├── sync-target-projects.js → bootstrap de projetos novos
+  ├── smart-sync.ts → sync incremental de work items
+  ├── backfill-project-history-batch.ts → campos históricos
+  ├── backfill-closed-dates.ts → closedDate via revisões
+  ├── sync-capacity.js → capacidade por sprint/membro
+  ├── run-snapshot.ts → snapshot diário
+  ├── rebuild-active-burndown-event-model.ts → burndown via eventos
+  └── validate-snapshot-counts.ts → validação de contadores
 ```
+
+Cada etapa tem retry com exponential backoff (default: 3 tentativas).
 
 ---
 
@@ -225,7 +231,21 @@ Os mesmos `SprintSnapshot` também alimentam o CFD via os campos de contagem de 
 - `doneCount` — work items concluídos
 - `blockedCount` — work items bloqueados (subconjunto de inProgress)
 
-Esses contadores são calculados pelo `SnapshotService` com base em `activatedDate` e `closedDate` dos work items. O `blockedCount` usa o campo `isBlocked` do work item.
+Esses contadores são calculados pelo `SnapshotService` apenas para tipos contáveis (`isCountableChartType`: Task, Bug, Test Case). PBIs, Features e Epics são excluídos. O `blockedCount` usa o campo `isBlocked` do work item.
+
+### Modelo baseado em eventos (Event Model)
+
+O script `rebuild-active-burndown-event-model.ts` reconstrói os snapshots de sprints ativas usando revisões de work items do Azure DevOps, em vez de depender apenas do estado atual. Isso garante burndown preciso mesmo quando o sync diário não capturou todos os estados intermediários.
+
+O processo:
+1. Busca todas as revisões dos work items da sprint via Azure DevOps API
+2. Para cada dia útil da sprint, determina o estado de cada item naquele dia
+3. Calcula `remainingWork`, `completedWork`, `totalWork` por dia
+4. Calcula contadores de estado (`todoCount`, `inProgressCount`, `doneCount`, `blockedCount`)
+5. Reconstrói a linha ideal piecewise quando o escopo muda
+6. Salva os snapshots recalculados no banco
+
+Tipos considerados para contadores: Task, Bug, Test Case (via `COUNTABLE_CHART_TYPES`).
 
 ---
 
@@ -264,17 +284,17 @@ O "desvio de progresso" compara o percentual do tempo da sprint decorrido com o 
 ### `api` — Backend
 
 ```dockerfile
-# Multi-stage build
-# Stage 1: deps + build TypeScript
+# Multi-stage build (node:20-bookworm-slim)
+# Stage 1: deps (npm ci) + build TypeScript
 # Stage 2: runtime Node.js com dist/ compilado
 ```
 
-Expõe a porta `3001`. Aguarda o Redis estar disponível antes de iniciar.
+Expõe a porta `3001`. Health check via `curl -fsS http://localhost:3001/api/health`. Os containers `web` e `auto-sync` usam `depends_on` com `condition: service_healthy` para aguardar a API estar pronta.
 
 ### `web` — Frontend
 
 ```dockerfile
-# Stage 1: build Vite (node)
+# Stage 1: build Vite (node, npm ci)
 # Stage 2: Nginx serve dist/
 ```
 
@@ -285,10 +305,10 @@ O `nginx.conf` configura:
 
 ### `auto-sync` — Scheduler
 
-Usa o `Dockerfile.scheduler`. Executa scripts de sync via cron com três modos:
-- `hourly`: só `smart-sync.ts`
-- `daily`: smart-sync + snapshot + métricas
-- `bootstrap`: carga completa inicial
+Usa o `Dockerfile.scheduler` (node:20-bookworm-slim + cron). Aguarda a API estar healthy via `depends_on`. Executa scripts de sync via cron com três modos:
+- `hourly`: smart-sync + snapshot + rebuild burndown (evento)
+- `daily`: pipeline completo (projetos, membros, sync, backfill, capacidade, snapshot, burndown, validação)
+- `full/bootstrap`: carga completa inicial + todos os rebuilds
 
 ### `redis` — Cache
 

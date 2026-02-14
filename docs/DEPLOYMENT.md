@@ -112,8 +112,8 @@ RATE_LIMIT_TIME_WINDOW=15m
 ### Desenvolvimento
 
 ```bash
-make install    # instala dependências npm
-make dev        # sobe com docker-compose.dev.yml (hot-reload)
+make install    # instala dependências (npm ci) no Backend e Frontend
+make dev        # build + sobe com docker-compose.dev.yml em background
 ```
 
 Acessos:
@@ -125,8 +125,9 @@ Acessos:
 
 ```bash
 make build      # constrói as imagens Docker
-make up         # sobe com docker-compose.yml
+make up         # build + sobe em produção (background)
 make logs       # acompanha os logs
+make ps         # status dos containers
 ```
 
 Acessos:
@@ -227,27 +228,38 @@ docker compose logs auto-sync
 # Parar tudo
 make down
 
-# Parar e remover volumes (perde cache Redis)
+# Parar e remover containers, volumes e imagens
 make clean
 
 # Ver logs em tempo real
 make logs
+
+# Status dos containers
+make ps
 
 # Acessar shell do container da API
 make api-shell
 
 # Abrir Prisma Studio (UI do banco)
 make db-studio
+
+# Rodar testes do backend
+make test
+
+# Rodar linters (Backend + Frontend)
+make lint
 ```
 
 ### Scripts disponíveis
 
 ```bash
+# Pipeline por modo (dentro do container ou localmente)
+docker exec -it azurebridge-api npx tsx scripts/hourly-sync.ts
+docker exec -it azurebridge-api npx tsx scripts/daily-sync.ts
+docker exec -it azurebridge-api npx tsx scripts/full-sync.ts
+
 # Sync manual de todos os projetos
 docker exec -it azurebridge-api npx tsx scripts/sync/sync-all-projects.js
-
-# Forçar recalculo de burndown de uma sprint
-docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-burndown.ts
 
 # Recuperar closedDate para items Done (via revisões Azure DevOps)
 docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-closed-dates.ts
@@ -255,14 +267,14 @@ docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-closed-dates.t
 # Reconstruir contadores de estado nos snapshots
 docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-snapshot-counts.ts
 
-# Verificar estado do banco (sprints, WIs, snapshots)
-docker exec -it azurebridge-api npx tsx scripts/maintenance/check-db-state.ts
+# Reconstruir burndown via modelo de eventos (sprints ativas)
+docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-active-burndown-event-model.ts
 
 # Validar contadores dos snapshots
 docker exec -it azurebridge-api npx tsx scripts/maintenance/validate-snapshot-counts.ts
 
-# Corrigir snapshots com contadores zerados
-docker exec -it azurebridge-api npx tsx scripts/maintenance/fix-snapshot-counts.ts
+# Executar snapshot manualmente
+docker exec -it azurebridge-api npx tsx scripts/maintenance/run-snapshot.ts
 
 # Reset do banco (apenas dev)
 docker exec -it azurebridge-api npm run db:reset
@@ -320,9 +332,9 @@ O burndown precisa de snapshots para ser exibido. Se os snapshots ainda não for
 docker exec -it azurebridge-api npx tsx scripts/maintenance/run-snapshot.ts
 ```
 
-Ou execute o backfill para gerar histórico:
+Ou execute o rebuild para gerar histórico via modelo de eventos:
 ```bash
-docker exec -it azurebridge-api npx tsx scripts/backfill/backfill-burndown.ts
+docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-active-burndown-event-model.ts
 ```
 
 ### CFD mostrando todos os itens em "A Fazer"
@@ -346,3 +358,4 @@ VITE_AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
 ```
 
 Essa variável é necessária para que os links "Abrir no Azure DevOps" funcionem no modal de detalhes do Work Item Aging.
+

@@ -27,6 +27,7 @@ type AgingRow = {
     effortHours: number;
     capacityPerDay: number;
     inProgressAt: string;
+    dueAt: string;
     azureUrl: string | null;
     ratio: number;
     status: AgingStatus;
@@ -111,6 +112,58 @@ function businessHoursBetween(start: Date, end: Date, dayOffSet: Set<string>): n
     }
 
     return totalHours;
+}
+
+function isBusinessDayLocal(date: Date, dayOffSet: Set<string>): boolean {
+    const weekday = date.getDay();
+    if (weekday === 0 || weekday === 6) return false;
+    const iso = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())).toISOString().slice(0, 10);
+    return !dayOffSet.has(iso);
+}
+
+function addBusinessHours(start: Date, hoursToAdd: number, dayOffSet: Set<string>): Date {
+    if (hoursToAdd <= 0) return new Date(start);
+
+    let remaining = hoursToAdd;
+    let cursor = new Date(start);
+
+    while (remaining > 0) {
+        const dayStart = new Date(cursor);
+        dayStart.setHours(WORK_START_HOUR, 0, 0, 0);
+        const lunchStart = new Date(cursor);
+        lunchStart.setHours(LUNCH_START_HOUR, 0, 0, 0);
+        const lunchEnd = new Date(cursor);
+        lunchEnd.setHours(LUNCH_END_HOUR, 0, 0, 0);
+        const dayEnd = new Date(cursor);
+        dayEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+
+        if (!isBusinessDayLocal(cursor, dayOffSet)) {
+            cursor.setDate(cursor.getDate() + 1);
+            cursor.setHours(WORK_START_HOUR, 0, 0, 0);
+            continue;
+        }
+
+        if (cursor < dayStart) cursor = new Date(dayStart);
+        if (cursor >= dayEnd) {
+            cursor.setDate(cursor.getDate() + 1);
+            cursor.setHours(WORK_START_HOUR, 0, 0, 0);
+            continue;
+        }
+        if (cursor >= lunchStart && cursor < lunchEnd) cursor = new Date(lunchEnd);
+
+        const blockEnd = cursor < lunchStart ? lunchStart : dayEnd;
+        const available = Math.max(0, (blockEnd.getTime() - cursor.getTime()) / (1000 * 60 * 60));
+        if (available <= 0) {
+            cursor = new Date(blockEnd);
+            continue;
+        }
+
+        const consume = Math.min(available, remaining);
+        cursor = new Date(cursor.getTime() + consume * 60 * 60 * 1000);
+        remaining -= consume;
+    }
+
+    return cursor;
 }
 
 function getSprintBusinessDays(startDate?: string, endDate?: string, dayOffDates: string[] = []): number {
@@ -222,6 +275,7 @@ export function WorkItemAgingCard({
             const expectedHours = Math.max(1, effortHours / Math.max(0.01, capacityPerWorkHour));
             const expectedDays = Math.max(1, Math.ceil(expectedHours / WORK_HOURS_PER_DAY));
             const ratio = actualHours / expectedHours;
+            const dueAt = addBusinessHours(activated, expectedHours, dayOffSet);
 
             let status: AgingStatus = 'ok';
             if (ratio > 1.2) status = 'critical';
@@ -238,6 +292,7 @@ export function WorkItemAgingCard({
                 effortHours,
                 capacityPerDay: Number(dailyCapacity.toFixed(1)),
                 inProgressAt: activated.toISOString(),
+                dueAt: dueAt.toISOString(),
                 azureUrl: toAzureEditUrl(wi.url, wi.id, azureOrgUrl, projectName) || getAzureWorkItemUrl(wi.id),
                 ratio,
                 status,
@@ -369,6 +424,9 @@ export function WorkItemAgingCard({
 
                                     const delayDays = Math.max(0, row.actualDays - row.expectedDays);
                                     const delayHours = Math.max(0, row.actualHours - row.expectedHours);
+                                    const dueDate = new Date(row.dueAt);
+                                    const overdueHours = Math.max(0, businessHoursBetween(dueDate, today, dayOffSet));
+                                    const remainingToDueHours = Math.max(0, businessHoursBetween(today, dueDate, dayOffSet));
                                     const rowKey = `${row.id}-${row.status}-${index}`;
                                     const isExpanded = expandedKeys.has(rowKey);
                                     const azureUrl = row.azureUrl;
@@ -381,7 +439,7 @@ export function WorkItemAgingCard({
                                                         #{row.id} - {row.title}
                                                     </div>
                                                     <div className="text-xs text-muted-foreground mt-1">
-                                                        {row.assignee} - esforco {row.effortHours}h - capacidade {row.capacityPerDay}h/dia - atraso {delayDays} dia(s) / {delayHours.toFixed(1)}h uteis
+                                                        {row.assignee}
                                                     </div>
                                                 </div>
                                                 <Badge variant="outline" className={badgeClass}>
@@ -396,9 +454,17 @@ export function WorkItemAgingCard({
                                             {isExpanded && (
                                                 <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
                                                     <div><span className="font-medium text-foreground">Horas previstas:</span> {row.effortHours}h</div>
+                                                    <div><span className="font-medium text-foreground">Capacidade:</span> {row.capacityPerDay}h/dia</div>
                                                     <div><span className="font-medium text-foreground">Inicio em progresso:</span> {new Date(row.inProgressAt).toLocaleString('pt-BR')}</div>
+                                                    <div><span className="font-medium text-foreground">Previsao de conclusao:</span> {dueDate.toLocaleString('pt-BR')}</div>
                                                     <div><span className="font-medium text-foreground">Dias em atraso:</span> {delayDays}</div>
                                                     <div><span className="font-medium text-foreground">Horas uteis em atraso:</span> {delayHours.toFixed(1)}h</div>
+                                                    <div>
+                                                        <span className="font-medium text-foreground">Status do prazo:</span>{' '}
+                                                        {overdueHours > 0
+                                                            ? `vencido ha ${overdueHours.toFixed(1)}h uteis`
+                                                            : `faltam ${remainingToDueHours.toFixed(1)}h uteis`}
+                                                    </div>
                                                     <div><span className="font-medium text-foreground">Responsavel:</span> {row.assignee}</div>
                                                     {azureUrl && (
                                                         <div>

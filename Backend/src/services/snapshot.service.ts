@@ -7,6 +7,11 @@ export class SnapshotService {
         return t === 'product backlog item' || t === 'user story' || t === 'pbi';
     }
 
+    private isCountableChartType(type?: string | null): boolean {
+        const t = String(type || '').trim().toLowerCase();
+        return t === 'task' || t === 'bug' || t === 'test case';
+    }
+
     private toUtcDay(date: Date): Date {
         const d = new Date(date);
         d.setUTCHours(0, 0, 0, 0);
@@ -153,6 +158,7 @@ export class SnapshotService {
                 const last = (item as any).lastRemainingWork || 0;
                 const done = (item as any).doneRemainingWork || 0;
                 const isPbi = this.isPbiType(item.type);
+                const isCountableForCharts = this.isCountableChartType(item.type);
 
                 // Use current planned scope for this day, so snapshot totalWork reflects scope changes.
                 const currentTotal = remaining + completed;
@@ -173,7 +179,7 @@ export class SnapshotService {
                 totalPoints += points;
 
                 // CFD counts exclude PBI/User Story by rule.
-                if (!isPbi) {
+                if (!isPbi && isCountableForCharts) {
                     if ((item as any).isBlocked) blockedCount++;
                     if (state === 'done' || state === 'closed' || state === 'completed') {
                         doneCount++;

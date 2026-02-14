@@ -1,10 +1,12 @@
 # ========================================
 # STAGE 1: Build
 # ========================================
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 # Install dependencies for native modules
-RUN apk add --no-cache python3 make g++ openssl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  python3 make g++ openssl ca-certificates && \
+  rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -13,7 +15,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install ALL dependencies (including devDependencies needed for TypeScript build)
-RUN npm install && \
+RUN npm ci && \
   npm cache clean --force
 
 # Copy source code
@@ -29,12 +31,14 @@ RUN npm prune --production
 # ========================================
 # STAGE 2: Production
 # ========================================
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 # Add non-root user
-RUN apk add --no-cache openssl && \
-  addgroup -g 1001 -S nodejs && \
-  adduser -S nodejs -u 1001
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  openssl curl ca-certificates && \
+  rm -rf /var/lib/apt/lists/* && \
+  groupadd -g 1001 nodejs && \
+  useradd -u 1001 -g nodejs -m -s /usr/sbin/nologin nodejs
 
 WORKDIR /app
 
@@ -51,8 +55,8 @@ USER nodejs
 EXPOSE 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=60s \
-  CMD wget --quiet --tries=1 --spider http://localhost:3001/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s \
+  CMD curl -fsS http://localhost:3001/api/health >/dev/null || exit 1
 
 # Environment
 ENV NODE_ENV=production

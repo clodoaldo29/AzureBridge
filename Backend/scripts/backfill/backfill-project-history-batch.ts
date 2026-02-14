@@ -3,7 +3,6 @@ import { getAzureDevOpsClient } from '../../src/integrations/azure/client';
 
 const prisma = new PrismaClient();
 
-const TARGET_PROJECTS = ['GIGA - Tempos e Movimentos', 'GIGA - Retrabalho'];
 const BATCH_SIZE = 20;
 const DELAY_MS = 500;
 
@@ -17,12 +16,18 @@ async function sleep(ms: number) {
 }
 
 async function backfill() {
+    const targetProjects = (process.env.TARGET_PROJECTS || '')
+        .split(',')
+        .map(p => p.trim())
+        .filter(Boolean);
+    const useAllProjects = targetProjects.length === 0;
+
     console.log('BACKFILL HISTORICO (BATCH)');
     console.log('='.repeat(60));
-    console.log(`Targets: ${TARGET_PROJECTS.join(', ')}\n`);
+    console.log(`Targets: ${useAllProjects ? 'ALL PROJECTS' : targetProjects.join(', ')}\n`);
 
     const projects = await prisma.project.findMany({
-        where: { name: { in: TARGET_PROJECTS } }
+        where: useAllProjects ? undefined : { name: { in: targetProjects } }
     });
     if (projects.length === 0) {
         console.log('WARN: Nenhum projeto encontrado.');

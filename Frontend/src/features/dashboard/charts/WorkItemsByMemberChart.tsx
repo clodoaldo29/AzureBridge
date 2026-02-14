@@ -7,7 +7,7 @@ interface WorkItemsByMemberChartProps {
     workItems: WorkItem[];
 }
 
-const ALLOWED_TYPES = ['Task', 'Bug', 'Test Suite', 'Test Case', 'Test Plan'];
+const ALLOWED_TYPES = ['task', 'bug', 'test case'];
 
 const MEMBER_PALETTE = [
     '#3B82F6', '#F6AD55', '#48BB78', '#9F7AEA', '#FC8181',
@@ -88,7 +88,9 @@ function buildDisplayNames(fullNames: string[]): Map<string, string> {
 
 export function WorkItemsByMemberChart({ workItems }: WorkItemsByMemberChartProps) {
     const { data, total } = useMemo(() => {
-        const filtered = workItems.filter(wi => ALLOWED_TYPES.includes(wi.type));
+        const filtered = workItems.filter(wi =>
+            ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
+        );
         const counts = new Map<string, number>();
         filtered.forEach(wi => {
             const name = wi.assignedTo?.displayName || UNASSIGNED_LABEL;
@@ -153,10 +155,10 @@ export function WorkItemsByMemberChart({ workItems }: WorkItemsByMemberChartProp
                                     <Cell key={i} fill={entry.color} />
                                 ))}
                             </Pie>
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 30 }} />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <div className="absolute inset-0 z-0 flex flex-col items-center justify-center pointer-events-none">
                         <span className="text-3xl font-bold text-gray-900">{total}</span>
                         <span className="text-xs text-gray-500">itens</span>
                     </div>

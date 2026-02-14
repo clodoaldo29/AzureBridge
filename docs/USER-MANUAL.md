@@ -69,9 +69,9 @@ Total de horas de `remainingWork` em todos os work items ativos da sprint no mom
 
 ### Concluído
 
-Calculado como: `Planejado atual − Restante`. Representa as horas de trabalho que já foram registradas como concluídas.
+Horas de trabalho já concluídas na sprint, obtidas do campo `completedWork` do snapshot mais recente do burndown.
 
-> Atenção: esse valor depende do preenchimento de `completedWork` nos work items do Azure DevOps.
+> Quando há dados de snapshot disponíveis, os cards de métricas (Planejamento, Restante, Concluído) usam os valores do burndown para maior precisão. Se não houver snapshots, os dados da capacidade são usados como fallback.
 
 ---
 
@@ -83,19 +83,41 @@ Quantidade de work items com flag `isBlocked = true` no momento. Um item é cons
 
 ## Barra de Progresso da Sprint
 
-Exibida abaixo dos cards, a barra mostra o percentual de conclusão da sprint com base em horas.
+Exibida abaixo dos cards, a barra mostra o percentual de conclusão da sprint com base em horas, comparando o progresso real com o ideal do dia.
 
 **Cálculo:**
 ```
-% concluído = (Planejado atual − Restante) / Planejado atual × 100
+% concluído = completedWork / totalWork × 100
 ```
 
-**Cores:**
-- **Azul** — progresso normal
-- **Vermelho** — o trabalho restante é maior do que o total planejado (scope creep severo)
+### Elementos visuais
 
-**Alerta de scope creep:** Se `Restante > Planejado`, uma mensagem de aviso aparece:
-> "Atenção: O escopo aumentou Xh além do planejado."
+- **Barra azul** — percentual concluído (vermelha se o restante ultrapassar o total planejado)
+- **Marcador vertical escuro** — posição ideal de progresso para o dia atual, calculada pelo modelo piecewise (recalculada quando o escopo muda)
+- **Badge de escopo** — se houve adição de escopo, exibe `Escopo +Xh` em vermelho no título
+
+### Status de progresso
+
+Um badge no canto direito classifica o andamento com base no desvio entre o restante real e o ideal do dia:
+
+| Status | Condição | Cor |
+|---|---|---|
+| Adiantado | Desvio ≤ −5% | Verde |
+| No Prazo | Desvio entre −5% e +5% | Azul |
+| Em Risco | Desvio entre +5% e +15% | Âmbar |
+| Atrasado | Desvio > +15% | Vermelho |
+
+**Cálculo do desvio:**
+```
+desvio_horas = remaining_atual − ideal_remaining_hoje
+desvio% = desvio_horas / totalWork × 100
+```
+
+### Informações exibidas
+
+- **Subtítulo** — "Ideal hoje: Xh (X%)" mostrando quanto deveria estar concluído segundo a linha ideal
+- **Rodapé esquerdo** — "Xh concluídas de Yh planejadas"
+- **Rodapé direito** — desvio em horas vs ideal do dia (verde se adiantado, vermelho se atrasado)
 
 ---
 
@@ -227,7 +249,7 @@ O gráfico mais completo do dashboard. Mostra a evolução do trabalho restante 
 
 - **Título** — "Análise de Burn da Sprint"
 - **Subtítulo** — quantidade de dias úteis da sprint
-- **Planejamento** — Inicial Xh | Final Xh | Delta +Xh (scope adicionado)
+- **Planejamento** — Inicial Xh | Final Xh | Delta +Xh (scope adicionado) ou −Xh (scope removido)
 - **Badge de status** — situação atual da sprint (ver abaixo)
 
 ---
@@ -254,7 +276,7 @@ Se a velocidade média atual for menor que a necessária, o time precisará acel
 
 ### Linhas do gráfico
 
-O gráfico combina quatro séries de dados, todas opcionalmente visíveis via checkbox na legenda:
+O gráfico combina cinco séries de dados, todas opcionalmente visíveis via checkbox na legenda:
 
 #### Ideal (azul, área preenchida)
 
@@ -294,9 +316,19 @@ projeção D+n = restante atual − (velocidade média × n)
 
 #### Mudanças de Escopo (barras vermelhas)
 
-Barras verticais que aparecem nos dias em que o `totalWork` aumentou. A altura representa quantas horas foram adicionadas naquele dia.
+Barras verticais que aparecem nos dias em que houve adição de work items ao escopo da sprint. Os dados vêm diretamente dos campos `addedCount` e `removedCount` dos snapshots (histórico real), não derivados da diferença de `totalWork`.
+
+Quando há escopo removido, o tooltip exibe "Escopo removido: −Xh" e o Delta no cabeçalho pode ser negativo.
 
 > Scope creep frequente (muitas barras) indica instabilidade de planejamento. Verificar se os requisitos estavam bem definidos antes do início da sprint.
+
+---
+
+#### Concluído no dia (barras verdes)
+
+Barras verticais que mostram quantas horas de trabalho foram concluídas em cada dia. O valor é calculado pela diferença acumulada de `completedWork` entre snapshots consecutivos.
+
+> Útil para identificar dias de baixa produtividade e avaliar a consistência do ritmo de entrega.
 
 ---
 
@@ -322,8 +354,8 @@ Um desvio **positivo** significa que há mais trabalho restante do que deveria h
 
 ### Interatividade
 
-- **Hover no gráfico** — exibe tooltip com os valores exatos do dia: Ideal, Remaining, Projeção e Escopo adicionado
-- **Checkboxes da legenda** — ativa/desativa individualmente cada série
+- **Hover no gráfico** — exibe tooltip com os valores exatos do dia: Ideal, Remaining, Projeção, Escopo adicionado, Escopo removido e Concluído no dia
+- **Checkboxes da legenda** — ativa/desativa individualmente cada série (Ideal, Remaining, Projeção, Mudanças de Escopo, Concluído no dia)
 - **Dias off** — fins de semana e dias off configurados são excluídos do eixo X (apenas dias úteis são exibidos)
 
 ---
@@ -375,7 +407,7 @@ O CFD usa os mesmos snapshots diários do Burndown (`GET /sprints/:id/burndown`)
 
 Três gráficos donut lado a lado que mostram como os work items da sprint estão distribuídos.
 
-> Estes gráficos filtram apenas tipos operacionais: Task, Bug, Test Suite, Test Case e Test Plan. PBIs, Features e Epics são excluídos.
+> Estes gráficos filtram apenas tipos operacionais: Task, Bug e Test Case. PBIs, Features e Epics são excluídos.
 
 ### Work Items por Estado
 
@@ -405,9 +437,7 @@ Donut que agrupa os work items pelo tipo.
 |---|---|
 | Task | Azul |
 | Bug | Vermelho |
-| Test Suite | Roxo escuro |
-| Test Case | Roxo médio |
-| Test Plan | Roxo claro |
+| Test Case | Roxo |
 
 ### Work Items por Membro
 
@@ -458,13 +488,14 @@ Ao clicar em "Ver críticos", "Ver atenção" ou "Ver no prazo", abre um modal c
 
 - **ID e título** — identificação do work item
 - **Responsável** — membro alocado
-- **Esforço** — horas planejadas
-- **Capacidade/dia** — capacidade diária do responsável
 - **Badge** — dias reais / dias esperados
 - **Botão "Ver detalhes"** — expande detalhes adicionais:
-  - Horas previstas
-  - Início em progresso
+  - Horas previstas (esforço estimado)
+  - Capacidade diária do responsável
+  - Início em progresso (data de ativação)
+  - Previsão de conclusão (calculada adicionando as horas esperadas em horário comercial a partir da ativação)
   - Dias e horas úteis em atraso
+  - Status do prazo — "vencido há Xh úteis" ou "faltam Xh úteis"
   - Link "Abrir no Azure DevOps" (requer `VITE_AZURE_DEVOPS_ORG_URL` configurada no `.env`)
 
 ### Filtros do modal

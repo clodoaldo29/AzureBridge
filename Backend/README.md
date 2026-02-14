@@ -99,7 +99,7 @@ src/
 ## Instalação e configuração
 
 ```bash
-npm install
+npm ci
 
 cp .env.example .env
 # Preencha as variáveis — ver seção abaixo
@@ -140,6 +140,15 @@ npm run worker       # processo worker BullMQ separado
 npm run build        # compila TypeScript para dist/
 npm start            # inicia servidor compilado
 npm run worker:prod  # inicia worker compilado
+```
+
+### Sync manual
+
+```bash
+npm run sync:smart    # sync incremental (smart-sync)
+npm run sync:hourly   # pipeline hourly (smart-sync + snapshot + rebuild)
+npm run sync:daily    # pipeline daily (completo)
+npm run sync:full     # pipeline full/bootstrap
 ```
 
 ### Banco de dados
@@ -194,13 +203,24 @@ Grupos de endpoints:
 | Sync | POST | `/sync/*` |
 | Dashboard | GET | `/dashboard/*` |
 
-## Scripts de manutenção
+## Scripts e pipeline de sync
 
-O diretório `scripts/` contém scripts de sincronização, backfill, manutenção e diagnóstico, incluindo:
+O diretório `scripts/` contém o pipeline de sincronização automática, scripts de backfill e ferramentas de manutenção. O container `auto-sync` executa o pipeline via cron, controlado pela variável `AUTO_SYNC_MODE`:
 
-- **Backfill**: recuperação de `closedDate` via revisões, reconstrução de contadores de snapshots, geração de burndown histórico
-- **Manutenção**: verificação de estado do banco, validação de snapshots, correção de contadores, execução manual de snapshots
-- **Sync**: sincronização incremental (smart-sync) e completa, com captura automática de `closedDate`
+| Modo | Frequência | Etapas |
+|---|---|---|
+| `hourly` | A cada hora | smart-sync → snapshot → rebuild burndown (evento) |
+| `daily` | Uma vez/dia | projetos → membros → smart-sync → backfill histórico → closedDate → capacidade → snapshot → rebuild burndown → validação |
+| `full` / `bootstrap` | Manual | Tudo do daily + carga completa de work items + rebuilds completos |
+
+### Categorias de scripts
+
+- **Orquestração**: `auto-sync.ts` (orquestrador principal), `hourly-sync.ts`, `daily-sync.ts`, `full-sync.ts` (wrappers por modo)
+- **Sync**: sincronização incremental (`smart-sync.ts`) e completa, com captura automática de `closedDate` via revisões
+- **Backfill**: recuperação de `closedDate`, reconstrução de contadores de snapshots, burndown histórico, rebuild via modelo de eventos (`rebuild-active-burndown-event-model.ts`)
+- **Manutenção**: snapshot manual, validação de contadores, reset de banco (dev)
+
+O modelo baseado em eventos (`rebuild-active-burndown-event-model.ts`) reconstrói o burndown de sprints ativas usando revisões de work items do Azure DevOps, garantindo precisão mesmo quando o sync diário não captura todos os estados intermediários.
 
 Ver documentação completa em [scripts/README.md](scripts/README.md).
 

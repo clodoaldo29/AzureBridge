@@ -13,6 +13,7 @@ import { WorkItemsByStateChart } from '../charts/WorkItemsByStateChart';
 import { WorkItemsByTypeChart } from '../charts/WorkItemsByTypeChart';
 import { WorkItemsByMemberChart } from '../charts/WorkItemsByMemberChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Target, Users, CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
 import { calculateSprintHealthDetails } from '@/utils/calculations';
 import { useAppStore } from '@/stores/appStore';
@@ -20,6 +21,86 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Project, Sprint } from '@/types';
 import { useEffect, useMemo } from 'react';
+
+function toUtcDayMs(value: string | Date): number {
+    const d = new Date(value);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function toIsoDate(ms: number): string {
+    return new Date(ms).toISOString().slice(0, 10);
+}
+
+function getIdealRemainingToday(params: {
+    snapshots: Array<{ snapshotDate: string; totalWork: number; idealRemaining?: number | null }>;
+    sprintStartDate?: string;
+    sprintEndDate?: string;
+    plannedInitial: number;
+    plannedCurrent: number;
+    dayOffDates: string[];
+}): number {
+    const { snapshots, sprintStartDate, sprintEndDate, plannedInitial, plannedCurrent, dayOffDates } = params;
+    if (!snapshots.length || !sprintStartDate || !sprintEndDate) return plannedCurrent;
+
+    const sorted = [...snapshots].sort((a, b) => toUtcDayMs(a.snapshotDate) - toUtcDayMs(b.snapshotDate));
+    const snapshotByDay = new Map<number, { totalWork: number }>();
+    sorted.forEach((s) => snapshotByDay.set(toUtcDayMs(s.snapshotDate), { totalWork: Number(s.totalWork || 0) }));
+
+    const offSet = new Set(dayOffDates);
+    const startMs = toUtcDayMs(sprintStartDate);
+    const endMs = toUtcDayMs(sprintEndDate);
+
+    const businessDays: number[] = [];
+    for (let ms = startMs; ms <= endMs; ms += 24 * 60 * 60 * 1000) {
+        const d = new Date(ms);
+        const wd = d.getUTCDay();
+        if (wd === 0 || wd === 6) continue;
+        if (offSet.has(toIsoDate(ms))) continue;
+        businessDays.push(ms);
+    }
+    if (!businessDays.length) return plannedCurrent;
+
+    const totalWorkSeries: number[] = businessDays.map((ms) => {
+        const exact = snapshotByDay.get(ms);
+        if (exact) return Math.round(exact.totalWork);
+
+        for (let i = sorted.length - 1; i >= 0; i--) {
+            const snapMs = toUtcDayMs(sorted[i].snapshotDate);
+            if (snapMs <= ms) return Math.round(Number(sorted[i].totalWork || 0));
+        }
+        return 0;
+    });
+
+    const baseInitial = Math.max(
+        0,
+        Math.round(plannedInitial || sorted[0]?.totalWork || totalWorkSeries[0] || plannedCurrent || 0)
+    );
+
+    const idealSeries: number[] = new Array(businessDays.length).fill(0);
+    idealSeries[0] = baseInitial;
+    let idealCursor = baseInitial;
+
+    for (let i = 1; i < businessDays.length; i++) {
+        const scopeAdded = Math.max(0, Math.round(totalWorkSeries[i] - totalWorkSeries[i - 1]));
+        idealCursor += scopeAdded;
+        const stepsRemaining = businessDays.length - i;
+        const burnStep = stepsRemaining > 0 ? idealCursor / stepsRemaining : idealCursor;
+        idealCursor = Math.max(0, idealCursor - burnStep);
+        idealSeries[i] = Math.round(idealCursor);
+    }
+
+    const todayMs = toUtcDayMs(new Date());
+    let todayIdx = -1;
+    for (let i = businessDays.length - 1; i >= 0; i--) {
+        if (businessDays[i] <= todayMs) {
+            todayIdx = i;
+            break;
+        }
+    }
+
+    if (todayIdx < 0) return baseInitial;
+    return Math.max(0, idealSeries[todayIdx] ?? baseInitial);
+}
 
 export function Dashboard() {
     const { selectedProjectId, setSelectedProjectId } = useAppStore();
@@ -123,11 +204,67 @@ export function Dashboard() {
     const formatSprintDate = (date: string) =>
         new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 
-    const plannedInitial = capacityData?.summary.totalPlannedInitial ?? 0;
-    const plannedCurrent = capacityData?.summary.totalPlannedCurrent ?? capacityData?.summary.totalPlanned ?? 0;
-    const plannedDelta = capacityData?.summary.totalPlannedDelta ?? (plannedCurrent - plannedInitial);
-    const remainingHours = capacityData?.summary.totalRemaining ?? 0;
-    const completedHours = Math.max(0, plannedCurrent - remainingHours);
+    const burndownRaw = burndownData?.raw || [];
+    const sortedBurndown = [...burndownRaw].sort(
+        (a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime()
+    );
+    const firstSnapshot = sortedBurndown[0];
+    const lastSnapshot = sortedBurndown[sortedBurndown.length - 1];
+
+    const dayOneNetScope = Math.round(
+        Number(firstSnapshot?.addedCount || 0) - Number(firstSnapshot?.removedCount || 0)
+    );
+    const burndownInitial = Math.max(0, Math.round(Number(firstSnapshot?.totalWork || 0) - dayOneNetScope));
+    const burndownCurrent = Math.max(0, Math.round(Number(lastSnapshot?.totalWork || 0)));
+    const burndownDelta = burndownCurrent - burndownInitial;
+    const burndownRemaining = Math.max(0, Math.round(Number(lastSnapshot?.remainingWork || 0)));
+    const burndownCompleted = Math.max(0, Math.round(Number(lastSnapshot?.completedWork || 0)));
+
+    const plannedInitial = sortedBurndown.length
+        ? burndownInitial
+        : (capacityData?.summary.totalPlannedInitial ?? 0);
+    const plannedCurrent = sortedBurndown.length
+        ? burndownCurrent
+        : (capacityData?.summary.totalPlannedCurrent ?? capacityData?.summary.totalPlanned ?? 0);
+    const plannedDelta = sortedBurndown.length
+        ? burndownDelta
+        : (capacityData?.summary.totalPlannedDelta ?? (plannedCurrent - plannedInitial));
+    const remainingHours = sortedBurndown.length
+        ? burndownRemaining
+        : (capacityData?.summary.totalRemaining ?? 0);
+    const completedHours = sortedBurndown.length
+        ? burndownCompleted
+        : Math.max(0, plannedCurrent - remainingHours);
+    const progressPct = plannedCurrent > 0 ? Math.min(100, Math.max(0, (completedHours / plannedCurrent) * 100)) : 0;
+
+    const idealRemainingToday = getIdealRemainingToday({
+        snapshots: burndownData?.raw || [],
+        sprintStartDate: currentSprint?.startDate,
+        sprintEndDate: currentSprint?.endDate,
+        plannedInitial,
+        plannedCurrent,
+        dayOffDates: capacityData?.summary.dayOffDates || [],
+    });
+    const idealCompletedToday = Math.max(0, plannedCurrent - idealRemainingToday);
+    const idealPctToday = plannedCurrent > 0
+        ? Math.min(100, Math.max(0, (idealCompletedToday / plannedCurrent) * 100))
+        : 0;
+
+    const deviationHours = Math.round(remainingHours - idealRemainingToday);
+    const deviationPct = plannedCurrent > 0 ? (deviationHours / plannedCurrent) * 100 : 0;
+
+    let progressStatusLabel = 'No Prazo';
+    let progressStatusClass = 'bg-blue-50 text-blue-700 border-blue-200';
+    if (deviationPct <= -5) {
+        progressStatusLabel = 'Adiantado';
+        progressStatusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    } else if (deviationPct > 5 && deviationPct <= 15) {
+        progressStatusLabel = 'Em Risco';
+        progressStatusClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    } else if (deviationPct > 15) {
+        progressStatusLabel = 'Atrasado';
+        progressStatusClass = 'bg-red-50 text-red-700 border-red-200';
+    }
 
     return (
         <div className="space-y-6 p-6">
@@ -182,11 +319,7 @@ export function Dashboard() {
                                 </span>
                             }
                         />
-                        <StatCard
-                            title="Restante"
-                            value={`${capacityData?.summary.totalRemaining || 0}h`}
-                            icon={Clock}
-                        />
+                        <StatCard title="Restante" value={`${remainingHours}h`} icon={Clock} />
                         <StatCard
                             title="Concluído"
                             value={`${completedHours}h`}
@@ -202,32 +335,50 @@ export function Dashboard() {
                     {/* Sprint Progress Bar based on Planned vs Remaining */}
                     {capacityData && plannedCurrent > 0 && (
                         <div className="bg-card rounded-lg shadow p-4 border border-border">
-                            <div className="flex justify-between items-end mb-2">
-                                <h3 className="text-sm font-medium text-muted-foreground">Progresso da Sprint (Baseado em Horas)</h3>
-                                <span className="text-sm font-bold text-foreground">
-                                    {Math.max(0, Math.round((completedHours / plannedCurrent) * 100))}%
-                                </span>
+                            <div className="flex justify-between items-start gap-3 mb-3">
+                                <div>
+                                    <div className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        Progresso da Sprint (Baseado em Horas)
+                                        {plannedDelta > 0 && (
+                                            <Badge variant="outline" className="border-red-300 text-red-700 bg-red-50">
+                                                Escopo +{plannedDelta}h
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                        Ideal hoje: {idealCompletedToday}h ({idealPctToday.toFixed(0)}%)
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className={progressStatusClass}>
+                                        {progressStatusLabel}
+                                    </Badge>
+                                    <span className="text-lg font-bold text-foreground">
+                                        {Math.round(progressPct)}%
+                                    </span>
+                                </div>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                            <div className="relative w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                                 <div
-                                    className={`h-2.5 rounded-full transition-all duration-500 ${remainingHours > plannedCurrent
+                                    className={`h-3 rounded-full transition-all duration-500 ${remainingHours > plannedCurrent
                                         ? 'bg-red-500' // Red if over planned
                                         : 'bg-blue-600'
                                         }`}
-                                    style={{ width: `${Math.min(100, Math.max(0, (completedHours / plannedCurrent) * 100))}%` }}
+                                    style={{ width: `${progressPct}%` }}
                                 ></div>
+                                <div
+                                    className="absolute top-0 h-3 w-0.5 bg-slate-700/70"
+                                    style={{ left: `${idealPctToday}%` }}
+                                    title={`Ideal do dia: ${idealPctToday.toFixed(0)}%`}
+                                />
                             </div>
-                            <div className="flex justify-between items-start mt-2">
-                                <p className="text-xs text-muted-foreground">
+                            <div className="flex flex-wrap justify-between items-start gap-2 mt-2">
+                                <p className="text-xs text-muted-foreground font-medium">
                                     {completedHours}h concluídas de {plannedCurrent}h planejadas
                                 </p>
-                                {/* Scope Creep Warning Message */}
-                                {remainingHours > plannedCurrent && (
-                                    <p className="text-xs text-red-600 font-medium flex items-center">
-                                        <AlertTriangle className="w-3 h-3 mr-1" />
-                                        Atenção: O escopo aumentou {(remainingHours - plannedCurrent)}h além do planejado.
-                                    </p>
-                                )}
+                                <p className={`text-xs font-medium ${deviationHours > 0 ? 'text-red-600' : deviationHours < 0 ? 'text-emerald-600' : 'text-blue-600'}`}>
+                                    {deviationHours > 0 ? '+' : ''}{deviationHours}h vs ideal de hoje
+                                </p>
                             </div>
                         </div>
                     )}

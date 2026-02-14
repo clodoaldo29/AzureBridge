@@ -5,7 +5,7 @@ Plataforma completa de monitoramento, análise e visualização de projetos Azur
 ## Funcionalidades
 
 - **Dashboard em tempo real** — visão consolidada de sprints ativas com métricas de capacidade, progresso e saúde
-- **Burndown Chart interativo** — gráfico de burn com linha ideal adaptativa (recalculada a cada mudança de escopo), linha real, projeção de velocidade e barras de scope creep
+- **Burndown Chart interativo** — gráfico de burn com linha ideal adaptativa (piecewise), linha real, projeção de velocidade, barras de scope creep/remoção e barras de trabalho concluído por dia
 - **Cumulative Flow Diagram** — gráfico de fluxo acumulado com 4 camadas empilhadas (Done, Blocked, In Progress, To Do), mostrando a evolução diária dos estados dos work items
 - **Sprint Health Score** — score 0–100 calculado automaticamente com base em utilização de capacidade, desvio de progresso, blockers e tracking
 - **Distribuição de Work Items** — gráficos donut interativos mostrando work items por estado, por tipo e por membro, com contagem total no centro

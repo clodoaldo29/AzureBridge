@@ -14,7 +14,11 @@ async function completeMassiveSync() {
     try {
         const orgUrl = process.env.AZURE_DEVOPS_ORG_URL;
         const pat = process.env.AZURE_DEVOPS_PAT;
-        const azureProject = process.env.AZURE_DEVOPS_PROJECT;
+        const targetProjects = (process.env.TARGET_PROJECTS || '')
+            .split(',')
+            .map(p => p.trim())
+            .filter(Boolean);
+        const targetSet = new Set(targetProjects.map(p => p.toLowerCase()));
 
         const authHandler = azdev.getPersonalAccessTokenHandler(pat);
         const connection = new azdev.WebApi(orgUrl, authHandler);
@@ -22,8 +26,14 @@ async function completeMassiveSync() {
         const witApi = await connection.getWorkItemTrackingApi();
 
         // Get all projects from Azure DevOps
-        const azureProjects = await coreApi.getProjects();
-        console.log(`✅ Found ${azureProjects.length} projects in Azure DevOps\n`);
+        const azureProjectsAll = await coreApi.getProjects();
+        const azureProjects = targetSet.size > 0
+            ? azureProjectsAll.filter((p) => targetSet.has(String(p.name || '').toLowerCase()))
+            : azureProjectsAll;
+        console.log(`? Found ${azureProjects.length}/${azureProjectsAll.length} projects in Azure DevOps\n`);
+        if (targetSet.size > 0) {
+            console.log(`?? Targets: ${targetProjects.join(", ")}\n`);
+        }
 
         let totalSprints = 0;
         let totalWorkItems = 0;
@@ -197,48 +207,68 @@ async function completeMassiveSync() {
                             const f = wi.fields;
 
                             try {
+                                const state = f['System.State'] || 'Unknown';
+                                const reason = f['System.Reason'] || null;
+                                const tags = f['System.Tags']
+                                    ? f['System.Tags'].split(';').map(t => t.trim()).filter(Boolean)
+                                    : [];
+                                const closedDate = f['System.ClosedDate'] ? new Date(f['System.ClosedDate']) : null;
+                                const resolvedDate = f['System.ResolvedDate'] ? new Date(f['System.ResolvedDate']) : null;
+                                const stateChangeDate = f['System.StateChangeDate'] ? new Date(f['System.StateChangeDate']) : null;
+                                const activatedDate = f['Microsoft.VSTS.Common.ActivatedDate'] ? new Date(f['Microsoft.VSTS.Common.ActivatedDate']) : null;
+                                const changedDate = new Date(f['System.ChangedDate']);
+                                const createdDate = new Date(f['System.CreatedDate']);
+                                const remainingWork = f['Microsoft.VSTS.Scheduling.RemainingWork'] || null;
+                                const completedWork = f['Microsoft.VSTS.Scheduling.CompletedWork'] || null;
+                                const originalEstimate = f['Microsoft.VSTS.Scheduling.OriginalEstimate'] || null;
+                                const dataCommon = {
+                                    type: f['System.WorkItemType'],
+                                    state: state,
+                                    reason: reason,
+                                    title: f['System.Title'],
+                                    description: f['System.Description'] || null,
+                                    acceptanceCriteria: f['System.AcceptanceCriteria'] || null,
+                                    reproSteps: f['Microsoft.VSTS.TCM.ReproSteps'] || null,
+                                    originalEstimate: originalEstimate,
+                                    completedWork: completedWork,
+                                    remainingWork: remainingWork,
+                                    // keep current remaining as latest known remaining on full sync
+                                    lastRemainingWork: remainingWork,
+                                    storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
+                                    effort: f['Microsoft.VSTS.Scheduling.Effort'] || null,
+                                    priority: f['Microsoft.VSTS.Common.Priority'] || 3,
+                                    severity: f['Microsoft.VSTS.Common.Severity'] || null,
+                                    createdDate: createdDate,
+                                    changedDate: changedDate,
+                                    closedDate: closedDate,
+                                    resolvedDate: resolvedDate,
+                                    stateChangeDate: stateChangeDate,
+                                    activatedDate: activatedDate,
+                                    createdBy: f['System.CreatedBy']?.displayName || 'Unknown',
+                                    changedBy: f['System.ChangedBy']?.displayName || 'Unknown',
+                                    closedBy: f['System.ClosedBy']?.displayName || null,
+                                    resolvedBy: f['System.ResolvedBy']?.displayName || null,
+                                    tags,
+                                    areaPath: f['System.AreaPath'],
+                                    iterationPath: f['System.IterationPath'],
+                                    url: wi.url,
+                                    rev: wi.rev || 1,
+                                    commentCount: wi.commentCount || 0,
+                                    projectId: dbProject.id,
+                                    sprintId: dbSprint.id,
+                                    isRemoved: false,
+                                    lastSyncAt: new Date(),
+                                };
+
                                 await prisma.workItem.upsert({
                                     where: { id: wi.id },
                                     create: {
                                         id: wi.id,
                                         azureId: wi.id,
-                                        type: f['System.WorkItemType'],
-                                        state: f['System.State'],
-                                        reason: f['System.Reason'] || null,
-                                        title: f['System.Title'],
-                                        description: f['System.Description'] || null,
-                                        acceptanceCriteria: f['System.AcceptanceCriteria'] || null,
-                                        reproSteps: f['Microsoft.VSTS.TCM.ReproSteps'] || null,
-                                        originalEstimate: f['Microsoft.VSTS.Scheduling.OriginalEstimate'] || null,
-                                        completedWork: f['Microsoft.VSTS.Scheduling.CompletedWork'] || null,
-                                        remainingWork: f['Microsoft.VSTS.Scheduling.RemainingWork'] || null,
-                                        storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
-                                        priority: f['Microsoft.VSTS.Common.Priority'] || 3,
-                                        severity: f['Microsoft.VSTS.Common.Severity'] || null,
-                                        createdDate: new Date(f['System.CreatedDate']),
-                                        changedDate: new Date(f['System.ChangedDate']),
-                                        closedDate: f['System.ClosedDate'] ? new Date(f['System.ClosedDate']) : null,
-                                        resolvedDate: f['System.ResolvedDate'] ? new Date(f['System.ResolvedDate']) : null,
-                                        stateChangeDate: f['System.StateChangeDate'] ? new Date(f['System.StateChangeDate']) : null,
-                                        activatedDate: f['Microsoft.VSTS.Common.ActivatedDate'] ? new Date(f['Microsoft.VSTS.Common.ActivatedDate']) : null,
-                                        createdBy: f['System.CreatedBy'].displayName,
-                                        changedBy: f['System.ChangedBy'].displayName,
-                                        closedBy: f['System.ClosedBy']?.displayName || null,
-                                        resolvedBy: f['System.ResolvedBy']?.displayName || null,
-                                        tags: f['System.Tags'] ? f['System.Tags'].split(';').map(t => t.trim()) : [],
-                                        areaPath: f['System.AreaPath'],
-                                        iterationPath: f['System.IterationPath'],
-                                        url: wi.url,
-                                        rev: wi.rev,
-                                        commentCount: wi.commentCount || 0,
-                                        projectId: dbProject.id,
-                                        sprintId: dbSprint.id,
+                                        ...dataCommon,
                                     },
                                     update: {
-                                        state: f['System.State'],
-                                        title: f['System.Title'],
-                                        changedDate: new Date(f['System.ChangedDate']),
-                                        changedBy: f['System.ChangedBy'].displayName,
+                                        ...dataCommon,
                                     }
                                 });
 
@@ -300,3 +330,4 @@ async function completeMassiveSync() {
 }
 
 completeMassiveSync();
+

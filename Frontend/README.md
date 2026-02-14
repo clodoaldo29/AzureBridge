@@ -141,7 +141,7 @@ Todos os dados do dashboard são carregados via React Query com os hooks em `src
 | `CapacityTable` | components/ | Tabela capacidade vs planejado por membro |
 | `MemberCapacityProgress` | components/ | Gráfico de barras horizontais empilhadas por pessoa |
 | `WorkItemAgingCard` | components/ | Aging de Tasks em progresso com modal de detalhes |
-| `BurndownChart` | charts/ | Burndown interativo com ideal, remaining, projeção e scope creep |
+| `BurndownChart` | charts/ | Burndown interativo com ideal, remaining, projeção, scope creep/remoção e concluído por dia |
 | `CumulativeFlowChart` | charts/ | CFD com 4 camadas empilhadas (Done, Blocked, InProgress, ToDo) |
 | `WorkItemsByStateChart` | charts/ | Donut de work items por estado |
 | `WorkItemsByTypeChart` | charts/ | Donut de work items por tipo |

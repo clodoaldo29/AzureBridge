@@ -34,6 +34,9 @@ type ChartPoint = {
     actual: number | null;
     projected: number | null;
     scopeAdded: number;
+    scopeRemoved: number;
+    completedInDay: number;
+    completedAccum: number;
     isToday: boolean;
     isFuture: boolean;
     totalWork: number;
@@ -144,6 +147,8 @@ const CustomTooltip = ({ active, payload }: any) => {
                 {point.actual !== null && <TooltipRow color="#F6AD55" label="Remaining" value={`${point.actual}h`} />}
                 {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projeção" value={`${point.projected}h`} />}
                 {point.scopeAdded > 0 && <TooltipRow color="#FC8181" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
+                {point.scopeRemoved > 0 && <TooltipRow color="#EF4444" label="Escopo removido" value={`-${point.scopeRemoved}h`} />}
+                {point.completedInDay > 0 && <TooltipRow color="#34D399" label="Concluído no dia" value={`${point.completedInDay}h`} />}
             </div>
         </div>
     );
@@ -161,13 +166,29 @@ const ScopeBarLabel = ({ x, y, width, value }: any) => {
     return (
         <text
             x={x + width / 2}
-            y={y - 6}
+            y={y - 4}
             textAnchor="middle"
             fill="#B91C1C"
-            fontSize={10}
+            fontSize={9}
             fontWeight={700}
         >
-            +{value}h
+            {value}h
+        </text>
+    );
+};
+
+const CompletedBarLabel = ({ x, y, width, value }: any) => {
+    if (!value || value <= 0) return null;
+    return (
+        <text
+            x={x + width / 2}
+            y={y - 12}
+            textAnchor="middle"
+            fill="#047857"
+            fontSize={9}
+            fontWeight={700}
+        >
+            {value}h
         </text>
     );
 };
@@ -244,6 +265,7 @@ export function BurndownChart({
     const [showActual, setShowActual] = useState(true);
     const [showProjected, setShowProjected] = useState(true);
     const [showScope, setShowScope] = useState(true);
+    const [showCompletedDaily, setShowCompletedDaily] = useState(true);
 
     const model = useMemo(() => {
         if (!data.length || !sprintStartDate || !sprintEndDate) return null;
@@ -295,6 +317,9 @@ export function BurndownChart({
                 actual,
                 projected: null,
                 scopeAdded: 0,
+                scopeRemoved: 0,
+                completedInDay: 0,
+                completedAccum: Math.round(snap?.completedWork || 0),
                 isToday: ms === todayMs,
                 isFuture,
                 totalWork,
@@ -307,18 +332,18 @@ export function BurndownChart({
         );
         if (points.length > 0) {
             points[0].ideal = baseInitial;
-            points[0].scopeAdded = 0;
-
-            // Daily scope changes are derived from totalWork day-to-day.
-            for (let i = 1; i < points.length; i++) {
-                const delta = Math.round(points[i].totalWork - points[i - 1].totalWork);
-                points[i].scopeAdded = delta > 0 ? delta : 0;
+            // Scope changes come from snapshot fields (real history), not derived from totalWork diff.
+            for (let i = 0; i < points.length; i++) {
+                const snap = snapshotByDay.get(points[i].dateMs);
+                points[i].scopeAdded = Math.max(0, Math.round(snap?.addedCount || 0));
+                points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
             }
 
             // Piecewise ideal: every scope increase recalculates the ideal burn for remaining days.
             let idealCursor = baseInitial;
             for (let i = 1; i < points.length; i++) {
-                idealCursor += points[i].scopeAdded;
+                idealCursor += points[i].scopeAdded - points[i].scopeRemoved;
+                idealCursor = Math.max(0, idealCursor);
                 const stepsRemaining = points.length - i;
                 const burnStep = stepsRemaining > 0 ? idealCursor / stepsRemaining : idealCursor;
                 idealCursor = Math.max(0, idealCursor - burnStep);
@@ -341,9 +366,34 @@ export function BurndownChart({
             }
         }
 
+        // Completed in day uses snapshot accumulated completedWork (real history).
+        const completedAccum: number[] = new Array(points.length).fill(0);
+        for (let i = 0; i < points.length; i++) {
+            completedAccum[i] = Math.max(0, Math.round(points[i].completedAccum || 0));
+            const prevAccum = i > 0 ? completedAccum[i - 1] : 0;
+            points[i].completedInDay = Math.max(0, completedAccum[i] - prevAccum);
+        }
+
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
-        const remNow = Math.max(0, Math.round(currentRemaining ?? (todayIdx >= 0 ? (points[todayIdx].actual || 0) : totalHours)));
-        const burnedTotal = Math.max(0, totalHours - remNow);
+        const snapshotInitialD1 = Math.round(points[0]?.totalWork ?? 0);
+        const dayOneNetScope = Math.round((points[0]?.scopeAdded || 0) - (points[0]?.scopeRemoved || 0));
+        // Header baseline (D0) = first visible day total minus the D1 net scope.
+        // This keeps all D1..Dn scope bars visible and makes Delta match bar net sum.
+        const snapshotInitial = Math.max(0, snapshotInitialD1 - dayOneNetScope);
+        const snapshotFinal = Math.round(
+            lastActualIdx >= 0
+                ? (points[lastActualIdx]?.totalWork ?? snapshotInitial)
+                : (points[points.length - 1]?.totalWork ?? snapshotInitial)
+        );
+        const snapshotDelta = snapshotFinal - snapshotInitial;
+        const effectiveTotalHours = snapshotFinal || totalHours;
+        const remNow = Math.max(
+            0,
+            Math.round(currentRemaining ?? (todayIdx >= 0 ? (points[todayIdx].actual || 0) : effectiveTotalHours))
+        );
+        const burnedTotal = lastActualIdx >= 0
+            ? Math.max(0, Math.round(completedAccum[lastActualIdx]))
+            : Math.max(0, effectiveTotalHours - remNow);
         const workedDays = lastActualIdx >= 0 ? lastActualIdx + 1 : 0;
         const avgBurnValue = workedDays > 0 ? burnedTotal / workedDays : 0;
         if (lastActualIdx >= 0) {
@@ -363,9 +413,9 @@ export function BurndownChart({
             }
         }
 
-        const deviationAbs = remNow - (todayIdx >= 0 ? points[todayIdx].ideal : totalHours);
-        const deviationPct = totalHours > 0 ? (deviationAbs / totalHours) * 100 : 0;
-        const idealNow = lastActualIdx >= 0 ? Math.max(0, Math.round(points[lastActualIdx].ideal)) : totalHours;
+        const deviationAbs = remNow - (todayIdx >= 0 ? points[todayIdx].ideal : effectiveTotalHours);
+        const deviationPct = effectiveTotalHours > 0 ? (deviationAbs / effectiveTotalHours) * 100 : 0;
+        const idealNow = lastActualIdx >= 0 ? Math.max(0, Math.round(points[lastActualIdx].ideal)) : effectiveTotalHours;
         const remainingDays = Math.max(0, points.length - workedDays);
         const neededIdealVelocity = remainingDays > 0 ? idealNow / remainingDays : 0;
 
@@ -388,14 +438,17 @@ export function BurndownChart({
 
         return {
             points,
-            totalHours,
+            totalHours: effectiveTotalHours,
+            headerInitial: snapshotInitial,
+            headerFinal: snapshotFinal,
+            headerDelta: snapshotDelta,
             remNow,
             burnedTotal,
             status,
             statusColor,
             statusBg,
             deviationPct,
-            completionPct: totalHours > 0 ? Math.round((burnedTotal / totalHours) * 100) : 0,
+            completionPct: effectiveTotalHours > 0 ? Math.round((burnedTotal / effectiveTotalHours) * 100) : 0,
             daysTotal: points.length,
             todayIdx,
             lastActualIdx,
@@ -419,9 +472,11 @@ export function BurndownChart({
                         Análise de Burn da Sprint
                     </h2>
                     <div style={{ fontSize: 12, color: UI_COLORS.muted, marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        <span>Inicial: {Math.round(plannedInitial ?? model.totalHours)}h</span>
-                        <span>Final: {model.totalHours}h</span>
-                        <span style={{ color: '#FC8181' }}>Delta +{Math.max(0, Math.round(plannedDelta ?? 0))}h</span>
+                        <span>Inicial: {model.headerInitial}h</span>
+                        <span>Final: {model.headerFinal}h</span>
+                        <span style={{ color: model.headerDelta >= 0 ? '#FC8181' : '#3B82F6' }}>
+                            Delta {model.headerDelta >= 0 ? '+' : ''}{model.headerDelta}h
+                        </span>
                     </div>
                 </div>
                 <StatusBadge status={model.status} color={model.statusColor} bgColor={model.statusBg} deviation={`${model.deviationPct > 0 ? '+' : ''}${model.deviationPct.toFixed(1)}%`} />
@@ -439,6 +494,7 @@ export function BurndownChart({
                 <LegendToggle label="Remaining" color="#F6AD55" checked={showActual} onToggle={() => setShowActual(!showActual)} />
                 <LegendToggle label="Projeção" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
                 <LegendToggle label="Mudanças de Escopo" color="#FC8181" checked={showScope} onToggle={() => setShowScope(!showScope)} />
+                <LegendToggle label="Concluído no dia" color="#34D399" checked={showCompletedDaily} onToggle={() => setShowCompletedDaily(!showCompletedDaily)} />
             </div>
 
             <div style={{ background: UI_COLORS.bgSoft, borderRadius: 12, padding: '18px 12px 12px 0', border: `1px solid ${UI_COLORS.border}` }}>
@@ -470,8 +526,13 @@ export function BurndownChart({
                         {showActual && <Line type="monotone" dataKey="actual" stroke="#F6AD55" strokeWidth={2} dot={false} activeDot={<ActiveDot />} connectNulls={false} name="Remaining" />}
                         {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projeção" />}
                         {showScope && (
-                            <Bar dataKey="scopeAdded" fill="rgba(252,129,129,0.6)" barSize={8}>
+                            <Bar dataKey="scopeAdded" fill="rgba(252,129,129,0.6)" barSize={12}>
                                 <LabelList dataKey="scopeAdded" content={<ScopeBarLabel />} />
+                            </Bar>
+                        )}
+                        {showCompletedDaily && (
+                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={12}>
+                                <LabelList dataKey="completedInDay" content={<CompletedBarLabel />} />
                             </Bar>
                         )}
                     </ComposedChart>

@@ -90,6 +90,8 @@ export interface SprintSnapshot {
     inProgressCount: number;
     doneCount: number;
     blockedCount: number;
+    addedCount?: number;
+    removedCount?: number;
     idealRemaining?: number;
 }
 

@@ -7,7 +7,7 @@ interface WorkItemsByStateChartProps {
     workItems: WorkItem[];
 }
 
-const ALLOWED_TYPES = ['Task', 'Bug', 'Test Suite', 'Test Case', 'Test Plan'];
+const ALLOWED_TYPES = ['task', 'bug', 'test case'];
 
 const STATE_COLORS: Record<string, string> = {
     'New': '#94A3B8',
@@ -68,7 +68,9 @@ const SliceLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) 
 
 export function WorkItemsByStateChart({ workItems }: WorkItemsByStateChartProps) {
     const { data, total } = useMemo(() => {
-        const filtered = workItems.filter(wi => ALLOWED_TYPES.includes(wi.type));
+        const filtered = workItems.filter(wi =>
+            ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
+        );
         const counts = new Map<string, number>();
         filtered.forEach(wi => {
             const state = wi.state || 'Outros';
@@ -126,10 +128,10 @@ export function WorkItemsByStateChart({ workItems }: WorkItemsByStateChartProps)
                                     <Cell key={i} fill={entry.color} />
                                 ))}
                             </Pie>
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 30 }} />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <div className="absolute inset-0 z-0 flex flex-col items-center justify-center pointer-events-none">
                         <span className="text-3xl font-bold text-gray-900">{total}</span>
                         <span className="text-xs text-gray-500">itens</span>
                     </div>
