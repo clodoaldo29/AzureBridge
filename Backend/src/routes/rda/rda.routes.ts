@@ -28,6 +28,7 @@ import {
 } from '@/modules/rda/schemas/monthly.schema';
 import { monthlyPreparationService } from '@/modules/rda/services/monthly-preparation.service';
 import { prisma } from '@/database/client';
+import { rdaQueueService } from '@/modules/rda/services/rda-queue.service';
 
 const generateRDASchema = z.object({
     projectId: z.string().min(1),
@@ -740,9 +741,11 @@ export async function rdaRoutes(fastify: FastifyInstance) {
 
     // Geração RDA
     fastify.post('/generate', async (req: FastifyRequest, reply: FastifyReply) => {
-        const payload = generateRDASchema.parse(req.body);
-        const generation = await rdaService.generateRDA(payload);
-        return reply.status(202).send({ success: true, data: generation });
+        generateRDASchema.parse(req.body);
+        return reply.status(410).send({
+            success: false,
+            error: 'Endpoint legado desativado. Use o fluxo novo: preparacao mensal -> preflight -> iniciar geracao.',
+        });
     });
 
     fastify.get('/project/:projectId', async (req: FastifyRequest, reply: FastifyReply) => {
@@ -776,8 +779,35 @@ export async function rdaRoutes(fastify: FastifyInstance) {
 
     fastify.post('/:id/retry', async (req: FastifyRequest, reply: FastifyReply) => {
         const { id } = idParamsSchema.parse(req.params);
-        const retried = await rdaService.retryGeneration(id);
-        return reply.send({ success: true, data: retried });
+        const generation = await prisma.rDAGeneration.findUnique({ where: { id } });
+        if (!generation || generation.status !== 'failed') {
+            return reply.status(400).send({
+                success: false,
+                error: 'Apenas geracoes falhadas podem ser reenfileiradas.',
+            });
+        }
+
+        const periodKey = `${generation.periodStart.getUTCFullYear()}-${String(generation.periodStart.getUTCMonth() + 1).padStart(2, '0')}`;
+
+        await prisma.rDAGeneration.update({
+            where: { id },
+            data: {
+                status: 'queued',
+                progress: 0,
+                currentStep: 'retry_queued',
+                errorMessage: null,
+            },
+        });
+
+        const jobId = await rdaQueueService.enqueue({
+            generationId: id,
+            projectId: generation.projectId,
+            templateId: generation.templateId,
+            periodKey,
+        });
+
+        const updated = await rdaService.getRDAById(id);
+        return reply.send({ success: true, data: { ...updated, jobId } });
     });
 
     // Template Factory

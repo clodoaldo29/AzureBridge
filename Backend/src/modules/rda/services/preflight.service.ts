@@ -14,6 +14,7 @@ import {
     PreflightConfigSchema,
     PreflightResult,
 } from '@/modules/rda/schemas/preflight.schema';
+import { rdaQueueService } from '@/modules/rda/services/rda-queue.service';
 import type { ProjectContextData } from '@/modules/rda/schemas/rag.schema';
 import type { MonthPeriod } from '@/modules/rda/schemas/monthly.schema';
 
@@ -599,8 +600,16 @@ export class PreflightService {
         await prisma.rDAGeneration.update({
             where: { id: generationId },
             data: {
-                partialResults: context as unknown as object,
+                partialResults: {
+                    context,
+                },
             },
+        });
+        await rdaQueueService.enqueue({
+            generationId,
+            projectId: project.id,
+            templateId: template.id,
+            periodKey,
         });
         console.log('[Preflight] Geracao preparada com sucesso', {
             projectId: project.id,
@@ -897,9 +906,9 @@ export class PreflightService {
             data: {
                 projectId,
                 templateId,
-                status: 'processing',
+                status: 'queued',
                 progress: 0,
-                currentStep: 'preflight_ready',
+                currentStep: 'queued',
                 periodType: 'monthly',
                 periodStart,
                 periodEnd,

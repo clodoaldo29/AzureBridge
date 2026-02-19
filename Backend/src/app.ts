@@ -6,6 +6,7 @@ import { apiRoutes } from '@/routes/api.routes';
 import { rdaRoutes } from '@/routes/rda/rda.routes';
 import { templateRoutes } from '@/routes/rda/template.routes';
 import { preflightRoutes } from '@/routes/rda/preflight.routes';
+import { generationRoutes } from '@/routes/rda/generation.routes';
 import { errorHandler } from '@/middleware/error-handler';
 
 export function buildApp() {
@@ -37,6 +38,7 @@ export function buildApp() {
     app.register(rdaRoutes, { prefix: '/api/rda' });
     app.register(templateRoutes, { prefix: '/api/rda/templates' });
     app.register(preflightRoutes, { prefix: '/api/rda/preflight' });
+    app.register(generationRoutes, { prefix: '/api/rda/generations' });
 
     // Error Handler
     app.setErrorHandler(errorHandler);

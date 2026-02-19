@@ -13,6 +13,7 @@ import {
 } from '@/pages/RDA/hooks/useMonthlyPreparation';
 import { GenerationReadinessIndicator } from '@/pages/RDA/components/preflight/GenerationReadinessIndicator';
 import { PreflightPanel } from '@/pages/RDA/components/preflight/PreflightPanel';
+import { GenerationPanel } from '@/pages/RDA/components/generation/GenerationPanel';
 import { toast } from '@/hooks/use-toast';
 
 interface MonthlyPreparationPanelProps {
@@ -66,6 +67,7 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
     const [forceReprocess, setForceReprocess] = useState(false);
     const [refreshProjectContext, setRefreshProjectContext] = useState(true);
     const [trackingPeriod, setTrackingPeriod] = useState('');
+    const [generationId, setGenerationId] = useState<string | null>(null);
 
     const periodKey = toPeriodKey({ month, year });
 
@@ -302,6 +304,14 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
                 <PreflightPanel
                     projectId={projectId}
                     period={trackedPeriodConfig}
+                    onGenerationReady={(id) => setGenerationId(id)}
+                />
+            )}
+
+            {generationId && (
+                <GenerationPanel
+                    projectId={projectId}
+                    generationId={generationId}
                 />
             )}
         </div>

@@ -2,17 +2,15 @@
 import { CheckCircle2, Circle, Database, FileText, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RDAWizard } from '@/components/rda/RDAWizard';
 import { ProjectSetupWizard } from '@/pages/RDA/components/project-setup/ProjectSetupWizard';
 import { useSetupStatus } from '@/pages/RDA/hooks/useProjectSetup';
 import { MonthlyPreparationPanel } from '@/pages/RDA/components/monthly-preparation/MonthlyPreparationPanel';
 
 interface UnifiedRDAWorkspaceProps {
     selectedProjectId: string;
-    onProjectChange: (projectId: string) => void;
 }
 
-export function UnifiedRDAWorkspace({ selectedProjectId, onProjectChange }: UnifiedRDAWorkspaceProps) {
+export function UnifiedRDAWorkspace({ selectedProjectId }: UnifiedRDAWorkspaceProps) {
     const [activeStage, setActiveStage] = useState<'setup' | 'monthly' | 'generate'>('setup');
     const { data: setupStatus } = useSetupStatus(selectedProjectId, activeStage === 'setup');
 
@@ -115,10 +113,13 @@ export function UnifiedRDAWorkspace({ selectedProjectId, onProjectChange }: Unif
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <RDAWizard
-                            selectedProjectId={selectedProjectId}
-                            onProjectChange={onProjectChange}
-                        />
+                        <div className="space-y-2 text-sm text-muted-foreground">
+                            <p>A geracao agora segue exclusivamente o fluxo novo da Etapa 2.</p>
+                            <p>Use "Preparacao mensal", execute o preflight e clique em "Iniciar geracao" para acompanhar em tempo real.</p>
+                            <Button variant="outline" size="sm" onClick={() => setActiveStage('monthly')}>
+                                Ir para Etapa 2
+                            </Button>
+                        </div>
                     </CardContent>
                 </Card>
             )}

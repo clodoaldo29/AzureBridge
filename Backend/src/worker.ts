@@ -5,6 +5,7 @@ import { scheduleSyncJob } from './jobs/definitions/sync.job';
 import { scheduleSnapshotJob } from './jobs/definitions/snapshot.job';
 import { scheduleMetricsJob } from './jobs/definitions/metrics.job';
 import { logger } from './utils/logger';
+import { rdaQueueService } from '@/modules/rda/services/rda-queue.service';
 
 /**
  * Ponto de Entrada do Processo Worker
@@ -23,6 +24,7 @@ async function start() {
 
     // Inicializar ouvintes dos workers
     initWorkers();
+    rdaQueueService.initWorker();
 
     // Agendar jobs recorrentes
     await scheduleSyncJob();

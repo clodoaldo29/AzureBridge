@@ -222,7 +222,7 @@ export interface RDAGenerationData {
     id: string;
     projectId: string;
     templateId: string;
-    status: 'processing' | 'completed' | 'failed' | 'cancelled';
+    status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
     progress: number;
     currentStep?: string | null;
     periodType: RDAReportPeriodType;

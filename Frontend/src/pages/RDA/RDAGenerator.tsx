@@ -74,7 +74,6 @@ export function RDAGenerator() {
                 <div className="space-y-4">
                     <UnifiedRDAWorkspace
                         selectedProjectId={selectedProjectId || ''}
-                        onProjectChange={(projectId) => setSelectedProjectId(projectId)}
                     />
                 </div>
             )}

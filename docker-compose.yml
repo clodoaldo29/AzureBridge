@@ -47,6 +47,39 @@ services:
   # ========================================
   # Auto Sync Scheduler
   # ========================================
+  worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: azurebridge-worker
+    restart: unless-stopped
+    user: "0:0"
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
+      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
+      AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      RDA_UPLOADS_DIR: /app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - azurebridge-network
+    volumes:
+      - api-logs:/app/logs
+      - api-uploads:/app/uploads
+
   auto-sync:
     build:
       context: ./Backend

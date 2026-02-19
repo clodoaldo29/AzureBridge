@@ -20,6 +20,27 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       RDA_UPLOADS_DIR: /app/uploads
 
+  worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: builder
+    user: "0:0"
+    command: npm run worker
+    volumes:
+      - ./Backend/src:/app/src
+      - ./Backend/prisma:/app/prisma
+      - ./Backend/uploads:/app/uploads
+    environment:
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RDA_UPLOADS_DIR: /app/uploads
+    depends_on:
+      - redis
+
   web:
     build:
       context: ./Frontend
@@ -36,3 +57,8 @@ services:
       API_PROXY_TARGET: http://api:3001
       VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       VITE_ENABLE_DEVTOOLS: "true"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
