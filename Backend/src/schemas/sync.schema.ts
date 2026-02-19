@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// For future use if we pass options to sync
+// Para uso futuro se passarmos opcoes para o sync
 export const syncBodySchema = z.object({
     force: z.boolean().optional()
 });

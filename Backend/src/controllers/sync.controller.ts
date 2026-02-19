@@ -4,15 +4,14 @@ import { logger } from '@/utils/logger';
 
 export class SyncController {
     /**
-     * Trigger Incremental Sync
+     * Disparar Sincronizacao Incremental
      */
     async triggerIncrementalSync(_req: FastifyRequest, reply: FastifyReply) {
         try {
             logger.info('API: Triggering Incremental Sync');
 
-            // Run in background (don't await completion for the response, unless preferred)
-            // Ideally passing off to the Queue, but direct service call works for MVP if fast enough
-            // Re-using the logic:
+            // Executar em background (nao aguardar conclusao para a resposta)
+            // Idealmente delegaria para a fila, mas chamada direta funciona para MVP
 
             const result = await syncService.incrementalSync();
 
@@ -31,13 +30,13 @@ export class SyncController {
     }
 
     /**
-     * Trigger Full Sync (Heavy operation)
+     * Disparar Sincronizacao Completa (Operacao pesada)
      */
     async triggerFullSync(_req: FastifyRequest, reply: FastifyReply) {
         try {
             logger.info('API: Triggering Full Sync');
-            // This might timeout HTTP request if awaited. 
-            // In a real scenario, push to Queue and return Job ID.
+            // Pode causar timeout na requisicao HTTP se aguardado.
+            // Em cenario real, enviar para a fila e retornar ID do job.
 
             const result = await syncService.fullSync();
 

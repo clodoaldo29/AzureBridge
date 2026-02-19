@@ -2,15 +2,15 @@ import Redis from 'ioredis';
 import { logger } from '@/utils/logger';
 
 /**
- * Redis Client
- * Singleton Redis connection
+ * Cliente Redis
+ * Conexao Redis singleton
  */
 class RedisClient {
     private client: Redis | null = null;
     private isConnected = false;
 
     /**
-     * Get Redis client instance
+     * Obter instancia do cliente Redis
      */
     getClient(): Redis {
         if (!this.client) {
@@ -46,14 +46,14 @@ class RedisClient {
     }
 
     /**
-     * Check if Redis is connected
+     * Verificar se o Redis esta conectado
      */
     isReady(): boolean {
         return this.isConnected;
     }
 
     /**
-     * Disconnect from Redis
+     * Desconectar do Redis
      */
     async disconnect(): Promise<void> {
         if (this.client) {
@@ -65,5 +65,5 @@ class RedisClient {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const redisClient = new RedisClient();

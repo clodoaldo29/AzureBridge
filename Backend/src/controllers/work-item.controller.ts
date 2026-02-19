@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export class WorkItemController {
     /**
-     * List Work Items with filters
+     * Listar Work Items com filtros
      */
     async listWorkItems(req: FastifyRequest, reply: FastifyReply) {
         const querySchema = z.object({
@@ -29,7 +29,7 @@ export class WorkItemController {
             if (filters.state) where.state = filters.state;
             if (filters.assignedTo) where.assignedToId = filters.assignedTo;
 
-            // Pending/Blocked filters could be added here
+            // Filtros de Pendente/Bloqueado podem ser adicionados aqui
 
             const [total, items] = await Promise.all([
                 prisma.workItem.count({ where }),
@@ -72,7 +72,7 @@ export class WorkItemController {
     }
 
     /**
-     * Get Work Item details
+     * Obter detalhes do Work Item
      */
     async getWorkItem(req: FastifyRequest, reply: FastifyReply) {
         const paramsSchema = z.object({ id: z.coerce.number() });
@@ -102,8 +102,8 @@ export class WorkItemController {
     }
 
     /**
-     * Get Work Item Hierarchy (Tree)
-     * Useful for Feature -> PBI -> Task views
+     * Obter Hierarquia de Work Item (Arvore)
+     * Util para visualizacao Feature -> PBI -> Task
      */
     async getWorkItemWithChildren(req: FastifyRequest, reply: FastifyReply) {
         const paramsSchema = z.object({ id: z.coerce.number() });
@@ -111,14 +111,14 @@ export class WorkItemController {
         try {
             const { id } = paramsSchema.parse(req.params);
 
-            // Fetch recursive children (up to a few levels if needed, but Prisma lacks deep recursive include easily)
-            // For now, 2 levels deep: Item -> Children -> Grandchildren
+            // Buscar filhos recursivamente (ate alguns niveis, Prisma nao suporta include recursivo profundo facilmente)
+            // Por enquanto, 2 niveis: Item -> Filhos -> Netos
             const item = await prisma.workItem.findUnique({
                 where: { id },
                 include: {
                     children: {
                         include: {
-                            children: true // Grandchildren
+                            children: true // Netos
                         }
                     }
                 }
@@ -134,15 +134,15 @@ export class WorkItemController {
     }
 
     /**
-     * Get Blocked Items
+     * Buscar Itens Bloqueados
      */
     async getBlockedWorkItems(_req: FastifyRequest, reply: FastifyReply) {
         try {
             const items = await prisma.workItem.findMany({
                 where: {
                     isRemoved: false,
-                    // Assuming 'isBlocked' boolean or tag exists. 
-                    // Using basic state checks for now or metadata if available
+                    // Assumindo que boolean/tag 'isBlocked' existe
+                    // Usando verificacoes basicas de estado por enquanto
                     isBlocked: true
                 },
                 include: { assignedTo: true }

@@ -7,12 +7,12 @@ import { scheduleMetricsJob } from './jobs/definitions/metrics.job';
 import { logger } from './utils/logger';
 
 /**
- * Worker Process Entry Point
+ * Ponto de Entrada do Processo Worker
  */
 async function start() {
     logger.info('🔧 Starting Worker Process...');
 
-    // Initialize Database
+    // Inicializar banco de dados
     try {
         await prisma.$connect();
         logger.info('✅ Database connected');
@@ -21,15 +21,15 @@ async function start() {
         process.exit(1);
     }
 
-    // Initialize Worker Listeners
+    // Inicializar ouvintes dos workers
     initWorkers();
 
-    // Schedule Recurring Jobs
+    // Agendar jobs recorrentes
     await scheduleSyncJob();
     await scheduleSnapshotJob();
     await scheduleMetricsJob();
 
-    // Handle Shutdown
+    // Gerenciar encerramento
     const signals = ['SIGTERM', 'SIGINT'];
     signals.forEach((signal) => {
         process.on(signal, async () => {

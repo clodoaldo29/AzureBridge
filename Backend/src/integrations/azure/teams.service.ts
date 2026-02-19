@@ -3,12 +3,12 @@ import { logger } from '@/utils/logger';
 import type { AzureProject, AzureTeamMember } from './types';
 
 /**
- * Azure DevOps Teams Service
- * Handles team and project operations
+ * Servico de Times do Azure DevOps
+ * Gerencia operacoes de times e projetos
  */
 export class TeamsService {
     /**
-     * Get all projects
+     * Buscar todos os projetos
      */
     async getProjects(): Promise<AzureProject[]> {
         try {

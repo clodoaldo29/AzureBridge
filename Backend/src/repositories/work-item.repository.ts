@@ -3,12 +3,12 @@ import type { WorkItem, Prisma } from '@prisma/client';
 import { logger } from '@/utils/logger';
 
 /**
- * Work Item Repository
- * Data access layer for work items
+ * Repositorio de Work Items
+ * Camada de acesso a dados para work items
  */
 export class WorkItemRepository {
     /**
-     * Create or update a work item
+     * Criar ou atualizar um work item
      */
     async upsert(data: Prisma.WorkItemCreateInput): Promise<WorkItem> {
         try {
@@ -26,9 +26,9 @@ export class WorkItemRepository {
                     originalEstimate: data.originalEstimate,
                     completedWork: data.completedWork,
                     remainingWork: data.remainingWork,
-                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                     lastRemainingWork: (data as any).lastRemainingWork,
-                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                     doneRemainingWork: (data as any).doneRemainingWork,
                     storyPoints: data.storyPoints,
                     effort: data.effort,
@@ -67,7 +67,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Find work item by Azure ID
+     * Buscar work item por Azure ID
      */
     async findByAzureId(azureId: number): Promise<WorkItem | null> {
         return prisma.workItem.findUnique({
@@ -76,7 +76,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Find work item by ID
+     * Buscar work item por ID
      */
     async findById(id: number): Promise<WorkItem | null> {
         return prisma.workItem.findUnique({
@@ -85,7 +85,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work items by sprint
+     * Buscar work items por sprint
      */
     async findBySprint(sprintId: string): Promise<WorkItem[]> {
         return prisma.workItem.findMany({
@@ -95,7 +95,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work items by project
+     * Buscar work items por projeto
      */
     async findByProject(projectId: string, limit = 100): Promise<WorkItem[]> {
         return prisma.workItem.findMany({
@@ -106,7 +106,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work item with relations
+     * Buscar work item com relacoes
      */
     async findByIdWithRelations(id: number) {
         return prisma.workItem.findUnique({
@@ -128,7 +128,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get blocked work items
+     * Buscar work items bloqueados
      */
     async findBlocked(projectId?: string): Promise<WorkItem[]> {
         return prisma.workItem.findMany({
@@ -142,7 +142,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get delayed work items
+     * Buscar work items atrasados
      */
     async findDelayed(projectId?: string): Promise<WorkItem[]> {
         return prisma.workItem.findMany({
@@ -156,7 +156,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work items changed since date
+     * Buscar work items alterados desde uma data
      */
     async findChangedSince(since: Date, projectId?: string): Promise<WorkItem[]> {
         return prisma.workItem.findMany({
@@ -169,7 +169,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Bulk upsert work items
+     * Upsert em lote de work items
      */
     async bulkUpsert(items: Prisma.WorkItemCreateInput[]): Promise<number> {
         let count = 0;
@@ -188,7 +188,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Delete work item
+     * Excluir work item
      */
     async delete(id: number): Promise<void> {
         await prisma.workItem.delete({
@@ -198,14 +198,14 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work items by sprint with hierarchical structure
-     * Returns only parent items (PBIs, Features) with their children loaded
+     * Buscar work items por sprint com estrutura hierarquica
+     * Retorna apenas itens pais (PBIs, Features) com filhos carregados
      */
     async findBySprintHierarchical(sprintId: string) {
         return prisma.workItem.findMany({
             where: {
                 sprintId,
-                parentId: null, // Only top-level items
+                parentId: null, // Apenas itens de nivel superior
             },
             include: {
                 children: {
@@ -223,8 +223,8 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get only parent work items (PBIs, Features, Epics)
-     * Useful for listing without children
+     * Buscar apenas work items pais (PBIs, Features, Epics)
+     * Util para listagem sem filhos
      */
     async findParentItems(sprintId: string) {
         return prisma.workItem.findMany({
@@ -241,7 +241,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get child work items of a parent
+     * Buscar work items filhos de um pai
      */
     async findChildItems(parentId: number) {
         return prisma.workItem.findMany({
@@ -254,14 +254,14 @@ export class WorkItemRepository {
     }
 
     /**
-     * Get work items by project with hierarchical structure
-     * Returns only parent items with their children loaded
+     * Buscar work items por projeto com estrutura hierarquica
+     * Retorna apenas itens pais com filhos carregados
      */
     async findByProjectHierarchical(projectId: string, limit = 100) {
         return prisma.workItem.findMany({
             where: {
                 projectId,
-                parentId: null, // Only top-level items
+                parentId: null, // Apenas itens de nivel superior
             },
             include: {
                 children: {
@@ -279,5 +279,5 @@ export class WorkItemRepository {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const workItemRepository = new WorkItemRepository();

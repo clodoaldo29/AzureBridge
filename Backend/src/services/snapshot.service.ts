@@ -41,13 +41,13 @@ export class SnapshotService {
         return set;
     }
     /**
-     * Capture daily snapshot for all active sprints
+     * Capturar snapshot diario para todas as sprints ativas
      */
     async captureDailySnapshots(): Promise<void> {
         try {
             logger.info('📸 Starting Daily Snapshot capture...');
 
-            // 1. Find all active sprints
+            // 1. Buscar todas as sprints ativas
             const activeSprints = await prisma.sprint.findMany({
                 where: {
                     state: { in: ['active', 'Active'] }
@@ -64,7 +64,7 @@ export class SnapshotService {
 
             logger.info(`Found ${activeSprints.length} active sprints.`);
 
-            // 2. Process each sprint
+            // 2. Processar cada sprint
             for (const sprint of activeSprints) {
                 await this.createSprintSnapshot(sprint.id);
             }
@@ -77,11 +77,11 @@ export class SnapshotService {
     }
 
     /**
-     * Create a snapshot for a specific sprint
+     * Criar um snapshot para uma sprint especifica
      */
     async createSprintSnapshot(sprintId: string): Promise<void> {
         try {
-            const today = this.toUtcDay(new Date()); // Always normalize to UTC day
+            const today = this.toUtcDay(new Date()); // Sempre normalizar para dia UTC
 
             const sprint = await prisma.sprint.findUnique({
                 where: { id: sprintId },

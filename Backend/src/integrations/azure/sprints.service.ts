@@ -5,13 +5,13 @@ import { TreeStructureGroup } from 'azure-devops-node-api/interfaces/WorkItemTra
 import { TeamContext } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 
 /**
- * Azure DevOps Sprints Service
- * Handles sprint/iteration operations
+ * Servico de Sprints do Azure DevOps
+ * Gerencia operacoes de sprints/iteracoes
  */
 export class SprintsService {
     /**
-     * Get all sprints/iterations for the project
-     * Falls back to discovering sprints from work items if team iterations are not configured
+     * Buscar todas as sprints/iteracoes do projeto
+     * Fallback para descoberta de sprints via work items se iteracoes do time nao estiverem configuradas
      */
     async getSprints(options: SprintQueryOptions = {}): Promise<AzureSprint[]> {
         try {
@@ -30,19 +30,19 @@ export class SprintsService {
 
             let sprints = iterations as AzureSprint[];
 
-            // If no iterations found via team API, try Classification Nodes first
+            // Se nao encontrou iteracoes via API do time, tenta Classification Nodes primeiro
             if (!sprints || sprints.length === 0) {
                 logger.warn('No team iterations found, trying Classification Nodes API...');
                 sprints = await this.getSprintsFromClassificationNodes();
 
-                // If still no sprints, fall back to work items discovery
+                // Se ainda sem sprints, recorre a descoberta via work items
                 if (!sprints || sprints.length === 0) {
                     logger.warn('No iterations in Classification Nodes, discovering from work items...');
                     sprints = await this.getSprintsFromWorkItems();
                 }
             }
 
-            // Filter by timeframe if specified
+            // Filtrar por periodo se especificado
             if (options.timeFrame && sprints.length > 0) {
                 sprints = sprints.filter(
                     (sprint) => sprint.attributes?.timeFrame === options.timeFrame
@@ -61,8 +61,8 @@ export class SprintsService {
     }
 
     /**
-     * Get sprints from Classification Nodes API (Iteration Paths)
-     * This is the most reliable method as it queries the project structure directly
+     * Buscar sprints via API de Classification Nodes (Iteration Paths)
+     * Metodo mais confiavel pois consulta a estrutura do projeto diretamente
      */
     async getSprintsFromClassificationNodes(): Promise<AzureSprint[]> {
         try {
@@ -70,7 +70,7 @@ export class SprintsService {
             const witApi = await client.getWorkItemTrackingApi();
             const config = client.getConfig();
 
-            // Get the Iteration classification node tree
+            // Obter a arvore de nodos de classificacao de iteracao
             const iterationNode = await witApi.getClassificationNode(
                 config.project,
                 TreeStructureGroup.Iterations,
@@ -83,7 +83,7 @@ export class SprintsService {
                 return [];
             }
 
-            // Recursively extract all iteration nodes
+            // Extrair recursivamente todos os nodos de iteracao
             const sprints: AzureSprint[] = [];
             const now = new Date();
 
@@ -92,12 +92,12 @@ export class SprintsService {
 
                 const nodePath = `${parentPath}\\${node.name}`;
 
-                // If node has attributes (start/end dates), it's a sprint
+                // Se o nodo tem atributos (datas inicio/fim), e uma sprint
                 if (node.attributes) {
                     const startDate = node.attributes.startDate ? new Date(node.attributes.startDate) : undefined;
                     const endDate = node.attributes.finishDate ? new Date(node.attributes.finishDate) : undefined;
 
-                    // Determine timeframe
+                    // Determinar periodo
                     let timeFrame = 'future';
                     if (startDate && endDate) {
                         if (now >= startDate && now <= endDate) {
@@ -120,13 +120,13 @@ export class SprintsService {
                     });
                 }
 
-                // Recursively process children
+                // Processar filhos recursivamente
                 if (node.children && node.children.length > 0) {
                     node.children.forEach((child: any) => extractIterations(child, nodePath));
                 }
             };
 
-            // Start extraction from root children
+            // Iniciar extracao a partir dos filhos da raiz
             iterationNode.children.forEach((child: any) => {
                 extractIterations(child, config.project);
             });
@@ -140,8 +140,8 @@ export class SprintsService {
     }
 
     /**
-     * Discover sprints from work item iteration paths
-     * This is a fallback when team iterations are not configured
+     * Descobrir sprints a partir dos caminhos de iteracao dos work items
+     * Fallback quando iteracoes do time nao estao configuradas
      */
     async getSprintsFromWorkItems(): Promise<AzureSprint[]> {
         try {
@@ -149,7 +149,7 @@ export class SprintsService {
             const witApi = await client.getWorkItemTrackingApi();
             const config = client.getConfig();
 
-            // Query to get unique iteration paths
+            // Consulta para obter caminhos de iteracao unicos
             const wiql = {
                 query: `SELECT [System.Id], [System.IterationPath] 
                         FROM WorkItems 
@@ -169,11 +169,11 @@ export class SprintsService {
                 return [];
             }
 
-            // Get work items to extract iteration paths
+            // Buscar work items para extrair caminhos de iteracao
             const ids = result.workItems.slice(0, 100).map(wi => wi.id!);
             const workItems = await witApi.getWorkItems(ids, ['System.IterationPath']);
 
-            // Extract unique iteration paths
+            // Extrair caminhos de iteracao unicos
             const iterationPaths = new Set<string>();
             workItems.forEach(wi => {
                 const path = wi.fields?.['System.IterationPath'];
@@ -182,7 +182,7 @@ export class SprintsService {
                 }
             });
 
-            // Convert iteration paths to sprint objects
+            // Converter caminhos de iteracao em objetos sprint
             const sprints: AzureSprint[] = Array.from(iterationPaths).map((path, index) => {
                 const parts = path.split('\\');
                 const name = parts[parts.length - 1];
@@ -192,7 +192,7 @@ export class SprintsService {
                     name,
                     path,
                     attributes: {
-                        timeFrame: 'current' // Default to current since we don't have dates
+                        timeFrame: 'current' // Padrao 'current' pois nao temos datas
                     },
                     url: ''
                 } as AzureSprint;
@@ -207,7 +207,7 @@ export class SprintsService {
     }
 
     /**
-     * Get a specific sprint by ID
+     * Buscar uma sprint especifica por ID
      */
     async getSprint(sprintId: string): Promise<AzureSprint | null> {
         try {
@@ -222,7 +222,7 @@ export class SprintsService {
                 team: team
             };
 
-            // Correct call: (teamContext, iterationId)
+            // Chamada correta: (teamContext, iterationId)
             const sprint = await workApi.getTeamIteration(
                 teamContext,
                 sprintId
@@ -237,7 +237,7 @@ export class SprintsService {
     }
 
     /**
-     * Get current active sprint
+     * Buscar sprint ativa atual
      */
     async getCurrentSprint(): Promise<AzureSprint | null> {
         const sprints = await this.getSprints({ timeFrame: 'current' });
@@ -245,7 +245,7 @@ export class SprintsService {
     }
 
     /**
-     * Get team capacity for a sprint
+     * Buscar capacidade do time para uma sprint
      */
     async getSprintCapacity(sprintId: string): Promise<AzureCapacity[]> {
         try {
@@ -259,9 +259,9 @@ export class SprintsService {
                 team: team
             };
 
-            // Use 'any' cast because the Typedef might not include getCapacitiesWithIdentityRefAndTotals or similar
-            // But we know it's a Team Capacity call. 
-            // The standard method is getCapacities(teamContext, iterationId)
+            // Cast para 'any' pois o typedef pode nao incluir getCapacitiesWithIdentityRefAndTotals
+            // Mas sabemos que e uma chamada de Capacity do Time
+            // O metodo padrao e getCapacities(teamContext, iterationId)
             let capacities;
             if ((workApi as any).getCapacitiesWithIdentityRefAndTotals) {
                 capacities = await (workApi as any).getCapacitiesWithIdentityRefAndTotals(teamContext, sprintId);
@@ -271,7 +271,7 @@ export class SprintsService {
                 throw new Error("Capacity API method not found");
             }
 
-            // Adjust return type if it returns an wrapper object
+            // Ajustar tipo de retorno se retorna objeto wrapper
             if (capacities.teamMembers) return capacities.teamMembers as AzureCapacity[];
             return capacities as AzureCapacity[];
 
@@ -282,7 +282,7 @@ export class SprintsService {
     }
 
     /**
-     * Get all sprints with their capacities
+     * Buscar todas as sprints com suas capacidades
      */
     async getSprintsWithCapacity(): Promise<
         Array<{ sprint: AzureSprint; capacities: AzureCapacity[] }>
@@ -304,5 +304,5 @@ export class SprintsService {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const sprintsService = new SprintsService();

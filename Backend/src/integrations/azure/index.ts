@@ -1,4 +1,4 @@
-// Export all Azure DevOps integration services
+// Exporta todos os servicos de integracao com Azure DevOps
 export * from './client';
 export * from './types';
 export * from './work-items.service';

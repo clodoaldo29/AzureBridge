@@ -1,6 +1,7 @@
 ﻿import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
+import { RDAGenerator } from '@/features/rda/pages/RDAGenerator';
 import { Toaster } from '@/components/ui/toaster';
 import { ServerCheck } from '@/components/common/ServerCheck';
 
@@ -42,6 +43,7 @@ export default function App() {
                             />
                         }
                     />
+                    <Route path="rda" element={<RDAGenerator />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

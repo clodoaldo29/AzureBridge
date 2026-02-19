@@ -7,15 +7,20 @@ export async function errorHandler(
     request: FastifyRequest,
     reply: FastifyReply
 ) {
-    // Log error
+    const statusCodeRaw = (error as unknown as { statusCode?: number; status?: number }).statusCode
+        ?? (error as unknown as { statusCode?: number; status?: number }).status;
+    const statusCode = Number.isInteger(statusCodeRaw) ? Number(statusCodeRaw) : 500;
+
+    // Registrar erro
     logger.error('Request error', {
         method: request.method,
         url: request.url,
         error: error.message,
+        statusCode,
         stack: error.stack,
     });
 
-    // Zod validation errors
+    // Erros de validacao Zod
     if (error instanceof ZodError) {
         return reply.status(400).send({
             success: false,
@@ -24,7 +29,7 @@ export async function errorHandler(
         });
     }
 
-    // Prisma errors (Basic check, can be expanded)
+    // Erros do Prisma (verificacao basica, pode ser expandida)
     if (error.message?.includes('Prisma')) {
         return reply.status(500).send({
             success: false,
@@ -33,8 +38,8 @@ export async function errorHandler(
         });
     }
 
-    // Default error
-    return reply.status(error.statusCode || 500).send({
+    // Erro padrao
+    return reply.status(statusCode).send({
         success: false,
         error: error.name || 'Internal Server Error',
         message: error.message || 'An unexpected error occurred',

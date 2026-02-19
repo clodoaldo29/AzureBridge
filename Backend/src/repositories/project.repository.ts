@@ -3,12 +3,12 @@ import type { Project, Prisma } from '@prisma/client';
 import { logger } from '@/utils/logger';
 
 /**
- * Project Repository
- * Data access layer for projects
+ * Repositorio de Projetos
+ * Camada de acesso a dados para projetos
  */
 export class ProjectRepository {
     /**
-     * Create or update a project
+     * Criar ou atualizar um projeto
      */
     async upsert(data: Prisma.ProjectCreateInput): Promise<Project> {
         try {
@@ -34,7 +34,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Find project by Azure ID
+     * Buscar projeto por Azure ID
      */
     async findByAzureId(azureId: string): Promise<Project | null> {
         return prisma.project.findUnique({
@@ -43,7 +43,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Find project by ID
+     * Buscar projeto por ID
      */
     async findById(id: string): Promise<Project | null> {
         return prisma.project.findUnique({
@@ -52,7 +52,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Get all projects
+     * Buscar todos os projetos
      */
     async findAll(): Promise<Project[]> {
         return prisma.project.findMany({
@@ -61,7 +61,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Get project with relations
+     * Buscar projeto com relacoes
      */
     async findByIdWithRelations(id: string) {
         return prisma.project.findUnique({
@@ -87,7 +87,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Update last sync time
+     * Atualizar horario da ultima sincronizacao
      */
     async updateLastSync(id: string): Promise<Project> {
         return prisma.project.update({
@@ -97,7 +97,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Delete project
+     * Excluir projeto
      */
     async delete(id: string): Promise<void> {
         await prisma.project.delete({
@@ -107,7 +107,7 @@ export class ProjectRepository {
     }
 
     /**
-     * Get project with full hierarchy (sprints → work items → children)
+     * Buscar projeto com hierarquia completa (sprints -> work items -> filhos)
      */
     async findByIdWithHierarchy(id: string) {
         return prisma.project.findUnique({
@@ -137,5 +137,5 @@ export class ProjectRepository {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const projectRepository = new ProjectRepository();

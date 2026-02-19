@@ -6,12 +6,12 @@ export const JOB_IDS = {
 };
 
 /**
- * Schedule the Daily Metrics Job
- * Runs every day at 00:30 (after snapshots)
+ * Agendar Job de Metricas Diarias
+ * Executa todos os dias as 00:30 (apos snapshots)
  */
 export async function scheduleMetricsJob() {
     try {
-        // Remove existing
+        // Remover existentes
         const repeatableJobs = await azureSyncQueue.getRepeatableJobs();
         for (const job of repeatableJobs) {
             if (job.key.includes('daily-metrics')) {
@@ -19,14 +19,14 @@ export async function scheduleMetricsJob() {
             }
         }
 
-        // Add new job
+        // Adicionar novo job
         await azureSyncQueue.add(
             'daily-metrics',
             {},
             {
                 jobId: JOB_IDS.DAILY_METRICS,
                 repeat: {
-                    pattern: '30 0 * * *', // At 00:30 every day
+                    pattern: '30 0 * * *', // As 00:30 todos os dias
                 },
             }
         );

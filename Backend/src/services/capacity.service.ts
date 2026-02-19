@@ -18,7 +18,7 @@ export class CapacityService {
         });
     }
     /**
-     * Sync capacity for a specific sprint
+     * Sincronizar capacidade para uma sprint especifica
      */
     async syncSprintCapacity(sprintId: string, projectId: string): Promise<void> {
         try {
@@ -37,13 +37,13 @@ export class CapacityService {
             const workApi = await client.getWorkApi();
             const coreApi = await client.getCoreApi();
 
-            // Get Team
+            // Obter Time
             const teams = await coreApi.getTeams(sprint.project.azureId);
             if (teams.length === 0) {
                 logger.warn(`No teams found for project ${sprint.project.name}`);
                 return;
             }
-            const team = teams[0]; // TODO: Support multiple teams
+            const team = teams[0]; // TODO: Suportar multiplos times
 
             const teamContext = {
                 project: sprint.project.name,
@@ -52,7 +52,7 @@ export class CapacityService {
                 teamId: team.id
             };
 
-            // Fetch capacity using runtime method check
+            // Buscar capacidade verificando metodo disponivel em runtime
             const api: any = workApi;
             let capacityData;
 
@@ -68,7 +68,7 @@ export class CapacityService {
                 return;
             }
 
-            // Fetch Team Days Off explicitly
+            // Buscar folgas do time explicitamente
             let teamDaysOffData = null;
             try {
                 if (typeof api.getTeamDaysOff === 'function') {
@@ -89,7 +89,7 @@ export class CapacityService {
             const sprintEnd = new Date(sprint.endDate);
             const totalSprintDays = this.getBusinessDays(sprintStart, sprintEnd);
 
-            // Calculate Team Days Off (Business Days only)
+            // Calcular folgas do time (apenas dias uteis)
             let teamDaysOffCount = 0;
             const teamDaysOff = (teamDaysOffData && teamDaysOffData.daysOff) ? teamDaysOffData.daysOff : (capacityData.teamDaysOff || []);
 
@@ -97,7 +97,7 @@ export class CapacityService {
                 for (const d of teamDaysOff) {
                     const start = new Date(d.start);
                     const end = new Date(d.end);
-                    // Iterate checking business days overlap with sprint
+                    // Iterar verificando sobreposicao de dias uteis com a sprint
                     for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
                         if (dt >= sprintStart && dt <= sprintEnd) {
                             const dayOfWeek = dt.getUTCDay();
@@ -111,11 +111,11 @@ export class CapacityService {
             logger.info(`Sprint Days: ${totalSprintDays} - ${teamDaysOffCount} (Team Off) = ${netSprintDays} Net Days`);
 
             if (capacityData.teamMembers) {
-                // Process each team member
+                // Processar cada membro do time
                 for (const cap of capacityData.teamMembers) {
                     if (!cap.teamMember || !cap.teamMember.id) continue;
 
-                    // Sync Member
+                    // Sincronizar membro
                     const member = await this.syncTeamMember(cap.teamMember, projectId);
 
                     if (!member) {
@@ -123,10 +123,10 @@ export class CapacityService {
                         continue;
                     }
 
-                    // Calculate hours
+                    // Calcular horas
                     const capacityPerDay = cap.activities.reduce((acc: number, act: any) => acc + (act.capacityPerDay || 0), 0) || 0;
 
-                    // Calculate individual days off intersection with sprint
+                    // Calcular intersecao de folgas individuais com a sprint
                     let individualDaysOffCount = 0;
                     if (cap.daysOff) {
                         for (const d of cap.daysOff) {
@@ -149,7 +149,7 @@ export class CapacityService {
                     const availableHours = capacityPerDay * availableDays;
                     const mergedDaysOff = this.mergeDayOffRanges(cap.daysOff || [], teamDaysOff || []);
 
-                    // Create or Update Capacity
+                    // Criar ou atualizar capacidade
                     await prisma.teamCapacity.upsert({
                         where: {
                             memberId_sprintId: {
@@ -185,7 +185,7 @@ export class CapacityService {
     }
 
     /**
-     * Helper to sync team member
+     * Helper para sincronizar membro do time
      */
     private async syncTeamMember(azureMember: any, projectId: string) {
         const existingMember = await prisma.teamMember.findFirst({
@@ -276,9 +276,9 @@ export class CapacityService {
     }
 
     /**
-     * Get Capacity vs Planned Work comparison for a sprint
-     * Uses first sprint snapshot as baseline for planned hours to handle cases
-     * where Remaining Work is zeroed when items move to Review/Done
+     * Obter comparacao Capacidade vs Trabalho Planejado para uma sprint
+     * Usa primeiro snapshot da sprint como baseline para horas planejadas
+     * pois Remaining Work zera quando itens movem para Review/Done
      */
     async getCapacityVsPlanned(sprintId: string) {
         const sprint = await prisma.sprint.findUnique({
@@ -289,15 +289,15 @@ export class CapacityService {
                 },
                 snapshots: {
                     orderBy: { snapshotDate: 'asc' },
-                    take: 1 // Get first snapshot as baseline
+                    take: 1 // Obter primeiro snapshot como baseline
                 }
             }
         });
 
         if (!sprint) throw new Error('Sprint not found');
 
-        // Calculate planned hours using persistent field (initialRemainingWork)
-        // This is the most accurate source as it preserves historical planning per item
+        // Calcular horas planejadas usando campo persistente (initialRemainingWork)
+        // Fonte mais precisa pois preserva o planejamento historico por item
         const workItemsReceived = await prisma.workItem.findMany({
             where: {
                 sprintId: sprintId,
@@ -308,11 +308,11 @@ export class CapacityService {
                 title: true,
                 remainingWork: true,
                 completedWork: true,
-                // @ts-ignore - Field exists in DB but client might not be generated yet
+                // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                 initialRemainingWork: true,
-                // @ts-ignore - Field exists in DB but client might not be generated yet
+                // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                 lastRemainingWork: true,
-                // @ts-ignore - Field exists in DB but client might not be generated yet
+                // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                 doneRemainingWork: true,
                 assignedToId: true,
                 type: true,
@@ -323,7 +323,7 @@ export class CapacityService {
         const workItems = workItemsReceived as any[]; // Cast to any to access new field
 
 
-        // Group planned work by member
+        // Agrupar trabalho planejado por membro
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
         const completedByMember: Record<string, number> = {};
         const unassignedWork = { totalHours: 0, items: 0 };
@@ -333,12 +333,12 @@ export class CapacityService {
         let totalCompletedFromItems = 0;
 
         workItems.forEach(item => {
-            // Determine planned hours for this item:
-            // 1. Use initialRemainingWork if available (historical truth)
-            // 2. Fallback to remainingWork (current truth)
-            // Determine planned hours for this item:
-            // 1. Use initialRemainingWork if available (historical truth)
-            // 2. Fallback to remainingWork (current truth)
+            // Determinar horas planejadas para este item:
+            // 1. Usar initialRemainingWork se disponivel (verdade historica)
+            // 2. Fallback para remainingWork (verdade atual)
+            // Determinar horas planejadas para este item:
+            // 1. Usar initialRemainingWork se disponivel (verdade historica)
+            // 2. Fallback para remainingWork (verdade atual)
             const currentRemaining = item.remainingWork || 0;
             const currentCompleted = item.completedWork || 0;
             const currentTotal = currentRemaining + currentCompleted;
@@ -370,10 +370,10 @@ export class CapacityService {
 
             totalCompletedFromItems += completedForItem;
 
-            // Unassigned work (items without assignedToId)
+            // Trabalho nao atribuido (itens sem assignedToId)
             if (!item.assignedToId) {
                 unassignedWork.totalHours += plannedFinal;
-                // Keep hours logic unchanged; align item count with donut type filter.
+                // Manter logica de horas inalterada; alinhar contagem de itens com filtro de tipo donut.
                 if (DONUT_ALLOWED_TYPES.has(String(item.type || ''))) {
                     unassignedWork.items += 1;
                 }
@@ -389,7 +389,7 @@ export class CapacityService {
             completedByMember[item.assignedToId] = (completedByMember[item.assignedToId] || 0) + completedForItem;
         });
 
-        // Freeze initial planned by sprint baseline (first snapshot), fallback to items sum.
+        // Congelar planejado inicial pelo baseline da sprint (primeiro snapshot), fallback para soma dos itens.
         const baselineInitialFromSnapshot = sprint.snapshots[0]?.totalWork || 0;
         const totalPlannedInitial = baselineInitialFromSnapshot > 0
             ? baselineInitialFromSnapshot
@@ -402,10 +402,10 @@ export class CapacityService {
             new Date(sprint.endDate)
         );
 
-        // For backward compatibility, keep totalPlanned as current plan
+        // Para compatibilidade retroativa, manter totalPlanned como plano atual
         const totalPlanned = totalPlannedCurrent;
 
-        // Calculate total remaining
+        // Calcular total restante
         const totalRemaining = totalRemainingFromItems;
         let totalAddedScope = 0;
 

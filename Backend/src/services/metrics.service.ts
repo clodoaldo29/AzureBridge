@@ -7,7 +7,7 @@ type MetricType = 'velocity' | 'cycle_time' | 'lead_time' | 'throughput';
 export class MetricsService {
 
     /**
-     * Calculate and save all metrics for active projects
+     * Calcular e salvar todas as metricas para projetos ativos
      */
     async calculateAllMetrics(): Promise<void> {
         logger.info('📊 Starting Metrics Calculation...');
@@ -26,11 +26,11 @@ export class MetricsService {
     }
 
     /**
-     * Calculate Velocity (Average Completed Points in last 5 sprints)
+     * Calcular Velocidade (Media de Pontos Completados nas ultimas 5 sprints)
      */
     async calculateVelocity(projectId: string): Promise<void> {
         try {
-            // Get last 5 completed sprints
+            // Buscar ultimas 5 sprints concluidas
             const sprints = await prisma.sprint.findMany({
                 where: {
                     projectId,
@@ -43,11 +43,11 @@ export class MetricsService {
 
             if (sprints.length === 0) return;
 
-            // Calculate Average
+            // Calcular media
             const totalPoints = sprints.reduce((acc, s) => acc + (s.completedStoryPoints || 0), 0);
             const averageVelocity = totalPoints / sprints.length;
 
-            // Save Snapshot
+            // Salvar snapshot
             await this.saveMetricSnapshot(projectId, 'velocity', averageVelocity, {
                 sprintsRaw: sprints.map(s => ({ name: s.name, points: s.completedStoryPoints })),
                 sprintsCount: sprints.length
@@ -60,8 +60,8 @@ export class MetricsService {
     }
 
     /**
-     * Calculate Cycle Time (Median days from In Progress -> Done)
-     * Considers items closed in the last 30 days
+     * Calcular Cycle Time (Mediana de dias de In Progress -> Done)
+     * Considera itens fechados nos ultimos 30 dias
      */
     async calculateCycleTime(projectId: string): Promise<void> {
         try {
@@ -70,9 +70,9 @@ export class MetricsService {
             const completedItems = await prisma.workItem.findMany({
                 where: {
                     projectId,
-                    state: { in: ['Done', 'Closed', 'Completed'] }, // Adjust based on your process
+                    state: { in: ['Done', 'Closed', 'Completed'] }, // Ajustar conforme o processo
                     closedDate: { gte: thirtyDaysAgo },
-                    activatedDate: { not: null } // Must have started
+                    activatedDate: { not: null } // Deve ter sido iniciado
                 },
                 select: {
                     id: true,
@@ -105,7 +105,7 @@ export class MetricsService {
     }
 
     /**
-     * Calculate Lead Time (Median days from Created -> Done)
+     * Calcular Lead Time (Mediana de dias de Created -> Done)
      */
     async calculateLeadTime(projectId: string): Promise<void> {
         try {
@@ -147,11 +147,11 @@ export class MetricsService {
     }
 
     private async saveMetricSnapshot(projectId: string, type: MetricType, value: number, metadata: any) {
-        // Find existing for today to update or create new
+        // Buscar existente para hoje ou criar novo
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Simple approach: Create new snapshot every time (history)
+        // Abordagem simples: criar novo snapshot toda vez (historico)
         await prisma.metricSnapshot.create({
             data: {
                 projectId,

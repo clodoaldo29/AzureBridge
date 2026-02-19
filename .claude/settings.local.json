@@ -9,7 +9,11 @@
       "Bash(timeout:*)",
       "Bash(set \"REBUILD_MODE=all\")",
       "Bash(set:*)",
-      "Bash(powershell -Command \"$env:REBUILD_MODE=''all''; $env:TARGET_SPRINTS=''cmlfclgzr001k1zutr3b4n3xr,cmlfdh1hl000wbfm302uv07on''; npx tsx scripts/backfill/rebuild-snapshot-counts.ts\")"
+      "Bash(powershell -Command \"$env:REBUILD_MODE=''all''; $env:TARGET_SPRINTS=''cmlfclgzr001k1zutr3b4n3xr,cmlfdh1hl000wbfm302uv07on''; npx tsx scripts/backfill/rebuild-snapshot-counts.ts\")",
+      "Bash(ls -la \"c:\\\\Users\\\\Clodoaldo Filho\\\\AzureBridge\\\\Backend\\\\scripts\"\" 2>nul || echo \"Checking directory structure \")",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm run dev:*)"
     ]
   }
 }

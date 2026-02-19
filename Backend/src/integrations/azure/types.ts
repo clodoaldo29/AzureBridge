@@ -1,5 +1,5 @@
 // ============================================
-// AZURE DEVOPS TYPES
+// TIPOS DO AZURE DEVOPS
 // ============================================
 
 export interface AzureDevOpsConfig {
@@ -20,6 +20,7 @@ export interface AzureWorkItem {
         'System.Title': string;
         'System.Description'?: string;
         'System.AcceptanceCriteria'?: string;
+        'Microsoft.VSTS.Common.AcceptanceCriteria'?: string;
         'Microsoft.VSTS.TCM.ReproSteps'?: string;
         'System.AssignedTo'?: AzureIdentity;
         'Microsoft.VSTS.Scheduling.OriginalEstimate'?: number;
@@ -31,7 +32,9 @@ export interface AzureWorkItem {
         'System.CreatedDate': string;
         'System.ChangedDate': string;
         'System.ClosedDate'?: string;
+        'Microsoft.VSTS.Common.ClosedDate'?: string;
         'System.ResolvedDate'?: string;
+        'Microsoft.VSTS.Common.ResolvedDate'?: string;
         'System.StateChangeDate'?: string;
         'Microsoft.VSTS.Common.ActivatedDate'?: string;
         'System.CreatedBy': AzureIdentity;
@@ -123,7 +126,7 @@ export interface AzureComment {
     modifiedDate?: string;
 }
 
-// Query options
+// Opcoes de consulta
 export interface WorkItemQueryOptions {
     ids?: number[];
     wiql?: string;

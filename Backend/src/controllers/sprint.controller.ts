@@ -6,10 +6,10 @@ import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 
 export class SprintController {
     /**
-     * List sprints
+     * Listar sprints
      */
     async listSprints(req: FastifyRequest, reply: FastifyReply) {
-        // Validation now handled by Zod; errors caught by global handler
+        // Validacao agora gerenciada pelo Zod; erros capturados pelo handler global
         const query = sprintQuerySchema.parse(req.query);
         try {
             const sprints = await sprintService.findAll(query);
@@ -25,7 +25,7 @@ export class SprintController {
     }
 
     /**
-     * Get Sprint Details with Metrics
+     * Obter Detalhes da Sprint com Metricas
      */
     async getSprint(req: FastifyRequest, reply: FastifyReply) {
         const { id } = sprintParamsSchema.parse(req.params);
@@ -39,7 +39,7 @@ export class SprintController {
     }
 
     /**
-     * Get Burndown Data (Snapshots)
+     * Obter Dados de Burndown (Snapshots)
      */
     async getSprintBurndown(req: FastifyRequest, reply: FastifyReply) {
         const { id } = sprintParamsSchema.parse(req.params);

@@ -1,15 +1,15 @@
 // ============================================
-// AZUREBRIDGE DATABASE SCHEMA
+// SCHEMA DO BANCO DE DADOS AZUREBRIDGE
 // ============================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["fullTextSearch"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
@@ -18,82 +18,92 @@ datasource db {
 // ============================================
 
 model Project {
-  id          String   @id @default(cuid())
-  azureId     String   @unique
+  id          String  @id @default(cuid())
+  azureId     String  @unique
   name        String
-  description String?  @db.Text
-  state       String   // wellFormed, deleting, etc
-  visibility  Int      // 0 = private, 1 = public (Azure DevOps format)
-  
+  description String? @db.Text
+  state       String // wellFormed, deleting, etc
+  visibility  Int // 0 = private, 1 = public (Azure DevOps format)
+
   // Metadata
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  lastSyncAt  DateTime?
-  
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSyncAt DateTime?
+
   // Relações
-  sprints     Sprint[]
-  workItems   WorkItem[]
-  teamMembers TeamMember[]
-  reports     Report[]
-  alerts      Alert[]
-  metrics     MetricSnapshot[]
-  
+  sprints                    Sprint[]
+  workItems                  WorkItem[]
+  teamMembers                TeamMember[]
+  reports                    Report[]
+  alerts                     Alert[]
+  metrics                    MetricSnapshot[]
+  documents                  Document[]
+  wikiPages                  WikiPage[]
+  documentChunks             DocumentChunk[]
+  projectContext             ProjectContext?
+  rdaTemplates               RDATemplate[]
+  rdaGenerations             RDAGeneration[]
+  rdaTemplateFactoryAnalyses RDATemplateFactoryAnalysis[]
+  rdaWorkItemSnapshots       RDAWorkItemSnapshot[]
+  rdaSprintSnapshots         RDASprintSnapshot[]
+  rdaMonthlySnapshots        RDAMonthlySnapshot[]
+
   @@index([azureId])
   @@index([name])
   @@map("projects")
 }
 
 model TeamMember {
-  id           String   @id @default(cuid())
-  azureId      String
-  displayName  String
-  uniqueName   String   // email
-  imageUrl     String?
-  
+  id          String  @id @default(cuid())
+  azureId     String
+  displayName String
+  uniqueName  String // email
+  imageUrl    String?
+
   // Role no projeto
-  role         String?  // Developer, Tester, PO, SM, etc
-  isActive     Boolean  @default(true)
-  
-  projectId    String
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+  role     String? // Developer, Tester, PO, SM, etc
+  isActive Boolean @default(true)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
   // Relações
-  capacities   TeamCapacity[]
-  workItems    WorkItem[]
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
+  capacities TeamCapacity[]
+  workItems  WorkItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([azureId, projectId])
   @@index([projectId])
   @@index([azureId])
-  @@unique([azureId, projectId])
   @@index([uniqueName])
   @@map("team_members")
 }
 
 model TeamCapacity {
-  id              String   @id @default(cuid())
-  
-  memberId        String
-  member          TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  
-  sprintId        String
-  sprint          Sprint   @relation(fields: [sprintId], references: [id], onDelete: Cascade)
-  
+  id String @id @default(cuid())
+
+  memberId String
+  member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
   // Capacidade em horas
-  totalHours      Float    @default(0) // Horas totais teóricas (8h/dia * dias úteis)
-  availableHours  Float    @default(0) // Horas disponíveis (após descontar férias, feriados)
-  allocatedHours  Float    @default(0) // Horas já alocadas em work items
-  
+  totalHours     Float @default(0) // Horas totais teóricas (8h/dia * dias úteis)
+  availableHours Float @default(0) // Horas disponíveis (após descontar férias, feriados)
+  allocatedHours Float @default(0) // Horas já alocadas em work items
+
   // Dias off (JSON: [{ date: "2025-01-15", reason: "Férias" }])
-  daysOff         Json?
-  
+  daysOff Json?
+
   // Atividades por dia (JSON: { "Development": 6, "Testing": 2 })
   activitiesPerDay Json?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([memberId, sprintId])
   @@index([sprintId])
   @@index([memberId])
@@ -105,47 +115,47 @@ model TeamCapacity {
 // ============================================
 
 model Sprint {
-  id              String   @id @default(cuid())
-  azureId         String   @unique
-  name            String
-  path            String
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+  id      String @id @default(cuid())
+  azureId String @unique
+  name    String
+  path    String
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
   // Datas
-  startDate       DateTime
-  endDate         DateTime
-  
+  startDate DateTime
+  endDate   DateTime
+
   // Status
-  state           String   // Active, Past, Future
-  timeFrame       String   // current, past, future
-  
+  state     String // Active, Past, Future
+  timeFrame String // current, past, future
+
   // Métricas calculadas (cache para performance)
-  totalPlannedHours    Float?  @default(0)
-  totalCompletedHours  Float?  @default(0)
-  totalRemainingHours  Float?  @default(0)
-  totalStoryPoints     Int?    @default(0)
-  completedStoryPoints Int?    @default(0)
-  
-  // Capacity vs Commitment
-  teamCapacityHours    Float?  @default(0)
-  commitmentHours      Float?  @default(0)
-  
+  totalPlannedHours    Float? @default(0)
+  totalCompletedHours  Float? @default(0)
+  totalRemainingHours  Float? @default(0)
+  totalStoryPoints     Int?   @default(0)
+  completedStoryPoints Int?   @default(0)
+
+  // Capacidade vs Comprometimento
+  teamCapacityHours Float? @default(0)
+  commitmentHours   Float? @default(0)
+
   // Flags de saúde
-  isOnTrack            Boolean @default(true)
-  riskLevel            String? // low, medium, high, critical
-  
+  isOnTrack Boolean @default(true)
+  riskLevel String? // low, medium, high, critical
+
   // Relações
-  workItems       WorkItem[]
-  capacities      TeamCapacity[]
-  snapshots       SprintSnapshot[]
-  alerts          Alert[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  workItems  WorkItem[]
+  capacities TeamCapacity[]
+  snapshots  SprintSnapshot[]
+  alerts     Alert[]
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   lastCalculatedAt DateTime?
-  
+
   @@index([projectId])
   @@index([azureId])
   @@index([state])
@@ -156,39 +166,39 @@ model Sprint {
 
 // Snapshots diários da sprint (para burndown histórico)
 model SprintSnapshot {
-  id              String   @id @default(cuid())
-  
-  sprintId        String
-  sprint          Sprint   @relation(fields: [sprintId], references: [id], onDelete: Cascade)
-  
-  snapshotDate    DateTime
-  snapshotTime    DateTime @default(now())
-  
+  id String @id @default(cuid())
+
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  snapshotDate DateTime
+  snapshotTime DateTime @default(now())
+
   // Métricas de trabalho (horas)
-  remainingWork   Float    @default(0)
-  completedWork   Float    @default(0)
-  totalWork       Float    @default(0)
-  
+  remainingWork Float @default(0)
+  completedWork Float @default(0)
+  totalWork     Float @default(0)
+
   // Métricas de story points
-  remainingPoints Int      @default(0)
-  completedPoints Int      @default(0)
-  totalPoints     Int      @default(0)
-  
+  remainingPoints Int @default(0)
+  completedPoints Int @default(0)
+  totalPoints     Int @default(0)
+
   // Contadores por status
-  todoCount       Int      @default(0)
-  inProgressCount Int      @default(0)
-  doneCount       Int      @default(0)
-  blockedCount    Int      @default(0)
-  
-  // Scope changes
-  addedCount      Int      @default(0)
-  removedCount    Int      @default(0)
-  
+  todoCount       Int @default(0)
+  inProgressCount Int @default(0)
+  doneCount       Int @default(0)
+  blockedCount    Int @default(0)
+
+  // Mudancas de escopo
+  addedCount   Int @default(0)
+  removedCount Int @default(0)
+
   // Ideal burndown para comparação
-  idealRemaining  Float?
-  
-  createdAt       DateTime @default(now())
-  
+  idealRemaining Float?
+
+  createdAt DateTime @default(now())
+
   @@unique([sprintId, snapshotDate])
   @@index([sprintId])
   @@index([snapshotDate])
@@ -200,96 +210,96 @@ model SprintSnapshot {
 // ============================================
 
 model WorkItem {
-  id              Int      @id
-  azureId         Int      @unique
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  sprintId        String?
-  sprint          Sprint?  @relation(fields: [sprintId], references: [id], onDelete: SetNull)
-  
+  id      Int @id
+  azureId Int @unique
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+  sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
   // Hierarquia (PBI → Task/Bug)
-  parentId        Int?
-  parent          WorkItem?  @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children        WorkItem[] @relation("WorkItemHierarchy")
-  
+  parentId Int?
+  parent   WorkItem?  @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children WorkItem[] @relation("WorkItemHierarchy")
+
   // Tipo e Status
-  type            String   // Product Backlog Item, Task, Bug, Feature, Epic
-  state           String   // New, Approved, Committed, To Do, In Progress, Done, Removed
-  reason          String?  // Razão da mudança de estado
-  
+  type   String // Product Backlog Item, Task, Bug, Feature, Epic
+  state  String // New, Approved, Committed, To Do, In Progress, Done, Removed
+  reason String? // Razão da mudança de estado
+
   // Informações básicas
-  title           String   @db.Text
-  description     String?  @db.Text
+  title              String  @db.Text
+  description        String? @db.Text
   acceptanceCriteria String? @db.Text
-  reproSteps      String?  @db.Text // Para bugs
-  
+  reproSteps         String? @db.Text // Para bugs
+
   // Atribuição
-  assignedToId    String?
-  assignedTo      TeamMember? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
-  
+  assignedToId String?
+  assignedTo   TeamMember? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
   // Estimativas (horas)
-  originalEstimate Float?  @default(0)
-  completedWork    Float?  @default(0)
-  remainingWork    Float?  @default(0)
+  originalEstimate     Float? @default(0)
+  completedWork        Float? @default(0)
+  remainingWork        Float? @default(0)
   initialRemainingWork Float? @default(0) // Valor recuperado do histórico (primeira estimativa)
-  lastRemainingWork Float? @default(0) // Último Remaining Work registrado (histórico)
-  doneRemainingWork Float? @default(0) // Remaining Work no momento em que ficou Done
-  
+  lastRemainingWork    Float? @default(0) // Último Remaining Work registrado (histórico)
+  doneRemainingWork    Float? @default(0) // Remaining Work no momento em que ficou Done
+
   // Story Points (para PBIs)
-  storyPoints      Int?
-  
+  storyPoints Int?
+
   // Esforço (para Features/Epics)
-  effort           Int?
-  
+  effort Int?
+
   // Prioridade e Severidade
-  priority         Int?    @default(3) // 1 = highest, 4 = lowest
-  severity         String? // 1 - Critical, 2 - High, 3 - Medium, 4 - Low
-  
+  priority Int?    @default(3) // 1 = highest, 4 = lowest
+  severity String? // 1 - Critical, 2 - High, 3 - Medium, 4 - Low
+
   // Datas
-  createdDate      DateTime
-  changedDate      DateTime
-  closedDate       DateTime?
-  resolvedDate     DateTime?
-  stateChangeDate  DateTime?
-  activatedDate    DateTime?
-  
+  createdDate     DateTime
+  changedDate     DateTime
+  closedDate      DateTime?
+  resolvedDate    DateTime?
+  stateChangeDate DateTime?
+  activatedDate   DateTime?
+
   // Pessoas (histórico)
-  createdBy        String
-  changedBy        String
-  closedBy         String?
-  resolvedBy       String?
-  
+  createdBy  String
+  changedBy  String
+  closedBy   String?
+  resolvedBy String?
+
   // Flags
-  isBlocked        Boolean  @default(false)
-  isDelayed        Boolean  @default(false)
-  isRemoved        Boolean  @default(false)
-  
+  isBlocked Boolean @default(false)
+  isDelayed Boolean @default(false)
+  isRemoved Boolean @default(false)
+
   // Tags
-  tags             String[] @default([])
-  
+  tags String[] @default([])
+
   // Organização
-  areaPath         String
-  iterationPath    String
-  
-  // Azure metadata
-  url              String
-  rev              Int      @default(1)
-  
+  areaPath      String
+  iterationPath String
+
+  // Metadados Azure
+  url String
+  rev Int    @default(1)
+
   // Contadores
-  commentCount     Int      @default(0)
-  attachmentCount  Int      @default(0)
-  relationCount    Int      @default(0)
-  
+  commentCount    Int @default(0)
+  attachmentCount Int @default(0)
+  relationCount   Int @default(0)
+
   // Relações
-  revisions        WorkItemRevision[]
-  comments         WorkItemComment[]
-  
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  lastSyncAt       DateTime?
-  
+  revisions WorkItemRevision[]
+  comments  WorkItemComment[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSyncAt DateTime?
+
   @@index([projectId])
   @@index([sprintId])
   @@index([azureId])
@@ -306,24 +316,24 @@ model WorkItem {
 
 // Histórico de revisões (mudanças)
 model WorkItemRevision {
-  id              String   @id @default(cuid())
-  
-  workItemId      Int
-  workItem        WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
-  
-  rev             Int
-  revisedDate     DateTime
-  revisedBy       String
-  
+  id String @id @default(cuid())
+
+  workItemId Int
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  rev         Int
+  revisedDate DateTime
+  revisedBy   String
+
   // Campos que mudaram (JSON)
   // Exemplo: { "System.State": { "oldValue": "To Do", "newValue": "In Progress" }, ... }
-  changes         Json
-  
+  changes Json
+
   // Campo específico que mudou (para facilitar queries)
-  changedFields   String[] @default([])
-  
-  createdAt       DateTime @default(now())
-  
+  changedFields String[] @default([])
+
+  createdAt DateTime @default(now())
+
   @@unique([workItemId, rev])
   @@index([workItemId])
   @@index([revisedDate])
@@ -333,22 +343,22 @@ model WorkItemRevision {
 
 // Comentários/Discussões
 model WorkItemComment {
-  id              String   @id @default(cuid())
-  azureId         Int
-  
-  workItemId      Int
-  workItem        WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
-  
-  text            String   @db.Text
-  
-  createdBy       String
-  createdDate     DateTime
-  modifiedDate    DateTime?
-  modifiedBy      String?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  id      String @id @default(cuid())
+  azureId Int
+
+  workItemId Int
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  text String @db.Text
+
+  createdBy    String
+  createdDate  DateTime
+  modifiedDate DateTime?
+  modifiedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([workItemId])
   @@index([createdDate])
   @@index([createdBy])
@@ -360,31 +370,31 @@ model WorkItemComment {
 // ============================================
 
 model MetricSnapshot {
-  id              String   @id @default(cuid())
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  sprintId        String?
-  
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+
   // Tipo de métrica
-  metricType      String   // velocity, cycle_time, lead_time, throughput, burndown, cfd
-  
+  metricType String // velocity, cycle_time, lead_time, throughput, burndown, cfd
+
   // Período
-  period          String   // sprint_45, 2025-01, 2025-Q1, 2025
-  periodStart     DateTime
-  periodEnd       DateTime
-  
+  period      String // sprint_45, 2025-01, 2025-Q1, 2025
+  periodStart DateTime
+  periodEnd   DateTime
+
   // Valor principal da métrica
-  value           Float
-  
+  value Float
+
   // Dados detalhados (JSON flexível)
   // Exemplo velocity: { "completedPoints": 42, "completedItems": 18, "velocity": 42 }
   // Exemplo cycle_time: { "avg": 5.2, "median": 4.5, "p90": 8.3, "data": [...] }
-  metadata        Json
-  
-  snapshotDate    DateTime @default(now())
-  
+  metadata Json
+
+  snapshotDate DateTime @default(now())
+
   @@index([projectId, metricType])
   @@index([sprintId, metricType])
   @@index([metricType, period])
@@ -397,50 +407,50 @@ model MetricSnapshot {
 // ============================================
 
 model Report {
-  id              String   @id @default(cuid())
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
   // Tipo de relatório
-  type            String   // rda, sprint_report, custom
-  
+  type String // rda, sprint_report, custom
+
   // Período coberto
-  period          String   // 2025-01, Sprint 45, Q1 2025
-  periodStart     DateTime
-  periodEnd       DateTime
-  
+  period      String // 2025-01, Sprint 45, Q1 2025
+  periodStart DateTime
+  periodEnd   DateTime
+
   // Título customizado
-  title           String
-  
+  title String
+
   // Dados estruturados do relatório (JSON)
-  data            Json
-  
+  data Json
+
   // Arquivos gerados
-  pdfUrl          String?
-  docxUrl         String?
-  jsonUrl         String?
-  
+  pdfUrl  String?
+  docxUrl String?
+  jsonUrl String?
+
   // Template usado
-  templateId      String?
-  
+  templateId String?
+
   // Status
-  status          String   @default("draft") // draft, published, archived
-  
+  status String @default("draft") // draft, published, archived
+
   // Quem gerou
-  generatedBy     String
-  generatedAt     DateTime @default(now())
-  
+  generatedBy String
+  generatedAt DateTime @default(now())
+
   // Aprovação
-  approvedBy      String?
-  approvedAt      DateTime?
-  
+  approvedBy String?
+  approvedAt DateTime?
+
   // Publicação
-  publishedAt     DateTime?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([projectId])
   @@index([type])
   @@index([period])
@@ -451,34 +461,34 @@ model Report {
 
 // Templates de relatórios customizáveis
 model ReportTemplate {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?  @db.Text
-  
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+
   // Tipo de relatório
-  type            String   // rda, sprint_report
-  
+  type String // rda, sprint_report
+
   // Estrutura do template (JSON)
   // Define seções, campos, formatação, etc
-  structure       Json
-  
+  structure Json
+
   // Configurações de estilo
-  styles          Json?
-  
+  styles Json?
+
   // Específico de projeto ou global
-  projectId       String?
-  
+  projectId String?
+
   // Flags
-  isDefault       Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
   // Versão do template
-  version         Int      @default(1)
-  
-  createdBy       String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  version Int @default(1)
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([type])
   @@index([projectId])
   @@index([isDefault])
@@ -490,48 +500,48 @@ model ReportTemplate {
 // ============================================
 
 model Alert {
-  id              String   @id @default(cuid())
-  
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  sprintId        String?
-  sprint          Sprint?  @relation(fields: [sprintId], references: [id], onDelete: Cascade)
-  
-  workItemId      Int?
-  
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintId String?
+  sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  workItemId Int?
+
   // Tipo de alerta
-  type            String   // sprint_risk, blocked_item, capacity_overload, delayed_item, scope_creep
-  
+  type String // sprint_risk, blocked_item, capacity_overload, delayed_item, scope_creep
+
   // Severidade
-  severity        String   // low, medium, high, critical
-  
+  severity String // low, medium, high, critical
+
   // Mensagem
-  title           String
-  message         String   @db.Text
-  
+  title   String
+  message String @db.Text
+
   // Dados adicionais específicos do alerta
-  metadata        Json?
-  
+  metadata Json?
+
   // Status
-  status          String   @default("active") // active, acknowledged, resolved, dismissed
-  
+  status String @default("active") // active, acknowledged, resolved, dismissed
+
   // Quem reconheceu/resolveu
-  acknowledgedBy  String?
-  acknowledgedAt  DateTime?
-  
-  resolvedBy      String?
-  resolvedAt      DateTime?
-  
-  dismissedBy     String?
-  dismissedAt     DateTime?
-  
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+
+  resolvedBy String?
+  resolvedAt DateTime?
+
+  dismissedBy String?
+  dismissedAt DateTime?
+
   // Quando foi detectado
-  detectedAt      DateTime @default(now())
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  detectedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([projectId])
   @@index([sprintId])
   @@index([workItemId])
@@ -547,26 +557,26 @@ model Alert {
 // ============================================
 
 model UserPreference {
-  id              String   @id @default(cuid())
-  userId          String   @unique // Email ou Azure ID
-  
+  id     String @id @default(cuid())
+  userId String @unique // Email ou Azure ID
+
   // Preferências de UI
-  theme           String   @default("light") // light, dark, auto
-  dashboardLayout Json?    // Layout customizado do dashboard
-  
+  theme           String @default("light") // light, dark, auto
+  dashboardLayout Json? // Layout customizado do dashboard
+
   // Favoritos
   favoriteProjects String[] @default([])
   favoriteSprints  String[] @default([])
-  
+
   // Filtros salvos
-  savedFilters    Json?
-  
+  savedFilters Json?
+
   // Notificações
-  notifications   Json?    // Preferências de notificação
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  notifications Json? // Preferências de notificação
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([userId])
   @@map("user_preferences")
 }
@@ -576,39 +586,372 @@ model UserPreference {
 // ============================================
 
 model SyncLog {
-  id              String   @id @default(cuid())
-  
-  projectId       String?
-  
+  id String @id @default(cuid())
+
+  projectId String?
+
   // Tipo de sync
-  syncType        String   // full_sync, incremental_sync, work_items, sprints, team
-  
+  syncType String // full_sync, incremental_sync, work_items, sprints, team
+
   // Status
-  status          String   // started, running, completed, failed
-  
+  status String // started, running, completed, failed
+
   // Estatísticas
-  itemsProcessed  Int      @default(0)
-  itemsCreated    Int      @default(0)
-  itemsUpdated    Int      @default(0)
-  itemsFailed     Int      @default(0)
-  
+  itemsProcessed Int @default(0)
+  itemsCreated   Int @default(0)
+  itemsUpdated   Int @default(0)
+  itemsFailed    Int @default(0)
+
   // Tempos
-  startedAt       DateTime @default(now())
-  completedAt     DateTime?
-  duration        Int?     // em segundos
-  
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int? // em segundos
+
   // Erros
-  error           String?  @db.Text
-  errorDetails    Json?
-  
+  error        String? @db.Text
+  errorDetails Json?
+
   // Metadata
-  metadata        Json?
-  
-  createdAt       DateTime @default(now())
-  
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
   @@index([projectId])
   @@index([syncType])
   @@index([status])
   @@index([startedAt])
   @@map("sync_logs")
+}
+
+// ============================================
+// RDA - DOCUMENTOS E WIKI
+// ============================================
+
+// Documentos de referência (PDF/DOCX) para geração de relatórios
+model Document {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  filename    String // Nome original do arquivo
+  storagePath String // Caminho no filesystem
+  mimeType    String // application/pdf, docx, etc
+  sizeBytes   Int
+
+  // Texto extraído do documento
+  extractedText     String? @db.Text
+  extractionMethod  String?
+  extractionQuality Float?
+  chunked           Boolean @default(false)
+  chunkCount        Int?
+
+  // Metadata
+  uploadedBy String
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  chunks    DocumentChunk[]
+
+  @@index([projectId])
+  @@map("documents")
+}
+
+// Páginas Wiki sincronizadas do Azure DevOps
+model WikiPage {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Identificação Azure DevOps
+  azureId Int? // ID da página na Wiki
+  path    String // /path/to/page
+  title   String
+
+  // Conteúdo
+  content String @db.Text // Conteudo Markdown
+
+  // Hierarquia
+  parentPath String?
+  order      Int     @default(0)
+
+  // Info de sincronizacao
+  remoteUrl  String?
+  lastSyncAt DateTime?
+  chunked    Boolean   @default(false)
+  chunkCount Int?
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  chunks    DocumentChunk[]
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@index([path])
+  @@map("wiki_pages")
+}
+
+// Templates DOCX para geração de RDA
+model DocumentChunk {
+  id         String                      @id @default(cuid())
+  documentId String?
+  wikiPageId String?
+  projectId  String
+  content    String                      @db.Text
+  metadata   Json
+  embedding  Unsupported("vector(1536)")
+  chunkIndex Int
+  tokenCount Int
+  sourceType String
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  wikiPage WikiPage? @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([documentId])
+  @@index([wikiPageId])
+  @@index([sourceType])
+  @@index([projectId, sourceType])
+  @@map("document_chunks")
+}
+
+model ProjectContext {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  projectName   String
+  projectScope  String   @db.Text
+  objectives    Json     @default("[]")
+  teamMembers   Json     @default("[]")
+  technologies  Json     @default("[]")
+  keyMilestones Json     @default("[]")
+  businessRules Json     @default("[]")
+  deliveryPlan  Json     @default("[]")
+  stakeholders  Json     @default("[]")
+  summary       String?  @db.Text
+  lastUpdated   DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_contexts")
+}
+
+model RDATemplate {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?  @db.Text
+  filePath       String
+  placeholders   String[] @default([])
+  isActive       Boolean  @default(false)
+  version        Int      @default(1)
+  uploadedBy     String
+  sourceModels   Json?
+  activeSchemaId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  generations  RDAGeneration[]
+  activeSchema RDASchema?      @relation("ActiveTemplateSchema", fields: [activeSchemaId], references: [id], onDelete: SetNull)
+  schemas      RDASchema[]     @relation("TemplateSchemas")
+
+  @@index([projectId])
+  @@index([isActive])
+  @@index([activeSchemaId])
+  @@map("rda_templates")
+}
+
+// Execução de geração de relatório RDA
+model RDAGeneration {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  templateId String
+  template   RDATemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  status      String  @default("processing") // processing, completed, failed, cancelled
+  progress    Int     @default(0)
+  currentStep String?
+
+  periodType  String // monthly | general
+  periodStart DateTime
+  periodEnd   DateTime
+
+  outputFilePath String?
+  fileSize       Int?
+  tokensUsed     Int     @default(0)
+  errorMessage   String? @db.Text
+  partialResults Json?
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([templateId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("rda_generations")
+}
+
+model RDASchema {
+  id         String   @id @default(cuid())
+  version    String
+  templateId String
+  schema     Json
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  template               RDATemplate   @relation("TemplateSchemas", fields: [templateId], references: [id], onDelete: Cascade)
+  templatesUsingAsActive RDATemplate[] @relation("ActiveTemplateSchema")
+  examples               RDAExample[]
+
+  @@unique([templateId, version])
+  @@index([templateId])
+  @@index([isActive])
+  @@map("rda_schemas")
+}
+
+model RDAExample {
+  id        String   @id @default(cuid())
+  schemaId  String
+  section   String
+  fieldName String
+  content   Json
+  source    String
+  quality   Float    @default(1.0)
+  createdAt DateTime @default(now())
+
+  schemaRef RDASchema @relation(fields: [schemaId], references: [id], onDelete: Cascade)
+
+  @@index([schemaId, section])
+  @@index([schemaId, fieldName])
+  @@map("rda_examples")
+}
+
+model RDATemplateFactoryAnalysis {
+  id         String    @id @default(cuid())
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status     String    @default("ready")
+  filenames  Json
+  filePaths  Json
+  structures Json
+  analysis   Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  expiresAt  DateTime?
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("rda_template_factory_analyses")
+}
+
+model RDAWorkItemSnapshot {
+  id                 String   @id @default(cuid())
+  projectId          String
+  workItemId         Int
+  type               String
+  title              String
+  state              String
+  assignedTo         String?
+  areaPath           String?
+  iterationPath      String?
+  tags               String?
+  priority           Int?
+  storyPoints        Float?
+  description        String?  @db.Text
+  acceptanceCriteria String?  @db.Text
+  createdDate        DateTime
+  changedDate        DateTime
+  closedDate         DateTime?
+  parentId           Int?
+  url                String?
+  periodKey          String
+  collectedAt        DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, workItemId, periodKey])
+  @@index([projectId])
+  @@index([projectId, periodKey])
+  @@index([projectId, iterationPath])
+  @@index([projectId, state])
+  @@index([workItemId])
+  @@map("rda_work_item_snapshots")
+}
+
+model RDASprintSnapshot {
+  id                   String   @id @default(cuid())
+  projectId            String
+  sprintName           String
+  iterationPath        String
+  startDate            DateTime?
+  endDate              DateTime?
+  totalWorkItems       Int      @default(0)
+  completedItems       Int      @default(0)
+  activeItems          Int      @default(0)
+  newItems             Int      @default(0)
+  removedItems         Int      @default(0)
+  totalStoryPoints     Float?
+  completedStoryPoints Float?
+  tasksByState         Json     @default("{}")
+  bugsByState          Json     @default("{}")
+  storiesByState       Json     @default("{}")
+  teamCapacity         Float?
+  velocity             Float?
+  taskboardUrl         String?
+  period               String
+  collectedAt          DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, iterationPath, period])
+  @@index([projectId, period])
+  @@index([projectId])
+  @@map("rda_sprint_snapshots")
+}
+
+model RDAMonthlySnapshot {
+  id                String   @id @default(cuid())
+  projectId         String
+  period            String
+  status            String   @default("collecting")
+  workItemsTotal    Int      @default(0)
+  workItemsNew      Int      @default(0)
+  workItemsClosed   Int      @default(0)
+  workItemsActive   Int      @default(0)
+  sprintsCount      Int      @default(0)
+  wikiPagesUpdated  Int      @default(0)
+  documentsUploaded Int      @default(0)
+  chunksCreated     Int      @default(0)
+  workItemsStatus   String   @default("pending")
+  sprintsStatus     String   @default("pending")
+  wikiStatus        String   @default("pending")
+  documentsStatus   String   @default("pending")
+  contextStatus     String   @default("pending")
+  errors            Json     @default("[]")
+  metadata          Json?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, period])
+  @@index([projectId])
+  @@index([status])
+  @@index([projectId, period])
+  @@map("rda_monthly_snapshots")
 }

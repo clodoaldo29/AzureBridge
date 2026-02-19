@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: azurebridge-api
     restart: unless-stopped
+    user: "0:0"
     ports:
       - "3001:3001"
     environment:
@@ -16,11 +17,16 @@ services:
       HOST: 0.0.0.0
       # Database
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
       DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -28,6 +34,7 @@ services:
       # Features
       FEATURE_ANALYTICS: ${FEATURE_ANALYTICS:-true}
       FEATURE_REPORTS: ${FEATURE_REPORTS:-true}
+      RDA_UPLOADS_DIR: /app/uploads
     depends_on:
       redis:
         condition: service_healthy
@@ -35,6 +42,7 @@ services:
       - azurebridge-network
     volumes:
       - api-logs:/app/logs
+      - api-uploads:/app/uploads
 
   # ========================================
   # Auto Sync Scheduler
@@ -49,11 +57,16 @@ services:
       NODE_ENV: production
       # Database
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
       DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Redis (if needed by any scripts)
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -123,4 +136,6 @@ volumes:
   redis-data:
     driver: local
   api-logs:
+    driver: local
+  api-uploads:
     driver: local

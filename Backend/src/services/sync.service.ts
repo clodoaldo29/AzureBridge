@@ -9,12 +9,12 @@ import { logger } from '@/utils/logger';
 import type { AzureWorkItem } from '@/integrations/azure/types';
 
 /**
- * Sync Service
- * Synchronizes data from Azure DevOps to database
+ * Servico de Sincronizacao
+ * Sincroniza dados do Azure DevOps para o banco de dados
  */
 export class SyncService {
     /**
-     * Full sync - syncs everything
+     * Sincronizacao completa - sincroniza tudo
      */
     async fullSync(projectAzureId?: string): Promise<{
         projects: number;
@@ -35,16 +35,16 @@ export class SyncService {
         });
 
         try {
-            // 1. Sync projects
+            // 1. Sincronizar projetos
             const projects = await this.syncProjects();
 
-            // 2. Sync team members
+            // 2. Sincronizar membros do time
             const teamMembers = await this.syncTeamMembers();
 
-            // 3. Sync sprints
+            // 3. Sincronizar sprints
             const sprints = await this.syncSprints();
 
-            // 4. Sync work items
+            // 4. Sincronizar work items
             const workItems = await this.syncWorkItems();
 
             const duration = Math.floor((Date.now() - startTime) / 1000);
@@ -86,13 +86,13 @@ export class SyncService {
     }
 
     /**
-     * Incremental sync - only syncs changes since last sync
+     * Sincronizacao incremental - sincroniza apenas alteracoes desde o ultimo sync
      */
     async incrementalSync(since?: Date): Promise<{
         workItems: number;
         sprints: number;
     }> {
-        const sinceDate = since || new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24h
+        const sinceDate = since || new Date(Date.now() - 24 * 60 * 60 * 1000); // Ultimas 24h
         logger.info('Starting incremental sync', { since: sinceDate });
 
         const syncLog = await prisma.syncLog.create({
@@ -105,11 +105,11 @@ export class SyncService {
         });
 
         try {
-            // Sync work items changed since date
+            // Sincronizar work items alterados desde a data
             const changedWorkItems = await workItemsService.getWorkItemsChangedSince(sinceDate);
             const workItems = await this.processWorkItems(changedWorkItems);
 
-            // Sync current sprints
+            // Sincronizar sprints atuais
             const sprints = await this.syncSprints();
 
             await prisma.syncLog.update({
@@ -141,7 +141,7 @@ export class SyncService {
     }
 
     /**
-     * Sync projects
+     * Sincronizar projetos
      */
     private async syncProjects(): Promise<number> {
         try {
@@ -168,14 +168,14 @@ export class SyncService {
     }
 
     /**
-     * Sync team members
+     * Sincronizar membros do time
      */
     private async syncTeamMembers(): Promise<number> {
         try {
             const azureMembers = await teamsService.getTeamMembers();
             let count = 0;
 
-            // Get or create project
+            // Obter ou criar projeto
             const projects = await projectRepository.findAll();
             if (projects.length === 0) {
                 logger.warn('No projects found, skipping team members sync');
@@ -217,14 +217,14 @@ export class SyncService {
     }
 
     /**
-     * Sync sprints
+     * Sincronizar sprints
      */
     private async syncSprints(): Promise<number> {
         try {
             const azureSprints = await sprintsService.getSprints();
             let count = 0;
 
-            // Get or create project
+            // Obter ou criar projeto
             const projects = await projectRepository.findAll();
             if (projects.length === 0) {
                 logger.warn('No projects found, skipping sprints sync');
@@ -262,11 +262,11 @@ export class SyncService {
     }
 
     /**
-     * Sync work items
+     * Sincronizar work items
      */
     private async syncWorkItems(): Promise<number> {
         try {
-            // Get all sprints
+            // Buscar todas as sprints
             const sprints = await sprintRepository.findAll();
             let totalCount = 0;
 
@@ -285,12 +285,12 @@ export class SyncService {
     }
 
     /**
-     * Process and save work items
+     * Processar e salvar work items
      */
     private async processWorkItems(azureWorkItems: AzureWorkItem[]): Promise<number> {
         let count = 0;
 
-        // Get project
+        // Obter projeto
         const projects = await projectRepository.findAll();
         if (projects.length === 0) {
             logger.warn('No projects found, skipping work items processing');
@@ -302,6 +302,9 @@ export class SyncService {
         for (const azureWI of azureWorkItems) {
             try {
                 const fields = azureWI.fields;
+                const acceptanceCriteria =
+                    fields['Microsoft.VSTS.Common.AcceptanceCriteria']
+                    ?? fields['System.AcceptanceCriteria'];
                 const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
                 const completedWork = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
                 const state = (fields['System.State'] || '').toString();
@@ -310,12 +313,12 @@ export class SyncService {
                     ? (remainingWork > 0 ? remainingWork : completedWork)
                     : null;
 
-                // Find sprint by iteration path
+                // Buscar sprint pelo caminho de iteracao
                 const sprint = await prisma.sprint.findFirst({
                     where: { path: fields['System.IterationPath'] },
                 });
 
-                // Find assigned team member
+                // Buscar membro do time atribuido
                 let assignedTo = null;
                 if (fields['System.AssignedTo']) {
                     assignedTo = await prisma.teamMember.findFirst({
@@ -331,22 +334,26 @@ export class SyncService {
                     reason: fields['System.Reason'],
                     title: fields['System.Title'],
                     description: fields['System.Description'],
-                    acceptanceCriteria: fields['System.AcceptanceCriteria'],
+                    acceptanceCriteria,
                     reproSteps: fields['Microsoft.VSTS.TCM.ReproSteps'],
                     originalEstimate: fields['Microsoft.VSTS.Scheduling.OriginalEstimate'],
                     completedWork,
                     remainingWork,
-                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                     lastRemainingWork: remainingWork,
-                    // @ts-ignore - Field exists in DB but client might not be generated yet
+                    // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                     doneRemainingWork,
                     storyPoints: fields['Microsoft.VSTS.Scheduling.StoryPoints'],
                     priority: fields['Microsoft.VSTS.Common.Priority'],
                     severity: fields['Microsoft.VSTS.Common.Severity'],
                     createdDate: new Date(fields['System.CreatedDate']),
                     changedDate: new Date(fields['System.ChangedDate']),
-                    closedDate: fields['System.ClosedDate'] ? new Date(fields['System.ClosedDate']) : null,
-                    resolvedDate: fields['System.ResolvedDate'] ? new Date(fields['System.ResolvedDate']) : null,
+                    closedDate: (fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate'])
+                        ? new Date((fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate']) as string)
+                        : null,
+                    resolvedDate: (fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'])
+                        ? new Date((fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate']) as string)
+                        : null,
                     stateChangeDate: fields['System.StateChangeDate'] ? new Date(fields['System.StateChangeDate']) : null,
                     activatedDate: fields['Microsoft.VSTS.Common.ActivatedDate'] ? new Date(fields['Microsoft.VSTS.Common.ActivatedDate']) : null,
                     createdBy: fields['System.CreatedBy'].displayName,
@@ -389,5 +396,5 @@ export class SyncService {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const syncService = new SyncService();
