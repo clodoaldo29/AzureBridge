@@ -16,7 +16,7 @@ export function ServerCheck({ children }: ServerCheckProps) {
 
         const checkHealth = async () => {
             try {
-                // Use native fetch to avoid axios interceptors and potentially reduce console noise
+                // Usa fetch nativo para evitar interceptors do axios e reduzir ruído no console
                 const response = await fetch('/api/health');
                 if (response.ok) {
                     setIsHealthy(true);
@@ -38,7 +38,7 @@ export function ServerCheck({ children }: ServerCheckProps) {
             if (!isHealthy) {
                 checkHealth();
             }
-        }, 2000); // Polling every 2s is enough
+        }, 2000); // Polling a cada 2s é suficiente
 
         return () => {
             clearInterval(intervalId);

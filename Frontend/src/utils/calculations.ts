@@ -22,22 +22,22 @@ export const calculateSprintHealthDetails = (
     let score = 100;
     const penalties: string[] = [];
 
-    // Factor 1: Capacity Utilization (30 points)
+    // Fator 1: Utilização de Capacidade (30 pontos)
     const utilization = capacity ? capacity.summary.utilization : 0;
     if (capacity) {
         if (utilization < 60) {
-            score -= 15; // Underutilized
+            score -= 15; // Subutilizada
             penalties.push('Capacidade baixa (<60%): -15');
         } else if (utilization > 100) {
-            score -= 20; // Overloaded
+            score -= 20; // Sobrecarregada
             penalties.push('Capacidade sobrecarregada (>100%): -20');
         } else if (utilization > 90) {
-            score -= 10; // High utilization
+            score -= 10; // Utilização alta
             penalties.push('Capacidade alta (>90%): -10');
         }
     }
 
-    // Factor 2: Progress vs Timeline (40 points)
+    // Fator 2: Progresso vs Linha do Tempo (40 pontos)
     const daysTotal = Math.max(
         1,
         Math.ceil(
@@ -70,7 +70,7 @@ export const calculateSprintHealthDetails = (
         penalties.push('Progresso x tempo (desvio > 0.1): -10');
     }
 
-    // Factor 3: Blockers (20 points)
+    // Fator 3: Blockers (20 pontos)
     if (burndown) {
         const latest = burndown[burndown.length - 1];
         if (latest && latest.blockedCount > 0) {
@@ -80,7 +80,7 @@ export const calculateSprintHealthDetails = (
         }
     }
 
-    // Factor 4: Velocity Stability (10 points)
+    // Fator 4: Estabilidade de Velocidade (10 pontos)
     if (!sprint.isOnTrack) {
         score -= 10;
         penalties.push('Sprint fora do tracking: -10');

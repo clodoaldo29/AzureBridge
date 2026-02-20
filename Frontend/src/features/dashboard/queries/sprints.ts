@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Sprint, ApiResponse, ApiListResponse, SprintSnapshot } from '@/types';
 
-// Query Keys
+// Chaves de query
 export const sprintKeys = {
     all: ['sprints'] as const,
     lists: () => [...sprintKeys.all, 'list'] as const,
@@ -12,7 +12,7 @@ export const sprintKeys = {
     burndown: (id: string) => [...sprintKeys.detail(id), 'burndown'] as const,
 };
 
-// Fetch Sprints List
+// Busca lista de sprints
 export const useSprints = (params?: {
     projectId?: string;
     state?: string;
@@ -28,7 +28,7 @@ export const useSprints = (params?: {
     });
 };
 
-// Fetch Sprint Details
+// Busca detalhes de uma sprint
 export const useSprint = (id: string) => {
     return useQuery({
         queryKey: sprintKeys.detail(id),
@@ -40,7 +40,7 @@ export const useSprint = (id: string) => {
     });
 };
 
-// Fetch Sprint Burndown
+// Busca dados de burndown da sprint
 export const useSprintBurndown = (id: string) => {
     return useQuery({
         queryKey: sprintKeys.burndown(id),

@@ -1,20 +1,40 @@
-# AzureBridge — Frontend
+# 🎨 AzureBridge — Frontend
 
-Interface web do AzureBridge, construída em React com TypeScript.
+> Interface web do AzureBridge, construída em React 18 com TypeScript e TailwindCSS.
 
-## Stack
+---
 
-- **React 18** + TypeScript
-- **Vite** — bundler e dev server
-- **TailwindCSS** + **shadcn/ui** — estilização e componentes
-- **Recharts** — gráficos e visualizações
-- **TanStack Query (React Query)** — data fetching e cache
-- **Zustand** — estado global
-- **Axios** — cliente HTTP
-- **Zod** — validação
-- **date-fns** — utilitários de data
+## 📋 Índice
 
-## Estrutura de diretórios
+- [Stack](#️-stack)
+- [Estrutura de diretórios](#-estrutura-de-diretórios)
+- [Variáveis de ambiente](#️-variáveis-de-ambiente)
+- [Comandos](#-comandos)
+- [Data fetching](#-data-fetching)
+- [Componentes do Dashboard](#-componentes-do-dashboard)
+- [Estado global](#-estado-global)
+- [Build e Docker](#-build-e-docker)
+
+---
+
+## 🛠️ Stack
+
+| Tecnologia | Uso |
+|---|---|
+| **React 18** + TypeScript | UI e linguagem |
+| **Vite 5** | Bundler e dev server |
+| **TailwindCSS 3** + **shadcn/ui** | Estilização e componentes |
+| **Recharts 2** | Gráficos e visualizações |
+| **TanStack Query 5** | Data fetching e cache |
+| **Zustand 4** | Estado global |
+| **Axios** | Cliente HTTP |
+| **Zod** | Validação |
+| **date-fns** | Utilitários de data |
+| **lucide-react** | Ícones |
+
+---
+
+## 📁 Estrutura de diretórios
 
 ```
 src/
@@ -61,7 +81,7 @@ src/
 │
 ├── services/
 │   ├── api.ts                  # Instância Axios configurada
-│   └── queries/                # Hooks React Query (legado, migrado para features/)
+│   └── queries/
 │       └── capacity.ts         # useCapacityComparison
 │
 ├── stores/
@@ -79,7 +99,9 @@ src/
     └── cn.ts                   # Utilitário clsx + tailwind-merge
 ```
 
-## Variáveis de ambiente
+---
+
+## ⚙️ Variáveis de ambiente
 
 Crie um arquivo `.env` na pasta `Frontend/` com base no `.env.example`:
 
@@ -89,72 +111,81 @@ VITE_API_VERSION=v1
 VITE_AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
 ```
 
-| Variável | Obrigatória | Descrição |
-|---|---|---|
-| `VITE_API_URL` | Sim | URL base do backend |
-| `VITE_API_VERSION` | Não | Versão da API (default: v1) |
-| `VITE_AZURE_DEVOPS_ORG_URL` | Não | URL da organização Azure DevOps (para links no Work Item Aging) |
-| `VITE_ENABLE_ANALYTICS` | Não | Habilita analytics (default: true) |
-| `VITE_ENABLE_REPORTS` | Não | Habilita relatórios (default: true) |
-| `VITE_ENABLE_WIKI` | Não | Habilita wiki (default: true) |
-| `VITE_ENABLE_DEVTOOLS` | Não | Habilita devtools (default: true em dev) |
-| `VITE_LOG_LEVEL` | Não | Nível de log (default: debug em dev) |
+| Variável | Obrigatória | Padrão | Descrição |
+|---|:---:|---|---|
+| `VITE_API_URL` | ✅ | — | URL base do backend |
+| `VITE_API_VERSION` | — | `v1` | Versão da API |
+| `VITE_AZURE_DEVOPS_ORG_URL` | — | — | URL da organização Azure DevOps (para links no Work Item Aging) |
+| `VITE_ENABLE_ANALYTICS` | — | `true` | Habilita analytics |
+| `VITE_ENABLE_REPORTS` | — | `true` | Habilita relatórios |
+| `VITE_ENABLE_WIKI` | — | `true` | Habilita wiki |
+| `VITE_ENABLE_DEVTOOLS` | — | `true` (dev) | Habilita devtools |
+| `VITE_LOG_LEVEL` | — | `debug` (dev) | Nível de log |
 
-Em produção, o Nginx do container serve o frontend e faz proxy das chamadas à API. Ver [nginx.conf](nginx.conf).
+> Em produção, o Nginx do container faz proxy das chamadas à API. Ver [nginx.conf](nginx.conf).
 
-## Rodando localmente
+---
 
-```bash
-npm install
-npm run dev       # dev server em http://localhost:5173
-```
-
-Outros comandos:
+## 🚀 Comandos
 
 ```bash
-npm run build      # build de produção para dist/
-npm run preview    # preview do build de produção
-npm run type-check # checagem de tipos sem compilar
-npm run lint       # ESLint
-npm run format     # Prettier
+npm install         # instala dependências
+
+npm run dev         # dev server em http://localhost:5173
+npm run build       # build de produção para dist/
+npm run preview     # preview do build de produção
+
+npm run type-check  # checagem de tipos sem compilar
+npm run lint        # ESLint
+npm run format      # Prettier
 ```
 
-## Data fetching
+---
 
-Todos os dados do dashboard são carregados via React Query com os hooks em `src/services/queries/`. O cache é gerenciado automaticamente:
+## 📡 Data fetching
 
-| Hook | Endpoint | Descrição |
-|---|---|---|
-| `useSprints` | `GET /sprints` | Lista sprints (filtrável por estado) |
-| `useSprintBurndown` | `GET /sprints/:id/burndown` | Dados de burndown e snapshots da sprint |
-| `useCapacityComparison` | `GET /sprints/:id/capacity/comparison` | Capacidade vs planejado por membro |
-| `useWorkItems` | `GET /work-items` | Lista work items com filtros (sprintId, type, state, limit) |
-| `useBlockedWorkItems` | `GET /work-items/blocked` | Work items bloqueados |
+Todos os dados do dashboard são carregados via React Query. O cache é gerenciado automaticamente:
 
-## Componentes do Dashboard
+| Hook | Endpoint | Atualização | Descrição |
+|---|---|---|---|
+| `useSprints` | `GET /sprints` | 30s | Lista sprints (filtrável por estado) |
+| `useSprintBurndown` | `GET /sprints/:id/burndown` | 60s | Dados de burndown e snapshots |
+| `useCapacityComparison` | `GET /sprints/:id/capacity/comparison` | 60s | Capacidade vs planejado por membro |
+| `useWorkItems` | `GET /work-items` | — | Lista work items com filtros |
+| `useBlockedWorkItems` | `GET /work-items/blocked` | — | Work items bloqueados |
 
-| Componente | Pasta | Descrição |
+---
+
+## 🧩 Componentes do Dashboard
+
+| Componente | Localização | Descrição |
 |---|---|---|
 | `StatCard` | components/ | Cards de métricas no topo (capacidade, planejamento, restante, concluído, impedimentos) |
-| `SprintHealthCard` | components/ | Score de saúde da sprint (0-100) com penalidades |
-| `BlockersAlert` | components/ | Painel de work items bloqueados |
-| `CapacityTable` | components/ | Tabela capacidade vs planejado por membro |
-| `MemberCapacityProgress` | components/ | Gráfico de barras horizontais empilhadas por pessoa |
+| `SprintHealthCard` | components/ | Score de saúde da sprint (0-100) com lista de penalidades |
+| `BlockersAlert` | components/ | Painel de work items bloqueados com tempo de bloqueio |
+| `CapacityTable` | components/ | Tabela de capacidade vs planejado por membro |
+| `MemberCapacityProgress` | components/ | Barras horizontais empilhadas por pessoa |
 | `WorkItemAgingCard` | components/ | Aging de Tasks em progresso com modal de detalhes |
-| `BurndownChart` | charts/ | Burndown interativo com ideal, remaining, projeção, scope creep/remoção e concluído por dia |
-| `CumulativeFlowChart` | charts/ | CFD com 4 camadas empilhadas (Done, Blocked, InProgress, ToDo) |
+| `BurndownChart` | charts/ | Burndown interativo: ideal piecewise, remaining, projeção, scope bars, concluído por dia |
+| `CumulativeFlowChart` | charts/ | CFD com 4 camadas empilhadas (Done, Blocked, In Progress, To Do) |
 | `WorkItemsByStateChart` | charts/ | Donut de work items por estado |
 | `WorkItemsByTypeChart` | charts/ | Donut de work items por tipo |
 | `WorkItemsByMemberChart` | charts/ | Donut de work items por responsável |
 | `ServerCheck` | common/ | Health check de conexão com o backend na inicialização |
 
-## Estado global
+---
+
+## 🗂️ Estado global
 
 O `appStore` (Zustand) mantém apenas:
 
-- `selectedProjectId` — projeto atualmente selecionado no seletor do dashboard
+| Estado | Tipo | Descrição |
+|---|---|---|
+| `selectedProjectId` | string | Projeto atualmente selecionado no seletor do dashboard |
 
-## Build e Docker
+---
+
+## 🐳 Build e Docker
 
 ```bash
 # Build de produção

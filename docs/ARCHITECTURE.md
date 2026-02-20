@@ -1,21 +1,39 @@
-# AzureBridge — Arquitetura do Sistema
+# 📐 AzureBridge — Arquitetura do Sistema
 
-## Visão geral
+> Visão técnica completa da plataforma: containers, fluxos de dados, decisões de design e modelos internos.
+
+---
+
+## 📋 Índice
+
+- [Visão geral](#-visão-geral)
+- [Diagrama completo](#-diagrama-completo)
+- [Fluxo de sincronização](#-fluxo-de-sincronização)
+- [Fluxo de um request HTTP](#-fluxo-de-um-request-http)
+- [Arquitetura do Frontend](#-arquitetura-do-frontend)
+- [Modelo de dados de burndown](#-modelo-de-dados-de-burndown)
+- [Sprint Health Score](#-sprint-health-score)
+- [Containers Docker](#-containers-docker)
+- [Decisões de arquitetura](#-decisões-de-arquitetura)
+
+---
+
+## 🌐 Visão geral
 
 O AzureBridge é composto por quatro processos principais que rodam em containers Docker separados:
 
 | Container | Papel |
 |---|---|
-| `api` | Servidor HTTP (Fastify) que serve a API REST |
-| `web` | Frontend React servido via Nginx |
-| `auto-sync` | Scheduler que executa sincronizações automáticas |
+| `api` | Servidor HTTP (Fastify) que serve a API REST na porta 3001 |
+| `web` | Frontend React servido via Nginx na porta 80 |
+| `auto-sync` | Scheduler que executa sincronizações automáticas via cron |
 | `redis` | Cache e backend de filas BullMQ |
 
-O banco de dados PostgreSQL é externo (Supabase), acessado pelos containers `api` e `auto-sync`.
+> O banco de dados PostgreSQL é **externo** (Supabase), acessado pelos containers `api` e `auto-sync`.
 
 ---
 
-## Diagrama completo
+## 🗺️ Diagrama completo
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -36,7 +54,7 @@ O banco de dados PostgreSQL é externo (Supabase), acessado pelos containers `ap
    │  → Prisma ORM           │                 │  bootstrap: load │
    └─────────┬──────────┬───┘                 └────────┬─────────┘
              │          │                              │
-             │          │ BullMQ Jobs                 │ direct scripts
+             │          │ BullMQ Jobs                 │ scripts diretos
              ▼          ▼                              │
    ┌──────────────┐  ┌───────────┐                    │
    │    Redis     │  │  Worker   │                    │
@@ -64,11 +82,11 @@ O banco de dados PostgreSQL é externo (Supabase), acessado pelos containers `ap
 
 ---
 
-## Fluxo de sincronização
+## 🔄 Fluxo de sincronização
 
-### 1. Bootstrap (carga inicial)
+### 🏁 Bootstrap (carga inicial)
 
-Executado uma vez quando o sistema é configurado pela primeira vez:
+Executado **uma vez** quando o sistema é configurado pela primeira vez:
 
 ```
 auto-sync (bootstrap mode)
@@ -89,9 +107,9 @@ auto-sync (bootstrap mode)
         └── Gera snapshots históricos → salva em `sprint_snapshots`
 ```
 
-### 2. Sync incremental (hourly)
+### ⏰ Sync incremental (hourly)
 
-Executado automaticamente a cada hora pelo container `auto-sync`:
+Executado automaticamente **a cada hora** pelo container `auto-sync`:
 
 ```
 hourly-sync.ts (AUTO_SYNC_MODE=hourly)
@@ -108,30 +126,30 @@ hourly-sync.ts (AUTO_SYNC_MODE=hourly)
         └── Reconstrói burndown via modelo de eventos (revisões)
 ```
 
-### 3. Sync diário (daily)
+### 📅 Sync diário (daily)
 
-Executado uma vez por dia pelo container `auto-sync`:
+Executado **uma vez por dia** pelo container `auto-sync`:
 
 ```
 daily-sync.ts (AUTO_SYNC_MODE=daily)
   │
-  ├── sync-all-projects.js → atualiza projetos e sprints
-  ├── sync-all-team-members.js → atualiza membros
-  ├── sync-target-projects.js → bootstrap de projetos novos
-  ├── smart-sync.ts → sync incremental de work items
+  ├── sync-all-projects.js             → atualiza projetos e sprints
+  ├── sync-all-team-members.js         → atualiza membros
+  ├── sync-target-projects.js          → bootstrap de projetos novos
+  ├── smart-sync.ts                    → sync incremental de work items
   ├── backfill-project-history-batch.ts → campos históricos
-  ├── backfill-closed-dates.ts → closedDate via revisões
-  ├── sync-capacity.js → capacidade por sprint/membro
-  ├── run-snapshot.ts → snapshot diário
+  ├── backfill-closed-dates.ts         → closedDate via revisões Azure
+  ├── sync-capacity.js                 → capacidade por sprint/membro
+  ├── run-snapshot.ts                  → snapshot diário
   ├── rebuild-active-burndown-event-model.ts → burndown via eventos
-  └── validate-snapshot-counts.ts → validação de contadores
+  └── validate-snapshot-counts.ts      → validação de contadores
 ```
 
-Cada etapa tem retry com exponential backoff (default: 3 tentativas).
+> Cada etapa tem **retry com exponential backoff** (padrão: 3 tentativas).
 
 ---
 
-## Fluxo de um request HTTP
+## 🔀 Fluxo de um request HTTP
 
 ```
 Browser → GET /sprints/:id/capacity/comparison
@@ -143,7 +161,7 @@ Fastify (api.routes.ts)
 capacityController.getComparison()
      │
      ├── Verifica cache Redis
-     │     └── HIT → retorna resposta cacheada
+     │     └── HIT → retorna resposta cacheada (TTL: 5min)
      │
      └── MISS → capacityService.getComparison(sprintId)
                    │
@@ -152,7 +170,7 @@ capacityController.getComparison()
                    │
                    ├── Calcula horas disponíveis, planejadas, restantes por membro
                    │
-                   ├── Calcula unassigned (itens sem membro)
+                   ├── Calcula unassigned (itens sem membro atribuído)
                    │
                    ├── Salva resultado no Redis (TTL: 5min)
                    │
@@ -161,7 +179,7 @@ capacityController.getComparison()
 
 ---
 
-## Arquitetura do Frontend
+## 🎨 Arquitetura do Frontend
 
 ```
 App.tsx (React Router)
@@ -198,88 +216,97 @@ App.tsx (React Router)
 
 ---
 
-## Modelo de dados de burndown
+## 📊 Modelo de dados de burndown
 
 O burndown é construído a partir de `SprintSnapshot`, capturado diariamente:
 
 ```
-Dia 1 (sprint start)
+Dia 1 (início da sprint)
   snapshot: { remainingWork: 120, totalWork: 120, idealRemaining: 120 }
 
 Dia 2
   snapshot: { remainingWork: 110, totalWork: 120, idealRemaining: 108 }
 
-Dia 3 (scope adicionado: +20h)
+Dia 3 (escopo adicionado: +20h)
   snapshot: { remainingWork: 122, totalWork: 140, idealRemaining: 104 }
   → scopeAdded = 140 - 120 = 20h
   → ideal recalculado: 122h / dias restantes
-
-...
 ```
 
 O frontend recebe os snapshots e constrói o gráfico no cliente:
-1. Linha **Ideal**: recalculada a cada mudança de escopo (piecewise ideal burn)
-2. Linha **Remaining**: `remainingWork` de cada snapshot
-3. Linha **Projeção**: extrapolação linear pela velocidade média (`burnedTotal / workedDays`)
-4. Barras **Escopo**: diferença positiva em `totalWork` entre dias consecutivos
+
+| Série | Cálculo |
+|---|---|
+| **Ideal** | Recalculada a cada mudança de escopo (piecewise ideal burn) |
+| **Remaining** | `remainingWork` de cada snapshot |
+| **Projeção** | Extrapolação linear pela velocidade média (`burnedTotal / workedDays`) |
+| **Escopo** | Diferença positiva em `totalWork` entre dias consecutivos |
 
 ### Dados do Cumulative Flow Diagram (CFD)
 
-Os mesmos `SprintSnapshot` também alimentam o CFD via os campos de contagem de estado:
-- `todoCount` — work items ainda não iniciados
-- `inProgressCount` — work items em andamento
-- `doneCount` — work items concluídos
-- `blockedCount` — work items bloqueados (subconjunto de inProgress)
+Os mesmos `SprintSnapshot` alimentam o CFD via campos de contagem de estado:
 
-Esses contadores são calculados pelo `SnapshotService` apenas para tipos contáveis (`isCountableChartType`: Task, Bug, Test Case). PBIs, Features e Epics são excluídos. O `blockedCount` usa o campo `isBlocked` do work item.
+| Campo | Significado |
+|---|---|
+| `todoCount` | Work items ainda não iniciados |
+| `inProgressCount` | Work items em andamento |
+| `doneCount` | Work items concluídos |
+| `blockedCount` | Work items bloqueados (subconjunto de inProgress) |
 
-### Modelo baseado em eventos (Event Model)
+> Esses contadores consideram apenas tipos **contáveis** (`isCountableChartType`): Task, Bug, Test Case. PBIs, Features e Epics são excluídos.
 
-O script `rebuild-active-burndown-event-model.ts` reconstrói os snapshots de sprints ativas usando revisões de work items do Azure DevOps, em vez de depender apenas do estado atual. Isso garante burndown preciso mesmo quando o sync diário não capturou todos os estados intermediários.
+### Modelo baseado em eventos
 
-O processo:
-1. Busca todas as revisões dos work items da sprint via Azure DevOps API
-2. Para cada dia útil da sprint, determina o estado de cada item naquele dia
+O script `rebuild-active-burndown-event-model.ts` reconstrói snapshots de sprints ativas usando **revisões de work items** do Azure DevOps, garantindo burndown preciso mesmo quando o sync diário não capturou todos os estados intermediários:
+
+1. Busca todas as revisões dos work items da sprint via API
+2. Para cada dia útil, determina o estado de cada item naquele dia
 3. Calcula `remainingWork`, `completedWork`, `totalWork` por dia
-4. Calcula contadores de estado (`todoCount`, `inProgressCount`, `doneCount`, `blockedCount`)
+4. Calcula contadores de estado
 5. Reconstrói a linha ideal piecewise quando o escopo muda
 6. Salva os snapshots recalculados no banco
 
-Tipos considerados para contadores: Task, Bug, Test Case (via `COUNTABLE_CHART_TYPES`).
-
 ---
 
-## Sprint Health Score
+## 🏥 Sprint Health Score
 
-O score é calculado no frontend (`src/utils/calculations.ts`) a partir dos dados da API:
+O score é calculado no frontend ([src/utils/calculations.ts](../Frontend/src/utils/calculations.ts)):
 
 ```
 Score inicial: 100
 
 Penalidades aplicadas:
-  - Capacidade < 60%:        -15
-  - Capacidade > 90%:        -10
-  - Capacidade > 100%:       -20
-  - Desvio progresso > 0.1:  -10
-  - Desvio progresso > 0.2:  -20
-  - Desvio progresso > 0.3:  -30
-  - Blockers (n × 5, max):   -20
-  - Sprint fora de tracking:  -10
+  Fator 1 — Utilização de Capacidade (30 pts)
+    Capacidade < 60%:       -15  (subutilizada)
+    Capacidade > 90%:       -10  (utilização alta)
+    Capacidade > 100%:      -20  (sobrecarregada)
+
+  Fator 2 — Progresso vs Linha do Tempo (40 pts)
+    Desvio progresso > 0.1: -10
+    Desvio progresso > 0.2: -20
+    Desvio progresso > 0.3: -30
+
+  Fator 3 — Blockers (20 pts)
+    n blockers × 5, máx:   -20
+
+  Fator 4 — Tracking (10 pts)
+    Sprint fora de tracking: -10
 
 Score final = max(0, min(100, score))
-
-Classificação:
-  ≥ 80 → Excelente
-  ≥ 60 → Bom
-  ≥ 40 → Atenção
-  < 40 → Crítico
 ```
 
-O "desvio de progresso" compara o percentual do tempo da sprint decorrido com o percentual de horas concluídas. Ex: se 50% do tempo passou mas apenas 20% do trabalho foi concluído, o desvio é 0.3 → penalidade de -30.
+| Score | Classificação |
+|---|---|
+| ≥ 80 | ✅ Excelente |
+| ≥ 60 | 🔵 Bom |
+| ≥ 40 | ⚠️ Atenção |
+| < 40 | 🔴 Crítico |
+
+> O **desvio de progresso** compara o percentual do tempo decorrido com o percentual de horas concluídas. Exemplo: 50% do tempo passou mas apenas 20% do trabalho foi feito → desvio = 0.30 → penalidade de -30.
 
 ---
 
-## Containers Docker
+## 📦 Containers Docker
 
 ### `api` — Backend
 
@@ -289,7 +316,9 @@ O "desvio de progresso" compara o percentual do tempo da sprint decorrido com o 
 # Stage 2: runtime Node.js com dist/ compilado
 ```
 
-Expõe a porta `3001`. Health check via `curl -fsS http://localhost:3001/api/health`. Os containers `web` e `auto-sync` usam `depends_on` com `condition: service_healthy` para aguardar a API estar pronta.
+- Porta: `3001`
+- Health check: `curl -fsS http://localhost:3001/api/health`
+- Os containers `web` e `auto-sync` aguardam `condition: service_healthy`
 
 ### `web` — Frontend
 
@@ -305,10 +334,13 @@ O `nginx.conf` configura:
 
 ### `auto-sync` — Scheduler
 
-Usa o `Dockerfile.scheduler` (node:20-bookworm-slim + cron). Aguarda a API estar healthy via `depends_on`. Executa scripts de sync via cron com três modos:
-- `hourly`: smart-sync + snapshot + rebuild burndown (evento)
-- `daily`: pipeline completo (projetos, membros, sync, backfill, capacidade, snapshot, burndown, validação)
-- `full/bootstrap`: carga completa inicial + todos os rebuilds
+Usa o `Dockerfile.scheduler` (node:20-bookworm-slim + cron). Executa scripts via cron em três modos:
+
+| Modo | Frequência | Pipeline |
+|---|---|---|
+| `hourly` | A cada hora | smart-sync + snapshot + rebuild burndown |
+| `daily` | 1x por dia | pipeline completo (projetos, membros, sync, backfill, capacidade, validação) |
+| `bootstrap` | Manual | carga inicial completa + todos os rebuilds |
 
 ### `redis` — Cache
 
@@ -316,16 +348,16 @@ Redis 7 com persistência em volume `redis-data`.
 
 ---
 
-## Decisões de arquitetura notáveis
+## 🧠 Decisões de arquitetura
 
-**Por que dois processos no backend?**
-O servidor HTTP (`server.ts`) e o worker de jobs (`worker.ts`) são processos separados. Isso garante que jobs longos de sync não bloqueiem as respostas HTTP.
+> **Por que dois processos no backend (server + worker)?**
+> O servidor HTTP (`server.ts`) e o worker de jobs (`worker.ts`) são processos separados. Jobs longos de sync não bloqueiam respostas HTTP.
 
-**Por que snapshots diários em vez de calcular on-demand?**
-O burndown histórico não pode ser reconstruído após o fato sem snapshots, pois os dados de `remainingWork` são sobrescritos com cada sync. O snapshot diário garante que sempre haverá dados históricos para visualizar a evolução da sprint.
+> **Por que snapshots diários em vez de calcular on-demand?**
+> O burndown histórico não pode ser reconstruído após o fato sem snapshots — `remainingWork` é sobrescrito a cada sync. O snapshot diário garante dados históricos para toda a sprint.
 
-**Por que Redis além do banco?**
-As queries de capacidade e burndown envolvem JOINs complexos. O Redis evita recalcular esses dados a cada request do dashboard, com TTL de 5 minutos para manter a atualidade.
+> **Por que Redis além do banco?**
+> Queries de capacidade e burndown envolvem JOINs complexos. O Redis evita recalcular esses dados a cada request, com TTL de 5 minutos.
 
-**Por que `DATABASE_URL` e `DIRECT_DATABASE_URL`?**
-O Supabase usa PgBouncer (pooler) para conexões em runtime, mas as migrations precisam de uma conexão direta. Prisma exige as duas URLs separadas nesse cenário.
+> **Por que `DATABASE_URL` e `DIRECT_DATABASE_URL`?**
+> O Supabase usa PgBouncer (pooler) para conexões em runtime, mas migrations precisam de conexão direta. Prisma exige as duas URLs separadas nesse cenário.

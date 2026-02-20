@@ -11,7 +11,7 @@ export const api = axios.create({
     timeout: 30000,
 });
 
-// Request interceptor
+// Interceptor de requisição
 api.interceptors.request.use(
     (config) => {
         // Adicionar token de autenticação se existir
@@ -24,7 +24,7 @@ api.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Interceptor de resposta
 api.interceptors.response.use(
     (response) => response,
     (error) => {

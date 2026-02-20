@@ -188,7 +188,7 @@ export class SnapshotService {
                 const points = item.storyPoints || 0;
                 totalPoints += points;
 
-                // CFD counts exclude PBI/User Story by rule.
+                // Contadores do CFD excluem PBI/User Story por regra.
                 if (!isPbi && isCountableForCharts) {
                     if ((item as any).isBlocked) blockedCount++;
                     if (state === 'done' || state === 'closed' || state === 'completed') {
@@ -201,7 +201,7 @@ export class SnapshotService {
                     }
                 }
 
-                // Points remain unchanged (not used by CFD visual stacks)
+                // Pontos permanecem inalterados (não usados pelas camadas visuais do CFD)
                 if (state === 'done' || state === 'closed' || state === 'completed') completedPoints += points;
                 else remainingPoints += points;
             }

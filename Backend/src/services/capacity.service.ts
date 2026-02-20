@@ -352,7 +352,7 @@ export class CapacityService {
         const completedByMember: Record<string, number> = {};
         const unassignedWork = {
             totalHours: 0,
-            // Backward compatibility: previous UI consumed "items".
+            // Compatibilidade retroativa: a UI anterior consumia o campo "items".
             items: 0,
             open: {
                 totalHours: 0,
