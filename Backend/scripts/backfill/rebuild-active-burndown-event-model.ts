@@ -166,7 +166,13 @@ async function main() {
 
         const sprintStart = toUTCDateOnlyFromDate(new Date(sprint.startDate));
         const sprintEnd = toUTCDateOnlyFromDate(new Date(sprint.endDate));
-        const businessDays = getBusinessDays(sprintStart, sprintEnd, excludeDates);
+        const today = toUTCDateOnlyFromDate(new Date());
+        const effectiveEnd = sprintEnd.getTime() > today.getTime() ? today : sprintEnd;
+        if (effectiveEnd.getTime() < sprintStart.getTime()) {
+            console.log('  sprint ainda nao iniciou no recorte atual');
+            continue;
+        }
+        const businessDays = getBusinessDays(sprintStart, effectiveEnd, excludeDates);
         if (!businessDays.length) {
             console.log('  sem dias uteis para processar');
             continue;
@@ -393,11 +399,27 @@ async function main() {
             for (const item of scopedItems) {
                 const itemType = String(item.type || '').trim().toLowerCase();
                 if (!COUNTABLE_CHART_TYPES.has(itemType)) continue;
+                const createdTs = item.createdDate ? toUTCDateOnly(new Date(item.createdDate)).getTime() : null;
+                if (createdTs === null || createdTs >= dayEnd) continue;
                 const closedTs = item.closedDate ? toUTCDateOnly(new Date(item.closedDate)).getTime() : null;
                 const activatedTs = item.activatedDate ? toUTCDateOnly(new Date(item.activatedDate)).getTime() : null;
+                const changedTs = item.changedDate ? toUTCDateOnly(new Date(item.changedDate)).getTime() : null;
+                const currentState = parseState(item.state) || '';
                 if (item.isBlocked) blockedCount++;
-                if (closedTs !== null && closedTs < dayEnd) doneCount++;
-                else if (activatedTs !== null && activatedTs < dayEnd) inProgressCount++;
+                const doneByDate = closedTs !== null
+                    ? closedTs < dayEnd
+                    : (isDoneLike(currentState) && changedTs !== null && changedTs < dayEnd);
+
+                if (doneByDate) {
+                    doneCount++;
+                    continue;
+                }
+
+                const inProgressByDate = activatedTs !== null
+                    ? activatedTs < dayEnd
+                    : (currentState.includes('progress') && changedTs !== null && changedTs < dayEnd);
+
+                if (inProgressByDate) inProgressCount++;
                 else todoCount++;
             }
 

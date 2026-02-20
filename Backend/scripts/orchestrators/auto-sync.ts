@@ -112,6 +112,10 @@ async function main() {
     const mode = rawMode === 'bootstrap' ? 'full' : rawMode;
     const runNewProjects = (process.env.AUTO_SYNC_NEW_PROJECTS || 'true').toLowerCase() === 'true';
     const runHierarchy = (process.env.AUTO_SYNC_HIERARCHY || 'false').toLowerCase() === 'true';
+    const runSafeHistorySnapshots = (process.env.AUTO_SYNC_REBUILD_HISTORY_SNAPSHOTS || 'true').toLowerCase() === 'true';
+    const runBurndownRebuildHourly = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY || 'false').toLowerCase() === 'true';
+    const runBurndownRebuildDaily = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY || 'false').toLowerCase() === 'true';
+    const runBurndownRebuildFull = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_FULL || 'true').toLowerCase() === 'true';
     const targetProjects = process.env.TARGET_PROJECTS || '';
     const maxAttempts = Math.max(1, Number(process.env.AUTO_SYNC_STEP_RETRIES || 3));
     const startedAt = Date.now();
@@ -121,6 +125,10 @@ async function main() {
     console.log(`MODE: ${mode}`);
     console.log(`NEW_PROJECTS: ${runNewProjects ? 'enabled' : 'disabled'}`);
     console.log(`HIERARCHY: ${runHierarchy ? 'enabled' : 'disabled'}`);
+    console.log(`REBUILD_HISTORY_SNAPSHOTS: ${runSafeHistorySnapshots ? 'enabled' : 'disabled'}`);
+    console.log(`REBUILD_BURNDOWN_HOURLY: ${runBurndownRebuildHourly ? 'enabled' : 'disabled'}`);
+    console.log(`REBUILD_BURNDOWN_DAILY: ${runBurndownRebuildDaily ? 'enabled' : 'disabled'}`);
+    console.log(`REBUILD_BURNDOWN_FULL: ${runBurndownRebuildFull ? 'enabled' : 'disabled'}`);
     console.log(`STEP_RETRIES: ${maxAttempts}`);
     if (targetProjects) {
         console.log(`TARGET_PROJECTS: ${targetProjects}`);
@@ -132,7 +140,12 @@ async function main() {
         steps.push(tsxStep('WIKI SYNC (INCREMENTAL)', 'scripts/sync/wiki-sync.ts', { WIKI_SYNC_MODE: 'incremental' }));
         steps.push(tsxStep('SMART SYNC', 'scripts/sync/smart-sync.ts'));
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
-        steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        if (runSafeHistorySnapshots) {
+            steps.push(tsxStep('REBUILD ACTIVE HISTORY SNAPSHOTS (SAFE)', 'scripts/maintenance/rebuild-active-history-snapshots.ts'));
+        }
+        if (runBurndownRebuildHourly) {
+            steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        }
     } else if (mode === 'full') {
         steps.push(nodeStep('SYNC ALL PROJECTS', 'scripts/sync/sync-all-projects.js'));
         steps.push(nodeStep('SYNC ALL TEAM MEMBERS', 'scripts/sync/sync-all-team-members.js'));
@@ -142,8 +155,13 @@ async function main() {
         steps.push(tsxStep('BACKFILL CLOSED DATES', 'scripts/backfill/backfill-closed-dates.ts'));
         steps.push(nodeStep('SYNC CAPACITY', 'scripts/sync/sync-capacity.js'));
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
+        if (runSafeHistorySnapshots) {
+            steps.push(tsxStep('REBUILD ACTIVE HISTORY SNAPSHOTS (SAFE)', 'scripts/maintenance/rebuild-active-history-snapshots.ts'));
+        }
         steps.push(tsxStep('REBUILD SNAPSHOT COUNTS (ALL)', 'scripts/backfill/rebuild-snapshot-counts.ts', { REBUILD_MODE: 'all' }));
-        steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        if (runBurndownRebuildFull) {
+            steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        }
         steps.push(tsxStep('VALIDATE SNAPSHOT COUNTS', 'scripts/maintenance/validate-snapshot-counts.ts'));
         if (runHierarchy) steps.push(nodeStep('SYNC HIERARCHY', 'scripts/sync/sync-hierarchy.js'));
     } else {
@@ -170,7 +188,12 @@ async function main() {
         steps.push(tsxStep('BACKFILL CLOSED DATES', 'scripts/backfill/backfill-closed-dates.ts'));
         steps.push(nodeStep('SYNC CAPACITY', 'scripts/sync/sync-capacity.js'));
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
-        steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        if (runSafeHistorySnapshots) {
+            steps.push(tsxStep('REBUILD ACTIVE HISTORY SNAPSHOTS (SAFE)', 'scripts/maintenance/rebuild-active-history-snapshots.ts'));
+        }
+        if (runBurndownRebuildDaily) {
+            steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
+        }
         steps.push(tsxStep('VALIDATE SNAPSHOT COUNTS', 'scripts/maintenance/validate-snapshot-counts.ts'));
     }
 

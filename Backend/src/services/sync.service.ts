@@ -316,7 +316,11 @@ export class SyncService {
                 doneRemainingWork: true,
                 initialRemainingWork: true,
                 originalEstimate: true,
-                completedWork: true
+                completedWork: true,
+                closedDate: true,
+                resolvedDate: true,
+                stateChangeDate: true,
+                activatedDate: true
             }
         });
         const existingById = new Map(existingItems.map((item) => [item.id, item]));
@@ -330,6 +334,27 @@ export class SyncService {
                 const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
                 const completedWorkIncoming = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
                 const existing = existingById.get(azureWI.id!);
+                const hasField = (key: string) => Object.prototype.hasOwnProperty.call(fields, key);
+                const closedRaw = fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate'];
+                const resolvedRaw = fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'];
+                const stateChangeRaw = fields['System.StateChangeDate'];
+                const activatedRaw = fields['Microsoft.VSTS.Common.ActivatedDate'];
+                const hasClosedField = hasField('System.ClosedDate') || hasField('Microsoft.VSTS.Common.ClosedDate');
+                const hasResolvedField = hasField('System.ResolvedDate') || hasField('Microsoft.VSTS.Common.ResolvedDate');
+                const hasStateChangeField = hasField('System.StateChangeDate');
+                const hasActivatedField = hasField('Microsoft.VSTS.Common.ActivatedDate');
+                const closedDate = hasClosedField
+                    ? (closedRaw ? new Date(closedRaw as string) : null)
+                    : (existing?.closedDate ?? null);
+                const resolvedDate = hasResolvedField
+                    ? (resolvedRaw ? new Date(resolvedRaw as string) : null)
+                    : (existing?.resolvedDate ?? null);
+                const stateChangeDate = hasStateChangeField
+                    ? (stateChangeRaw ? new Date(stateChangeRaw as string) : null)
+                    : (existing?.stateChangeDate ?? null);
+                const activatedDate = hasActivatedField
+                    ? (activatedRaw ? new Date(activatedRaw as string) : null)
+                    : (existing?.activatedDate ?? null);
                 const state = (fields['System.State'] || '').toString();
                 const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
                 const fallbackHistoricalEffort = Math.max(
@@ -419,14 +444,10 @@ export class SyncService {
                     severity: fields['Microsoft.VSTS.Common.Severity'],
                     createdDate: new Date(fields['System.CreatedDate']),
                     changedDate: new Date(fields['System.ChangedDate']),
-                    closedDate: (fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate'])
-                        ? new Date((fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate']) as string)
-                        : null,
-                    resolvedDate: (fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'])
-                        ? new Date((fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate']) as string)
-                        : null,
-                    stateChangeDate: fields['System.StateChangeDate'] ? new Date(fields['System.StateChangeDate']) : null,
-                    activatedDate: fields['Microsoft.VSTS.Common.ActivatedDate'] ? new Date(fields['Microsoft.VSTS.Common.ActivatedDate']) : null,
+                    closedDate,
+                    resolvedDate,
+                    stateChangeDate,
+                    activatedDate,
                     createdBy: fields['System.CreatedBy'].displayName,
                     changedBy: fields['System.ChangedBy'].displayName,
                     closedBy: fields['System.ClosedBy']?.displayName,

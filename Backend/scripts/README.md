@@ -63,21 +63,28 @@ Variável de retry: `AUTO_SYNC_STEP_RETRIES` (padrão: `3` tentativas com expone
 
 **⏰ hourly:**
 ```
-smart-sync → run-snapshot → rebuild-active-burndown-event-model
+smart-sync -> run-snapshot
 ```
 
 **📅 daily:**
 ```
 sync-all-projects → sync-all-team-members → sync-target-projects
 → smart-sync → backfill-project-history-batch → backfill-closed-dates
-→ sync-capacity → run-snapshot → rebuild-active-burndown-event-model
+→ sync-capacity -> run-snapshot
 → validate-snapshot-counts
 ```
 
-**🏁 full / bootstrap:**
+**full / bootstrap:**
 ```
 tudo do daily + complete-massive-sync + rebuilds completos
 ```
+
+> rebuild-active-burndown-event-model fica desabilitado por padrao nos modos hourly e daily para evitar sobrescrita do historico de snapshots.
+>
+> Variaveis de controle:
+> - AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY (default: false)
+> - AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY (default: false)
+> - AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_FULL (default: true)
 
 ---
 
@@ -152,3 +159,5 @@ docker exec -it azurebridge-api npx tsx scripts/backfill/rebuild-active-burndown
 docker exec -it azurebridge-api npx tsx scripts/maintenance/validate-snapshot-counts.ts
 docker exec -it azurebridge-api npx tsx scripts/maintenance/run-snapshot.ts
 ```
+
+
