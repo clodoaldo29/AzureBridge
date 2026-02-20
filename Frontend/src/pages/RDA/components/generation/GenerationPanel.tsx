@@ -9,6 +9,7 @@ import { api } from '@/services/api';
 interface GenerationPanelProps {
     projectId: string;
     generationId: string;
+    onReviewClick?: (generationId: string) => void;
 }
 
 function statusLabel(status: string): string {
@@ -30,7 +31,7 @@ function currentAgentFromStep(step?: string | null): string {
     return step;
 }
 
-export function GenerationPanel({ projectId, generationId }: GenerationPanelProps) {
+export function GenerationPanel({ projectId, generationId, onReviewClick }: GenerationPanelProps) {
     const { data: progress, isLoading } = useGenerationProgress(projectId, generationId);
     const { data: details, refetch } = useGenerationDetails(projectId, generationId);
     const cancelMutation = useCancelGeneration(projectId);
@@ -70,7 +71,7 @@ export function GenerationPanel({ projectId, generationId }: GenerationPanelProp
     if (isLoading || !progress) {
         return (
             <Card>
-                <CardHeader><CardTitle className="text-base">Etapa 3: Geracao do RDA</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">Geracao do RDA</CardTitle></CardHeader>
                 <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando status da geracao...
                 </CardContent>
@@ -82,7 +83,7 @@ export function GenerationPanel({ projectId, generationId }: GenerationPanelProp
         <Card>
             <CardHeader>
                 <CardTitle className="flex items-center justify-between text-base">
-                    <span>Etapa 3: Geracao do RDA</span>
+                    <span>Geracao do RDA</span>
                     <span className="text-sm text-muted-foreground">{statusLabel(progress.status)}</span>
                 </CardTitle>
             </CardHeader>
@@ -126,9 +127,14 @@ export function GenerationPanel({ projectId, generationId }: GenerationPanelProp
                         </Button>
                     )}
                     {progress.status === 'completed' && (
-                        <Button onClick={handleDownload}>
-                            <Download className="mr-2 h-4 w-4" /> Download DOCX
-                        </Button>
+                        <>
+                            <Button variant="outline" onClick={() => onReviewClick?.(generationId)}>
+                                Revisar
+                            </Button>
+                            <Button onClick={handleDownload}>
+                                <Download className="mr-2 h-4 w-4" /> Download DOCX
+                            </Button>
+                        </>
                     )}
                     <Button variant="ghost" onClick={() => refetch()}>Atualizar</Button>
                 </div>

@@ -25,14 +25,14 @@ export const contextKeys = {
     byProject: (projectId: string) => [...contextKeys.all, projectId] as const,
 };
 
-export function useProjectContext(projectId: string) {
+export function useProjectContext(projectId: string, enabled = true) {
     return useQuery({
         queryKey: contextKeys.byProject(projectId),
         queryFn: async () => {
             const { data } = await api.get<ApiResponse<ProjectContextData | null>>(`/rda/context/${projectId}`);
             return data.data;
         },
-        enabled: Boolean(projectId),
+        enabled: Boolean(projectId) && enabled,
     });
 }
 

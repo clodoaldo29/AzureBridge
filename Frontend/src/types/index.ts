@@ -140,6 +140,25 @@ export interface CapacityComparison {
         unassigned: {
             totalHours: number;
             items: number;
+            open?: {
+                totalHours: number;
+                remainingHours: number;
+                items: number;
+                byType: Array<{
+                    type: string;
+                    items: number;
+                    totalHours: number;
+                }>;
+            };
+            done?: {
+                totalHours: number;
+                items: number;
+                byType: Array<{
+                    type: string;
+                    items: number;
+                    totalHours: number;
+                }>;
+            };
         };
         balance: number;
         utilization: number;

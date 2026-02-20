@@ -791,6 +791,11 @@ model RDAGeneration {
   tokensUsed     Int     @default(0)
   errorMessage   String? @db.Text
   partialResults Json?
+  overrides      Json?
+  validationReport Json?
+  metadata       Json?
+  period         Json?
+  schemaVersion  String?
 
   createdBy String
   createdAt DateTime @default(now())

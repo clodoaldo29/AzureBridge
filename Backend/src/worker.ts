@@ -8,30 +8,35 @@ import { logger } from './utils/logger';
 import { rdaQueueService } from '@/modules/rda/services/rda-queue.service';
 
 /**
- * Ponto de Entrada do Processo Worker
+ * Ponto de entrada do processo Worker.
  */
 async function start() {
-    logger.info('🔧 Starting Worker Process...');
+    logger.info('Starting Worker Process...');
+    const isRdaEnabled = (process.env.FEATURE_RDA_MODULE ?? 'false').toLowerCase() === 'true';
 
-    // Inicializar banco de dados
+    // Inicializar banco de dados.
     try {
         await prisma.$connect();
-        logger.info('✅ Database connected');
+        logger.info('Database connected');
     } catch (error) {
-        logger.error('❌ Database connection failed', error);
+        logger.error('Database connection failed', error);
         process.exit(1);
     }
 
-    // Inicializar ouvintes dos workers
+    // Inicializar ouvintes dos workers.
     initWorkers();
-    rdaQueueService.initWorker();
+    if (isRdaEnabled) {
+        rdaQueueService.initWorker();
+    } else {
+        logger.info('[FeatureFlag] RDA queue worker disabled (FEATURE_RDA_MODULE=false)');
+    }
 
-    // Agendar jobs recorrentes
+    // Agendar jobs recorrentes.
     await scheduleSyncJob();
     await scheduleSnapshotJob();
     await scheduleMetricsJob();
 
-    // Gerenciar encerramento
+    // Gerenciar encerramento.
     const signals = ['SIGTERM', 'SIGINT'];
     signals.forEach((signal) => {
         process.on(signal, async () => {

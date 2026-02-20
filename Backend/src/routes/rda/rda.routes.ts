@@ -177,6 +177,57 @@ export async function rdaRoutes(fastify: FastifyInstance) {
     fastify.get('/wiki/search', rdaController.searchWiki);
 
     // Fase 0 - Setup e RAG
+    fastify.get('/setup/available', async (_req: FastifyRequest, reply: FastifyReply) => {
+        const [contexts, chunkCounts] = await Promise.all([
+            prisma.projectContext.findMany({
+                select: {
+                    projectId: true,
+                    projectName: true,
+                    lastUpdated: true,
+                },
+            }),
+            prisma.documentChunk.groupBy({
+                by: ['projectId'],
+                _count: { _all: true },
+            }),
+        ]);
+
+        const projectIds = Array.from(new Set(contexts.map((item) => item.projectId)));
+        const projects = await prisma.project.findMany({
+            where: { id: { in: projectIds } },
+            select: { id: true, name: true },
+        });
+
+        const chunksByProject = new Map<string, number>(
+            chunkCounts.map((item) => [item.projectId, Number(item._count?._all ?? 0)]),
+        );
+        const projectById = new Map<string, { id: string; name: string }>(
+            projects.map((project) => [project.id, project]),
+        );
+
+        const items = contexts
+            .map((context) => {
+                const project = projectById.get(context.projectId);
+                if (!project) return null;
+                const job = setupJobs.get(context.projectId);
+
+                return {
+                    projectId: project.id,
+                    projectName: project.name,
+                    contextProjectName: context.projectName,
+                    hasProjectContext: true,
+                    isSetupComplete: true,
+                    totalChunks: chunksByProject.get(project.id) ?? 0,
+                    jobStatus: job?.status ?? null,
+                    lastUpdated: context.lastUpdated,
+                };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null)
+            .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime());
+
+        return reply.send({ success: true, data: items });
+    });
+
     fastify.post('/setup/:projectId', async (req: FastifyRequest, reply: FastifyReply) => {
         const { projectId } = projectParamsSchema.parse(req.params);
         const body = SetupProjectSchema.partial({ projectId: true }).parse(req.body ?? {});

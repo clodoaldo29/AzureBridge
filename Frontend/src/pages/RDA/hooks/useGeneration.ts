@@ -13,6 +13,20 @@ export interface GenerationProgress {
     currentStep: string | null;
 }
 
+export interface GenerationListItem {
+    id: string;
+    status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+    progress: number;
+    currentStep: string | null;
+    periodStart: string;
+    periodEnd: string;
+    tokensUsed: number;
+    outputFilePath: string | null;
+    createdAt: string;
+    updatedAt: string;
+    errorMessage: string | null;
+}
+
 export function useGenerationProgress(projectId: string, generationId: string | null) {
     return useQuery({
         queryKey: ['generation-progress', generationId],
@@ -40,6 +54,20 @@ export function useGenerationDetails(projectId: string, generationId: string | n
             return data.data;
         },
         enabled: Boolean(projectId) && Boolean(generationId),
+    });
+}
+
+export function useGenerationsList(projectId: string, status?: string) {
+    return useQuery({
+        queryKey: ['generations-list', projectId, status ?? 'all'],
+        queryFn: async () => {
+            const { data } = await api.get<ApiResponse<{ items: GenerationListItem[]; total: number }>>(
+                `/rda/generations/${projectId}`,
+                { params: { page: 1, limit: 50, status: status || undefined } },
+            );
+            return data.data;
+        },
+        enabled: Boolean(projectId),
     });
 }
 

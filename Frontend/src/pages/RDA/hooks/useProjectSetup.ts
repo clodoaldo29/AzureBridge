@@ -80,7 +80,7 @@ export function useSetupProject(projectId: string) {
     });
 }
 
-export function useSetupStatus(projectId: string, pollWhileProcessing = true) {
+export function useSetupStatus(projectId: string, pollWhileProcessing = true, processingPollMs = 20000) {
     return useQuery({
         queryKey: setupKeys.status(projectId),
         queryFn: async () => {
@@ -94,7 +94,7 @@ export function useSetupStatus(projectId: string, pollWhileProcessing = true) {
             }
 
             const status = query.state.data?.jobStatus;
-            return status === 'processing' ? 5000 : false;
+            return status === 'processing' ? processingPollMs : false;
         },
     });
 }

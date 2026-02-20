@@ -4,11 +4,13 @@ import { useAppStore } from '@/stores/appStore';
 import { RDAList } from '@/components/rda/RDAList';
 import { TemplateFactoryWizard } from '@/pages/RDA/components/template-factory/TemplateFactoryWizard';
 import { UnifiedRDAWorkspace } from '@/pages/RDA/components/unified-rda/UnifiedRDAWorkspace';
+import { RDAWorkflowV2 } from '@/pages/RDA/components/workflow-v2/RDAWorkflowV2';
 import { api } from '@/services/api';
 import type { Project } from '@/types';
 
 type TabKey = 'generate' | 'history' | 'factory';
 const ENABLE_TEMPLATE_FACTORY = import.meta.env.VITE_ENABLE_TEMPLATE_FACTORY === 'true';
+const ENABLE_RDA_WORKFLOW_V2 = (import.meta.env.VITE_RDA_WORKFLOW_V2 ?? 'true') === 'true';
 
 export function RDAGenerator() {
     const [activeTab, setActiveTab] = useState<TabKey>('generate');
@@ -72,9 +74,13 @@ export function RDAGenerator() {
 
             {activeTab === 'generate' && (
                 <div className="space-y-4">
-                    <UnifiedRDAWorkspace
-                        selectedProjectId={selectedProjectId || ''}
-                    />
+                    {ENABLE_RDA_WORKFLOW_V2 ? (
+                        <RDAWorkflowV2 />
+                    ) : (
+                        <UnifiedRDAWorkspace
+                            selectedProjectId={selectedProjectId || ''}
+                        />
+                    )}
                 </div>
             )}
             {activeTab === 'history' && <RDAList projectId={selectedProjectId || ''} />}

@@ -1,5 +1,5 @@
-﻿import { useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Clock3, DatabaseZap, RefreshCw, XCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CalendarDays, CheckCircle2, Clock3, DatabaseZap, Plus, RefreshCw, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
 import { GenerationReadinessIndicator } from '@/pages/RDA/components/preflight/GenerationReadinessIndicator';
 import { PreflightPanel } from '@/pages/RDA/components/preflight/PreflightPanel';
 import { GenerationPanel } from '@/pages/RDA/components/generation/GenerationPanel';
+import { ReviewPanel } from '@/pages/RDA/components/review/ReviewPanel';
 import { toast } from '@/hooks/use-toast';
 
 interface MonthlyPreparationPanelProps {
@@ -68,31 +69,38 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
     const [refreshProjectContext, setRefreshProjectContext] = useState(true);
     const [trackingPeriod, setTrackingPeriod] = useState('');
     const [generationId, setGenerationId] = useState<string | null>(null);
+    const [reviewGenerationId, setReviewGenerationId] = useState<string | null>(null);
+    const [showNewSetupForm, setShowNewSetupForm] = useState(true);
 
     const periodKey = toPeriodKey({ month, year });
 
     const startMutation = useStartPreparation();
     const snapshotsQuery = useMonthlySnapshots(projectId);
     const deleteMutation = useDeletePreparation(projectId);
-
     const statusQuery = usePreparationStatus(projectId, trackingPeriod, Boolean(projectId && trackingPeriod));
 
     const snapshots = useMemo(
         () => ((snapshotsQuery.data ?? []) as Array<Record<string, unknown>>).map(toSnapshotRow),
         [snapshotsQuery.data],
     );
+    const snapshotsSummary = useMemo(() => ({
+        total: snapshots.length,
+        ready: snapshots.filter((item) => item.status === 'ready').length,
+        collecting: snapshots.filter((item) => item.status === 'collecting').length,
+        failed: snapshots.filter((item) => item.status === 'failed').length,
+    }), [snapshots]);
 
     const currentStatus = statusQuery.data;
     const progress = Number(currentStatus?.progress ?? 0);
     const trackedPeriodConfig = trackingPeriod
         ? (() => {
             const [yearRaw, monthRaw] = trackingPeriod.split('-');
-            const year = Number(yearRaw);
-            const month = Number(monthRaw);
-            if (!Number.isInteger(year) || !Number.isInteger(month)) {
+            const parsedYear = Number(yearRaw);
+            const parsedMonth = Number(monthRaw);
+            if (!Number.isInteger(parsedYear) || !Number.isInteger(parsedMonth)) {
                 return null;
             }
-            return { year, month };
+            return { year: parsedYear, month: parsedMonth };
         })()
         : null;
 
@@ -111,6 +119,9 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
             });
 
             setTrackingPeriod(result.periodKey);
+            setGenerationId(null);
+            setReviewGenerationId(null);
+            setShowNewSetupForm(false);
             await Promise.all([snapshotsQuery.refetch(), statusQuery.refetch()]);
         } catch (error: unknown) {
             const message = getApiErrorMessage(error);
@@ -135,6 +146,32 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
         return <Clock3 className="h-4 w-4 text-slate-500" />;
     };
 
+    const applyPeriod = (period: string) => {
+        const [yearRaw, monthRaw] = period.split('-');
+        const parsedYear = Number(yearRaw);
+        const parsedMonth = Number(monthRaw);
+        if (Number.isInteger(parsedYear) && Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12) {
+            setYear(parsedYear);
+            setMonth(parsedMonth);
+        }
+
+        setTrackingPeriod(period);
+        setGenerationId(null);
+        setReviewGenerationId(null);
+        setShowNewSetupForm(false);
+    };
+
+    const startNewSetupFlow = () => {
+        setTrackingPeriod('');
+        setGenerationId(null);
+        setReviewGenerationId(null);
+        setShowNewSetupForm(true);
+    };
+
+    const cancelNewSetupFlow = () => {
+        setShowNewSetupForm(false);
+    };
+
     if (!projectId) {
         return (
             <Card>
@@ -147,67 +184,126 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
 
     return (
         <div className="space-y-4">
+            {snapshots.length > 0 && (
+                <Card className="border-blue-100 bg-gradient-to-r from-blue-50/60 via-white to-white">
+                    <CardHeader>
+                        <CardTitle className="flex items-center justify-between gap-2 text-base">
+                            <span className="flex items-center gap-2">
+                                <CalendarDays className="h-4 w-4 text-blue-600" />
+                                Ciclos Mensais Existentes
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                        <div className="grid gap-2 md:grid-cols-4">
+                            <div className="rounded border px-3 py-2">Total: <b>{snapshotsSummary.total}</b></div>
+                            <div className="rounded border px-3 py-2">Prontos: <b>{snapshotsSummary.ready}</b></div>
+                            <div className="rounded border px-3 py-2">Coletando: <b>{snapshotsSummary.collecting}</b></div>
+                            <div className="rounded border px-3 py-2">Falhos: <b>{snapshotsSummary.failed}</b></div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-muted-foreground">Continuar periodo:</span>
+                            {snapshots.slice(0, 8).map((snapshot) => (
+                                <Button
+                                    key={snapshot.id}
+                                    variant={trackingPeriod === snapshot.period ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => applyPeriod(snapshot.period)}
+                                >
+                                    {snapshot.period}
+                                </Button>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             <Card className="border-sky-100 bg-gradient-to-r from-sky-50/50 via-white to-white">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <CardTitle className="flex items-center justify-between gap-2 text-base">
+                        <span className="flex items-center gap-2">
                         <DatabaseZap className="h-4 w-4 text-sky-600" />
-                        Etapa C: Preparacao Mensal
+                            Novo Ciclo Mensal
+                        </span>
+                        {showNewSetupForm ? (
+                            snapshots.length > 0 ? (
+                                <Button size="sm" variant="outline" onClick={cancelNewSetupFlow}>Cancelar</Button>
+                            ) : null
+                        ) : (
+                            <Button size="sm" onClick={startNewSetupFlow}>
+                                <Plus className="mr-1 h-4 w-4" />
+                                Novo setup
+                            </Button>
+                        )}
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-4">
-                        <label className="space-y-1 text-sm">
-                            <span>Mes</span>
-                            <select className="w-full rounded border px-2 py-1" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-                                {MONTHS.map((label, index) => (
-                                    <option key={label} value={index + 1}>{label}</option>
-                                ))}
-                            </select>
-                        </label>
-
-                        <label className="space-y-1 text-sm">
-                            <span>Ano</span>
-                            <select className="w-full rounded border px-2 py-1" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-                                {[now.getFullYear(), now.getFullYear() - 1].map((value) => (
-                                    <option key={value} value={value}>{value}</option>
-                                ))}
-                            </select>
-                        </label>
-
-                        <label className="space-y-1 text-sm">
-                            <span>Modo de sync</span>
-                            <select className="w-full rounded border px-2 py-1" value={syncMode} onChange={(e) => setSyncMode(e.target.value as 'none' | 'incremental' | 'full')}>
-                                <option value="incremental">Incremental</option>
-                                <option value="full">Completo</option>
-                                <option value="none">Sem sync operacional</option>
-                            </select>
-                        </label>
-
-                        <div className="flex items-end">
-                            <Button onClick={startPreparation} disabled={startMutation.isPending} className="w-full">
-                                {startMutation.isPending ? 'Executando...' : `Iniciar ${periodKey}`}
-                            </Button>
+                    {!showNewSetupForm && (
+                        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium">Modo acompanhamento de ciclo mensal</p>
+                            <p className="text-muted-foreground">
+                                Periodo selecionado: <b>{trackingPeriod || periodKey}</b>. Use <b>Novo setup</b> para criar outro ciclo.
+                            </p>
                         </div>
-                    </div>
+                    )}
 
-                    <div className="grid gap-2 text-sm md:grid-cols-2">
-                        <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={includeOperationalSync} onChange={(e) => setIncludeOperationalSync(e.target.checked)} />
-                            Sincronizar dados operacionais (work items, sprints, equipe)
-                        </label>
-                        <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={includeWiki} onChange={(e) => setIncludeWiki(e.target.checked)} />
-                            Sincronizar wiki do projeto
-                        </label>
-                        <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={refreshProjectContext} onChange={(e) => setRefreshProjectContext(e.target.checked)} />
-                            Atualizar contexto do projeto via IA
-                        </label>
-                        <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={forceReprocess} onChange={(e) => setForceReprocess(e.target.checked)} />
-                            Reprocessar periodo (limpa snapshot e chunks mensais)
-                        </label>
-                    </div>
+                    {showNewSetupForm && (
+                        <>
+                            <div className="grid gap-3 md:grid-cols-4">
+                                <label className="space-y-1 text-sm">
+                                    <span>Mes</span>
+                                    <select className="w-full rounded border px-2 py-1" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+                                        {MONTHS.map((label, index) => (
+                                            <option key={label} value={index + 1}>{label}</option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                <label className="space-y-1 text-sm">
+                                    <span>Ano</span>
+                                    <select className="w-full rounded border px-2 py-1" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                                        {[now.getFullYear(), now.getFullYear() - 1].map((value) => (
+                                            <option key={value} value={value}>{value}</option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                <label className="space-y-1 text-sm">
+                                    <span>Modo de sync</span>
+                                    <select className="w-full rounded border px-2 py-1" value={syncMode} onChange={(e) => setSyncMode(e.target.value as 'none' | 'incremental' | 'full')}>
+                                        <option value="incremental">Incremental</option>
+                                        <option value="full">Completo</option>
+                                        <option value="none">Sem sync operacional</option>
+                                    </select>
+                                </label>
+
+                                <div className="flex items-end">
+                                    <Button onClick={startPreparation} disabled={startMutation.isPending} className="w-full">
+                                        {startMutation.isPending ? 'Executando...' : `Iniciar ${periodKey}`}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-2 text-sm md:grid-cols-2">
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={includeOperationalSync} onChange={(e) => setIncludeOperationalSync(e.target.checked)} />
+                                    Sincronizar dados operacionais (work items, sprints, equipe)
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={includeWiki} onChange={(e) => setIncludeWiki(e.target.checked)} />
+                                    Sincronizar wiki do projeto
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={refreshProjectContext} onChange={(e) => setRefreshProjectContext(e.target.checked)} />
+                                    Atualizar contexto do projeto via IA
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={forceReprocess} onChange={(e) => setForceReprocess(e.target.checked)} />
+                                    Reprocessar periodo (limpa snapshot e chunks mensais)
+                                </label>
+                            </div>
+                        </>
+                    )}
 
                     {trackingPeriod && !currentStatus && (
                         <div className="space-y-2 rounded-md border p-3 text-sm text-muted-foreground">
@@ -280,7 +376,10 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
                     {snapshots.map((snapshot) => (
                         <div key={snapshot.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
                             <div>
-                                <p className="font-medium">{snapshot.period}</p>
+                                <p className="font-medium flex items-center gap-2">
+                                    {renderStatusIcon(snapshot.status)}
+                                    {snapshot.period}
+                                </p>
                                 <p className="text-xs text-muted-foreground">WIs {snapshot.workItemsTotal} • Sprints {snapshot.sprintsCount} • Chunks {snapshot.chunksCreated}</p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -292,7 +391,7 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
                                 <Badge variant={snapshot.status === 'ready' ? 'default' : snapshot.status === 'failed' ? 'destructive' : 'secondary'}>
                                     {snapshot.status}
                                 </Badge>
-                                <Button variant="outline" size="sm" onClick={() => setTrackingPeriod(snapshot.period)}>Acompanhar</Button>
+                                <Button variant="outline" size="sm" onClick={() => applyPeriod(snapshot.period)}>Continuar</Button>
                                 <Button variant="outline" size="sm" onClick={() => deleteMutation.mutate({ period: snapshot.period })}>Remover</Button>
                             </div>
                         </div>
@@ -309,10 +408,20 @@ export function MonthlyPreparationPanel({ projectId }: MonthlyPreparationPanelPr
             )}
 
             {generationId && (
-                <GenerationPanel
-                    projectId={projectId}
-                    generationId={generationId}
-                />
+                <div className="space-y-4">
+                    <GenerationPanel
+                        projectId={projectId}
+                        generationId={generationId}
+                        onReviewClick={(id) => setReviewGenerationId(id)}
+                    />
+                    {reviewGenerationId && (
+                        <ReviewPanel
+                            projectId={projectId}
+                            generationId={reviewGenerationId}
+                            onClose={() => setReviewGenerationId(null)}
+                        />
+                    )}
+                </div>
             )}
         </div>
     );

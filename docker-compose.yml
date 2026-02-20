@@ -34,6 +34,7 @@ services:
       # Features
       FEATURE_ANALYTICS: ${FEATURE_ANALYTICS:-true}
       FEATURE_REPORTS: ${FEATURE_REPORTS:-true}
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
       RDA_UPLOADS_DIR: /app/uploads
     depends_on:
       redis:
@@ -70,6 +71,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
       RDA_UPLOADS_DIR: /app/uploads
     depends_on:
       redis:
@@ -128,6 +130,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+        VITE_FEATURE_RDA_MODULE: ${VITE_FEATURE_RDA_MODULE:-false}
     container_name: azurebridge-web
     restart: unless-stopped
     ports:

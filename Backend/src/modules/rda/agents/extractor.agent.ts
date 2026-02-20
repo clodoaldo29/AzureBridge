@@ -10,6 +10,14 @@ interface ExtractorInput {
     context: GenerationContext;
 }
 
+type ReviewSectionName = 'dados_projeto' | 'atividades' | 'resultados';
+
+const SECTION_FIELD_NAMES: Record<ReviewSectionName, Set<string>> = {
+    dados_projeto: new Set(['PROJETO_NOME', 'ANO_BASE', 'COMPETENCIA', 'COORDENADOR_TECNICO']),
+    atividades: new Set(['ATIVIDADES']),
+    resultados: new Set(['RESULTADOS_ALCANCADOS']),
+};
+
 function formatDate(value: Date | null): string {
     if (!value) return '-';
     return value.toISOString().slice(0, 10);
@@ -219,5 +227,19 @@ export class ExtractorAgent extends BaseAgent {
         await this.updateProgress(input.generationId, 30, 'extractor_done');
 
         return output;
+    }
+
+    async extractSection(input: ExtractorInput, sectionName: ReviewSectionName): Promise<ExtractionOutput> {
+        const full = await this.run(input);
+        const allowed = SECTION_FIELD_NAMES[sectionName];
+        const sections = full.sections.map((section) => ({
+            ...section,
+            fields: section.fields.filter((field) => allowed.has(field.fieldName)),
+        }));
+
+        return {
+            ...full,
+            sections,
+        };
     }
 }

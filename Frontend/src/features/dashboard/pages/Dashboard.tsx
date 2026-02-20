@@ -413,7 +413,7 @@ export function Dashboard() {
                     {/* Main Content */}
                     <div className="space-y-6">
                         {/* Capacity Table */}
-                        {capacityData && <CapacityTable data={capacityData} />}
+                        {capacityData && <CapacityTable data={capacityData} plannedCurrent={plannedCurrent} />}
                         {capacityData && <MemberCapacityProgress data={capacityData} />}
 
                         {/* Cumulative Flow Diagram */}

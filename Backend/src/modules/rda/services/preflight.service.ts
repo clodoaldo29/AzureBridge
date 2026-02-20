@@ -912,6 +912,11 @@ export class PreflightService {
                 periodType: 'monthly',
                 periodStart,
                 periodEnd,
+                period: {
+                    month,
+                    year,
+                },
+                schemaVersion: '3.0.0',
                 createdBy: 'preflight',
                 tokensUsed: 0,
                 partialResults: {},

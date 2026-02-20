@@ -14,9 +14,11 @@ import { Step4ContextReview } from './Step4ContextReview';
 
 interface ProjectSetupWizardProps {
     projectId: string;
+    onSetupCompleted?: () => void;
+    onGoToMonthly?: () => void;
 }
 
-export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
+export function ProjectSetupWizard({ projectId, onSetupCompleted, onGoToMonthly }: ProjectSetupWizardProps) {
     const [step, setStep] = useState(1);
     const [setupStartedAt, setSetupStartedAt] = useState<string | null>(null);
     const [includeWiki, setIncludeWiki] = useState(true);
@@ -30,11 +32,12 @@ export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
     const setupStatusQuery = useSetupStatus(projectId);
     const resetMutation = useResetProject(projectId);
 
-    const contextQuery = useProjectContext(projectId);
+    const isContextStep = step === 4;
+    const contextQuery = useProjectContext(projectId, isContextStep);
     const rebuildContextMutation = useRebuildContext(projectId);
     const updateContextMutation = useUpdateContext(projectId);
 
-    const chunkStatsQuery = useChunkStats(projectId);
+    const chunkStatsQuery = useChunkStats(projectId, isContextStep);
     const ragSearchMutation = useRAGSearch();
 
     const syncWikiMutation = useSyncWiki();
@@ -55,20 +58,20 @@ export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
             return;
         }
 
-        const isCompleted =
-            setupStatusQuery.data.jobStatus === 'completed' || setupStatusQuery.data.hasProjectContext;
+        const isCompleted = setupStatusQuery.data.jobStatus === 'completed';
 
         if (isCompleted && !completedRef.current) {
             completedRef.current = true;
             contextQuery.refetch();
             chunkStatsQuery.refetch();
+            onSetupCompleted?.();
             return;
         }
 
         if (!isCompleted) {
             completedRef.current = false;
         }
-    }, [setupStatusQuery.data, contextQuery, chunkStatsQuery]);
+    }, [setupStatusQuery.data, contextQuery, chunkStatsQuery, onSetupCompleted]);
 
     useEffect(() => {
         if (!projectId) {
@@ -102,6 +105,13 @@ export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
         }
     };
 
+    const stepLabels: Record<number, string> = {
+        1: 'Documentos',
+        2: 'Wiki',
+        3: 'Processamento',
+        4: 'Contexto',
+    };
+
     return (
         <div className="space-y-4">
             <Card>
@@ -111,7 +121,7 @@ export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
                             key={item}
                             className={`rounded-full px-3 py-1 ${step === item ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground'}`}
                         >
-                            Step {item}
+                            {stepLabels[item]}
                         </div>
                     ))}
                 </CardContent>
@@ -166,6 +176,8 @@ export function ProjectSetupWizard({ projectId }: ProjectSetupWizardProps) {
                     onSave={(payload) => updateContextMutation.mutate(payload)}
                     onRebuild={() => rebuildContextMutation.mutate({})}
                     onReset={() => resetMutation.mutate()}
+                    onRestartSetup={() => setStep(1)}
+                    onGoToMonthly={onGoToMonthly}
                     onSearch={(query) =>
                         ragSearchMutation.mutate({
                             projectId,

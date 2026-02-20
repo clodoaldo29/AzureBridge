@@ -37,9 +37,33 @@ interface Step3IngestionProgressProps {
     onNext: () => void;
 }
 
+function hasHistoricalSetupData(status?: SetupStatusData): boolean {
+    if (!status) return false;
+    return (
+        status.documentsChunked > 0
+        || status.wikiPagesChunked > 0
+        || status.totalChunks > 0
+        || status.hasProjectContext
+        || (typeof status.progress?.overallProgress === 'number' && status.progress.overallProgress > 0)
+    );
+}
+
+function resolveDisplayedStatus(status?: SetupStatusData): 'processing' | 'completed' | 'failed' | 'partial' | 'not_started' {
+    if (!status) return 'not_started';
+    if (status.jobStatus === 'processing') return 'processing';
+    if (status.jobStatus === 'failed') return 'failed';
+    if (status.jobStatus === 'completed' || status.isSetupComplete) return 'completed';
+    if (hasHistoricalSetupData(status)) return 'partial';
+    return 'not_started';
+}
+
 function computeProgress(status?: SetupStatusData): number {
     if (!status) return 0;
-    if (status.jobStatus === 'completed' || status.isSetupComplete) return 100;
+    const displayedStatus = resolveDisplayedStatus(status);
+
+    if (displayedStatus === 'completed') return 100;
+    if (displayedStatus !== 'processing') return 0;
+
     if (typeof status.progress?.overallProgress === 'number') {
         return Math.max(0, Math.min(100, status.progress.overallProgress));
     }
@@ -66,11 +90,33 @@ export function Step3IngestionProgress({
     onNext,
 }: Step3IngestionProgressProps) {
     const progress = computeProgress(status);
-    const canAdvance = status?.jobStatus === 'completed' || status?.isSetupComplete;
+    const displayedStatus = resolveDisplayedStatus(status);
+    const displayedStatusText = (() => {
+        if (displayedStatus === 'processing') return 'processando';
+        if (displayedStatus === 'completed') return 'concluido';
+        if (displayedStatus === 'failed') return 'falhou';
+        if (displayedStatus === 'partial') return 'parcial';
+        return 'nao iniciado';
+    })();
+    const canAdvance = status?.jobStatus === 'completed' || status?.isSetupComplete || status?.hasProjectContext;
     const elapsed = setupStartedAt
         ? formatDistanceToNow(new Date(setupStartedAt), { addSuffix: false, locale: ptBR })
         : '-';
-    const currentStepText = status?.progress?.currentStep || 'Aguardando início do processamento';
+    const currentStepText = (() => {
+        if (displayedStatus === 'processing') {
+            return status?.progress?.currentStep || 'Processando setup';
+        }
+        if (displayedStatus === 'completed') {
+            return 'Setup concluido.';
+        }
+        if (displayedStatus === 'failed') {
+            return status?.lastError || 'Falha no setup. Revise o erro e tente novamente.';
+        }
+        if (displayedStatus === 'partial') {
+            return 'Dados parciais detectados. Clique em "Iniciar Setup" para consolidar o processamento.';
+        }
+        return 'Aguardando inicio do processamento';
+    })();
     const embeddingCost = (() => {
         if (!status?.lastResult || typeof status.lastResult !== 'object') {
             return undefined;
@@ -83,12 +129,12 @@ export function Step3IngestionProgress({
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Step 3: Progresso da Ingestao</CardTitle>
+                <CardTitle>Progresso da Ingestao</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="rounded border bg-muted/30 p-3">
                     <div className="mb-2 flex items-center justify-between text-sm">
-                        <span>Status: {status?.jobStatus ?? 'nao iniciado'}</span>
+                        <span>Status: {displayedStatusText}</span>
                         <span>{progress}%</span>
                     </div>
                     <Progress value={progress} />

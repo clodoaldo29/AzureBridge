@@ -24,7 +24,7 @@ export function Step1DocumentClassification({
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Step 1: Preparacao dos Documentos</CardTitle>
+                    <CardTitle>Preparacao dos Documentos</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                     {!projectId && (

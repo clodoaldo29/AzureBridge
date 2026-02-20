@@ -3,9 +3,24 @@ import { getAzureDevOpsClient } from '@/integrations/azure/client';
 import { logger } from '@/utils/logger';
 
 const prisma = new PrismaClient();
-const DONUT_ALLOWED_TYPES = new Set(['Task', 'Bug', 'Test Suite', 'Test Case', 'Test Plan']);
+const UNASSIGNED_ALLOWED_TYPES = new Set(['task', 'bug', 'test case']);
+
+type UnassignedByTypeAccumulator = Record<string, { items: number; totalHours: number }>;
 
 export class CapacityService {
+    private toSortedTypeBreakdown(acc: UnassignedByTypeAccumulator): Array<{ type: string; items: number; totalHours: number }> {
+        return Object.entries(acc)
+            .map(([type, value]) => ({
+                type,
+                items: value.items,
+                totalHours: Math.round(value.totalHours * 10) / 10
+            }))
+            .sort((a, b) => {
+                if (b.totalHours !== a.totalHours) return b.totalHours - a.totalHours;
+                return b.items - a.items;
+            });
+    }
+
     private mergeDayOffRanges(memberDaysOff: any[], teamDaysOff: any[]): any[] {
         const merged = [...(memberDaysOff || []), ...(teamDaysOff || [])];
         const seen = new Set<string>();
@@ -326,7 +341,22 @@ export class CapacityService {
         // Agrupar trabalho planejado por membro
         const plannedByMember: Record<string, { totalHours: number, items: number }> = {};
         const completedByMember: Record<string, number> = {};
-        const unassignedWork = { totalHours: 0, items: 0 };
+        const unassignedWork = {
+            totalHours: 0,
+            // Backward compatibility: previous UI consumed "items".
+            items: 0,
+            open: {
+                totalHours: 0,
+                remainingHours: 0,
+                items: 0,
+                byType: {} as UnassignedByTypeAccumulator
+            },
+            done: {
+                totalHours: 0,
+                items: 0,
+                byType: {} as UnassignedByTypeAccumulator
+            }
+        };
         let totalPlannedInitialFromItems = 0;
         let totalPlannedCurrentFromItems = 0;
         let totalRemainingFromItems = 0;
@@ -372,11 +402,33 @@ export class CapacityService {
 
             // Trabalho nao atribuido (itens sem assignedToId)
             if (!item.assignedToId) {
-                unassignedWork.totalHours += plannedFinal;
-                // Manter logica de horas inalterada; alinhar contagem de itens com filtro de tipo donut.
-                if (DONUT_ALLOWED_TYPES.has(String(item.type || ''))) {
-                    unassignedWork.items += 1;
+                const typeLabel = String(item.type || 'Other');
+                const isAllowedUnassignedType = UNASSIGNED_ALLOWED_TYPES.has(typeLabel.trim().toLowerCase());
+                if (!isAllowedUnassignedType) {
+                    return;
                 }
+                unassignedWork.totalHours += plannedFinal;
+                unassignedWork.items += 1;
+
+                if (isDone) {
+                    unassignedWork.done.totalHours += plannedFinal;
+                    unassignedWork.done.items += 1;
+                    if (!unassignedWork.done.byType[typeLabel]) {
+                        unassignedWork.done.byType[typeLabel] = { items: 0, totalHours: 0 };
+                    }
+                    unassignedWork.done.byType[typeLabel].items += 1;
+                    unassignedWork.done.byType[typeLabel].totalHours += plannedFinal;
+                } else {
+                    unassignedWork.open.totalHours += plannedFinal;
+                    unassignedWork.open.remainingHours += currentRemaining;
+                    unassignedWork.open.items += 1;
+                    if (!unassignedWork.open.byType[typeLabel]) {
+                        unassignedWork.open.byType[typeLabel] = { items: 0, totalHours: 0 };
+                    }
+                    unassignedWork.open.byType[typeLabel].items += 1;
+                    unassignedWork.open.byType[typeLabel].totalHours += plannedFinal;
+                }
+
                 return;
             }
 
@@ -449,7 +501,21 @@ export class CapacityService {
                 totalCompleted: totalCompletedFromItems,
                 totalAddedScope: totalAddedScope,
                 dayOffDates,
-                unassigned: unassignedWork,
+                unassigned: {
+                    totalHours: Math.round(unassignedWork.totalHours * 10) / 10,
+                    items: unassignedWork.items,
+                    open: {
+                        totalHours: Math.round(unassignedWork.open.totalHours * 10) / 10,
+                        remainingHours: Math.round(unassignedWork.open.remainingHours * 10) / 10,
+                        items: unassignedWork.open.items,
+                        byType: this.toSortedTypeBreakdown(unassignedWork.open.byType)
+                    },
+                    done: {
+                        totalHours: Math.round(unassignedWork.done.totalHours * 10) / 10,
+                        items: unassignedWork.done.items,
+                        byType: this.toSortedTypeBreakdown(unassignedWork.done.byType)
+                    }
+                },
                 balance: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) - totalPlanned,
                 utilization: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) > 0
                     ? Math.round((totalPlanned / sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0)) * 100)

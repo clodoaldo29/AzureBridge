@@ -5,6 +5,8 @@ import { RDAGenerator } from '@/features/rda/pages/RDAGenerator';
 import { Toaster } from '@/components/ui/toaster';
 import { ServerCheck } from '@/components/common/ServerCheck';
 
+const isRdaModuleEnabled = (import.meta.env.VITE_FEATURE_RDA_MODULE ?? 'false') === 'true';
+
 type PlaceholderPageProps = {
     title: string;
     description: string;
@@ -43,7 +45,10 @@ export default function App() {
                             />
                         }
                     />
-                    <Route path="rda" element={<RDAGenerator />} />
+                    <Route
+                        path="rda"
+                        element={isRdaModuleEnabled ? <RDAGenerator /> : <Navigate to="/" replace />}
+                    />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

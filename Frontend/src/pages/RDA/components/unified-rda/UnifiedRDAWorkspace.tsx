@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CheckCircle2, Circle, Database, FileText, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ interface UnifiedRDAWorkspaceProps {
 
 export function UnifiedRDAWorkspace({ selectedProjectId }: UnifiedRDAWorkspaceProps) {
     const [activeStage, setActiveStage] = useState<'setup' | 'monthly' | 'generate'>('setup');
-    const { data: setupStatus } = useSetupStatus(selectedProjectId, activeStage === 'setup');
+    const { data: setupStatus } = useSetupStatus(selectedProjectId, true);
 
     const stageDone = useMemo(() => ({
         setup: Boolean(setupStatus?.isSetupComplete || setupStatus?.hasProjectContext),
@@ -85,7 +85,10 @@ export function UnifiedRDAWorkspace({ selectedProjectId }: UnifiedRDAWorkspacePr
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ProjectSetupWizard projectId={selectedProjectId} />
+                        <ProjectSetupWizard
+                            projectId={selectedProjectId}
+                            onGoToMonthly={() => setActiveStage('monthly')}
+                        />
                     </CardContent>
                 </Card>
             )}

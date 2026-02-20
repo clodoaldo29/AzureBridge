@@ -9,6 +9,14 @@ interface NormalizerInput {
     fillingGuide: string;
 }
 
+type ReviewSectionName = 'dados_projeto' | 'atividades' | 'resultados';
+
+const SECTION_FIELD_NAMES: Record<ReviewSectionName, Set<string>> = {
+    dados_projeto: new Set(['PROJETO_NOME', 'ANO_BASE', 'COMPETENCIA', 'COORDENADOR_TECNICO']),
+    atividades: new Set(['ATIVIDADES']),
+    resultados: new Set(['RESULTADOS_ALCANCADOS']),
+};
+
 function sanitizeText(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
 }
@@ -78,5 +86,21 @@ export class NormalizerAgent extends BaseAgent {
         await this.updateProgress(input.generationId, 60, 'normalizer_done');
 
         return output;
+    }
+
+    async normalizeSection(input: NormalizerInput, sectionName: ReviewSectionName): Promise<NormalizationOutput> {
+        const allowed = SECTION_FIELD_NAMES[sectionName];
+        const extraction = {
+            ...input.extraction,
+            sections: input.extraction.sections.map((section) => ({
+                ...section,
+                fields: section.fields.filter((field) => allowed.has(field.fieldName)),
+            })),
+        };
+
+        return this.run({
+            ...input,
+            extraction,
+        });
     }
 }

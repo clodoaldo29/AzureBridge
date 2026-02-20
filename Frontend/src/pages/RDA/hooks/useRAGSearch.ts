@@ -51,13 +51,13 @@ export function useRAGSearch() {
     });
 }
 
-export function useChunkStats(projectId: string) {
+export function useChunkStats(projectId: string, enabled = true) {
     return useQuery({
         queryKey: ragKeys.chunkStats(projectId),
         queryFn: async () => {
             const { data } = await api.get<ApiResponse<ChunkStats>>(`/rda/chunks/stats/${projectId}`);
             return data.data;
         },
-        enabled: Boolean(projectId),
+        enabled: Boolean(projectId) && enabled,
     });
 }

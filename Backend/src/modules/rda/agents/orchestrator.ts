@@ -128,6 +128,13 @@ export class GenerationOrchestrator {
                 outputFilePath: generated.filePath,
                 fileSize: generated.sizeBytes,
                 tokensUsed: metadata.tokensUsed.total,
+                validationReport: validation as unknown as Prisma.InputJsonValue,
+                metadata: metadata as unknown as Prisma.InputJsonValue,
+                period: {
+                    month: generation.periodStart.getUTCMonth() + 1,
+                    year: generation.periodStart.getUTCFullYear(),
+                } as unknown as Prisma.InputJsonValue,
+                schemaVersion: metadata.schemaVersion,
                 partialResults: {
                     ...currentPartial,
                     extraction,

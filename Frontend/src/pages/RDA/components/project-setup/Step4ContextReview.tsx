@@ -14,6 +14,8 @@ interface Step4ContextReviewProps {
     onSave: (payload: Partial<ProjectContextData>) => void;
     onRebuild: () => void;
     onReset: () => void;
+    onGoToMonthly?: () => void;
+    onRestartSetup?: () => void;
     onSearch: (query: string) => void;
     searchResults: RAGSearchResult[];
     searchLoading: boolean;
@@ -29,6 +31,8 @@ export function Step4ContextReview({
     onSave,
     onRebuild,
     onReset,
+    onGoToMonthly,
+    onRestartSetup,
     onSearch,
     searchResults,
     searchLoading,
@@ -66,7 +70,7 @@ export function Step4ContextReview({
         <div className="space-y-4">
             <Card>
                 <CardHeader>
-                    <CardTitle>Step 4: Revisao do ProjectContext</CardTitle>
+                    <CardTitle>Revisao do ProjectContext</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {contextLoading && (
@@ -83,7 +87,7 @@ export function Step4ContextReview({
                     {!contextLoading && !contextError && !context && (
                         <div className="space-y-2">
                             <p className="text-sm text-muted-foreground">
-                                Contexto ainda nao construido. Execute o setup no Step 3.
+                                Contexto ainda nao construido. Execute a etapa de Processamento.
                             </p>
                             <Button variant="outline" size="sm" onClick={onRetryContext}>Recarregar contexto</Button>
                         </div>
@@ -250,6 +254,10 @@ export function Step4ContextReview({
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={onRebuild}>Reconstruir Contexto</Button>
                         <Button variant="outline" onClick={onReset}>Resetar Setup</Button>
+                        {onRestartSetup && (
+                            <Button variant="outline" onClick={onRestartSetup}>Iniciar novo setup</Button>
+                        )}
+                        {onGoToMonthly && <Button onClick={onGoToMonthly}>Ir para Preparacao Mensal</Button>}
                     </div>
                 </CardContent>
             </Card>
