@@ -6,6 +6,14 @@ const prisma = new PrismaClient();
 const UNASSIGNED_ALLOWED_TYPES = new Set(['task', 'bug', 'test case']);
 
 type UnassignedByTypeAccumulator = Record<string, { items: number; totalHours: number }>;
+type UnassignedTaskItem = {
+    id: number;
+    title: string;
+    state: string;
+    plannedHours: number;
+    remainingHours: number;
+    url: string | null;
+};
 
 export class CapacityService {
     private toSortedTypeBreakdown(acc: UnassignedByTypeAccumulator): Array<{ type: string; items: number; totalHours: number }> {
@@ -331,7 +339,8 @@ export class CapacityService {
                 doneRemainingWork: true,
                 assignedToId: true,
                 type: true,
-                state: true
+                state: true,
+                url: true
             }
         });
 
@@ -349,12 +358,14 @@ export class CapacityService {
                 totalHours: 0,
                 remainingHours: 0,
                 items: 0,
-                byType: {} as UnassignedByTypeAccumulator
+                byType: {} as UnassignedByTypeAccumulator,
+                tasks: [] as UnassignedTaskItem[]
             },
             done: {
                 totalHours: 0,
                 items: 0,
-                byType: {} as UnassignedByTypeAccumulator
+                byType: {} as UnassignedByTypeAccumulator,
+                tasks: [] as UnassignedTaskItem[]
             }
         };
         let totalPlannedInitialFromItems = 0;
@@ -418,6 +429,16 @@ export class CapacityService {
                     }
                     unassignedWork.done.byType[typeLabel].items += 1;
                     unassignedWork.done.byType[typeLabel].totalHours += plannedFinal;
+                    if (typeLabel.trim().toLowerCase() === 'task') {
+                        unassignedWork.done.tasks.push({
+                            id: item.id,
+                            title: String(item.title || `Work item #${item.id}`),
+                            state: String(item.state || ''),
+                            plannedHours: Math.round(plannedFinal * 10) / 10,
+                            remainingHours: Math.round(currentRemaining * 10) / 10,
+                            url: item.url || null
+                        });
+                    }
                 } else {
                     unassignedWork.open.totalHours += plannedFinal;
                     unassignedWork.open.remainingHours += currentRemaining;
@@ -427,6 +448,16 @@ export class CapacityService {
                     }
                     unassignedWork.open.byType[typeLabel].items += 1;
                     unassignedWork.open.byType[typeLabel].totalHours += plannedFinal;
+                    if (typeLabel.trim().toLowerCase() === 'task') {
+                        unassignedWork.open.tasks.push({
+                            id: item.id,
+                            title: String(item.title || `Work item #${item.id}`),
+                            state: String(item.state || ''),
+                            plannedHours: Math.round(plannedFinal * 10) / 10,
+                            remainingHours: Math.round(currentRemaining * 10) / 10,
+                            url: item.url || null
+                        });
+                    }
                 }
 
                 return;
@@ -508,12 +539,14 @@ export class CapacityService {
                         totalHours: Math.round(unassignedWork.open.totalHours * 10) / 10,
                         remainingHours: Math.round(unassignedWork.open.remainingHours * 10) / 10,
                         items: unassignedWork.open.items,
-                        byType: this.toSortedTypeBreakdown(unassignedWork.open.byType)
+                        byType: this.toSortedTypeBreakdown(unassignedWork.open.byType),
+                        tasks: unassignedWork.open.tasks.sort((a, b) => b.plannedHours - a.plannedHours)
                     },
                     done: {
                         totalHours: Math.round(unassignedWork.done.totalHours * 10) / 10,
                         items: unassignedWork.done.items,
-                        byType: this.toSortedTypeBreakdown(unassignedWork.done.byType)
+                        byType: this.toSortedTypeBreakdown(unassignedWork.done.byType),
+                        tasks: unassignedWork.done.tasks.sort((a, b) => b.plannedHours - a.plannedHours)
                     }
                 },
                 balance: sprint.capacities.reduce((acc, cap) => acc + (cap.availableHours || 0), 0) - totalPlanned,

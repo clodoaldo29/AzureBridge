@@ -53,6 +53,9 @@ export class WorkItemRepository {
                     commentCount: data.commentCount,
                     attachmentCount: data.attachmentCount,
                     relationCount: data.relationCount,
+                    assignedTo: (data as any).assignedTo
+                        ? (data as any).assignedTo
+                        : { disconnect: true },
                     lastSyncAt: new Date(),
                     updatedAt: new Date(),
                 },

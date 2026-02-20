@@ -149,6 +149,14 @@ export interface CapacityComparison {
                     items: number;
                     totalHours: number;
                 }>;
+                tasks?: Array<{
+                    id: number;
+                    title: string;
+                    state: string;
+                    plannedHours: number;
+                    remainingHours: number;
+                    url: string | null;
+                }>;
             };
             done?: {
                 totalHours: number;
@@ -157,6 +165,14 @@ export interface CapacityComparison {
                     type: string;
                     items: number;
                     totalHours: number;
+                }>;
+                tasks?: Array<{
+                    id: number;
+                    title: string;
+                    state: string;
+                    plannedHours: number;
+                    remainingHours: number;
+                    url: string | null;
                 }>;
             };
         };

@@ -53,6 +53,7 @@ export const useSprintBurndown = (id: string) => {
             return data.data;
         },
         enabled: !!id,
+        refetchOnMount: 'always',
         refetchInterval: 60000,
     });
 };

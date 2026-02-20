@@ -7,6 +7,7 @@ import {
 import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 import type { AzureWorkItem } from '@/integrations/azure/types';
+import { snapshotService } from '@/services/snapshot.service';
 
 /**
  * Servico de Sincronizacao
@@ -46,6 +47,8 @@ export class SyncService {
 
             // 4. Sincronizar work items
             const workItems = await this.syncWorkItems();
+            // 5. Atualizar snapshots do dia para manter CFD/Burndown alinhados com o sync
+            await snapshotService.captureDailySnapshots();
 
             const duration = Math.floor((Date.now() - startTime) / 1000);
 
@@ -111,6 +114,8 @@ export class SyncService {
 
             // Sincronizar sprints atuais
             const sprints = await this.syncSprints();
+            // Atualizar snapshots do dia apos sincronizacao incremental
+            await snapshotService.captureDailySnapshots();
 
             await prisma.syncLog.update({
                 where: { id: syncLog.id },
@@ -297,7 +302,24 @@ export class SyncService {
             return 0;
         }
 
-        const project = projects[0];
+        const fallbackProject = projects[0];
+        const workItemIds = azureWorkItems.map((wi) => wi.id).filter((id): id is number => typeof id === 'number');
+        const existingItems = await prisma.workItem.findMany({
+            where: {
+                id: {
+                    in: workItemIds
+                }
+            },
+            select: {
+                id: true,
+                lastRemainingWork: true,
+                doneRemainingWork: true,
+                initialRemainingWork: true,
+                originalEstimate: true,
+                completedWork: true
+            }
+        });
+        const existingById = new Map(existingItems.map((item) => [item.id, item]));
 
         for (const azureWI of azureWorkItems) {
             try {
@@ -306,23 +328,72 @@ export class SyncService {
                     fields['Microsoft.VSTS.Common.AcceptanceCriteria']
                     ?? fields['System.AcceptanceCriteria'];
                 const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
-                const completedWork = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
+                const completedWorkIncoming = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
+                const existing = existingById.get(azureWI.id!);
                 const state = (fields['System.State'] || '').toString();
                 const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
+                const fallbackHistoricalEffort = Math.max(
+                    Number(existing?.doneRemainingWork || 0),
+                    Number(existing?.lastRemainingWork || 0),
+                    Number(existing?.initialRemainingWork || 0),
+                    Number(existing?.originalEstimate || 0),
+                    Number(fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] || 0),
+                    Number(completedWorkIncoming || 0)
+                );
+
+                const lastRemainingWork = remainingWork > 0
+                    ? remainingWork
+                    : Math.max(
+                        Number(existing?.lastRemainingWork || 0),
+                        isDone ? fallbackHistoricalEffort : 0
+                    );
+
                 const doneRemainingWork = isDone
-                    ? (remainingWork > 0 ? remainingWork : completedWork)
-                    : null;
+                    ? (remainingWork > 0
+                        ? remainingWork
+                        : (completedWorkIncoming > 0 ? completedWorkIncoming : (fallbackHistoricalEffort > 0 ? fallbackHistoricalEffort : null)))
+                    : existing?.doneRemainingWork ?? null;
+
+                const completedWork = completedWorkIncoming > 0
+                    ? completedWorkIncoming
+                    : (isDone ? Math.max(Number(existing?.completedWork || 0), Number(doneRemainingWork || 0)) : 0);
 
                 // Buscar sprint pelo caminho de iteracao
                 const sprint = await prisma.sprint.findFirst({
                     where: { path: fields['System.IterationPath'] },
+                    select: { id: true, projectId: true },
                 });
+
+                const projectForItem = sprint?.projectId
+                    ? (projects.find((p) => p.id === sprint.projectId) ?? fallbackProject)
+                    : fallbackProject;
 
                 // Buscar membro do time atribuido
                 let assignedTo = null;
-                if (fields['System.AssignedTo']) {
-                    assignedTo = await prisma.teamMember.findFirst({
-                        where: { uniqueName: fields['System.AssignedTo'].uniqueName },
+                const assignedIdentity = fields['System.AssignedTo'];
+                if (assignedIdentity?.uniqueName) {
+                    const azureIdentityId = (assignedIdentity.id || assignedIdentity.uniqueName).toString();
+                    assignedTo = await prisma.teamMember.upsert({
+                        where: {
+                            azureId_projectId: {
+                                azureId: azureIdentityId,
+                                projectId: projectForItem.id,
+                            }
+                        },
+                        create: {
+                            azureId: azureIdentityId,
+                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
+                            uniqueName: assignedIdentity.uniqueName,
+                            imageUrl: assignedIdentity.imageUrl,
+                            projectId: projectForItem.id,
+                            isActive: true,
+                        },
+                        update: {
+                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
+                            uniqueName: assignedIdentity.uniqueName,
+                            imageUrl: assignedIdentity.imageUrl,
+                            isActive: true,
+                        }
                     });
                 }
 
@@ -340,7 +411,7 @@ export class SyncService {
                     completedWork,
                     remainingWork,
                     // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
-                    lastRemainingWork: remainingWork,
+                    lastRemainingWork,
                     // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
                     doneRemainingWork,
                     storyPoints: fields['Microsoft.VSTS.Scheduling.StoryPoints'],
@@ -367,18 +438,20 @@ export class SyncService {
                     rev: azureWI.rev,
                     commentCount: azureWI.commentCount || 0,
                     project: {
-                        connect: { id: project.id },
+                        connect: { id: projectForItem.id },
                     },
                     ...(sprint && {
                         sprint: {
                             connect: { id: sprint.id },
                         },
                     }),
-                    ...(assignedTo && {
-                        assignedTo: {
-                            connect: { id: assignedTo.id },
-                        },
-                    }),
+                    ...(assignedTo
+                        ? {
+                            assignedTo: {
+                                connect: { id: assignedTo.id },
+                            },
+                        }
+                        : {}),
                     ...(fields['System.Parent'] && {
                         parent: {
                             connect: { id: fields['System.Parent'] },
