@@ -3,12 +3,12 @@ import type { Sprint, Prisma } from '@prisma/client';
 import { logger } from '@/utils/logger';
 
 /**
- * Sprint Repository
- * Data access layer for sprints
+ * Repositorio de Sprints
+ * Camada de acesso a dados para sprints
  */
 export class SprintRepository {
     /**
-     * Create or update a sprint
+     * Criar ou atualizar uma sprint
      */
     async upsert(data: Prisma.SprintCreateInput): Promise<Sprint> {
         try {
@@ -35,7 +35,7 @@ export class SprintRepository {
     }
 
     /**
-     * Find sprint by Azure ID
+     * Buscar sprint por Azure ID
      */
     async findByAzureId(azureId: string): Promise<Sprint | null> {
         return prisma.sprint.findUnique({
@@ -44,7 +44,7 @@ export class SprintRepository {
     }
 
     /**
-     * Find sprint by ID
+     * Buscar sprint por ID
      */
     async findById(id: string): Promise<Sprint | null> {
         return prisma.sprint.findUnique({
@@ -53,7 +53,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get sprints by project
+     * Buscar sprints por projeto
      */
     async findByProject(projectId: string): Promise<Sprint[]> {
         return prisma.sprint.findMany({
@@ -63,7 +63,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get all sprints
+     * Buscar todas as sprints
      */
     async findAll(): Promise<Sprint[]> {
         return prisma.sprint.findMany({
@@ -72,7 +72,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get current active sprints
+     * Buscar sprints ativas atuais
      */
     async findActive(projectId?: string): Promise<Sprint[]> {
         return prisma.sprint.findMany({
@@ -85,7 +85,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get sprint with relations
+     * Buscar sprint com relacoes
      */
     async findByIdWithRelations(id: string) {
         return prisma.sprint.findUnique({
@@ -111,7 +111,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get sprints by timeframe
+     * Buscar sprints por periodo
      */
     async findByTimeFrame(
         timeFrame: string,
@@ -127,7 +127,7 @@ export class SprintRepository {
     }
 
     /**
-     * Update sprint metrics
+     * Atualizar metricas da sprint
      */
     async updateMetrics(
         id: string,
@@ -153,7 +153,7 @@ export class SprintRepository {
     }
 
     /**
-     * Delete sprint
+     * Excluir sprint
      */
     async delete(id: string): Promise<void> {
         await prisma.sprint.delete({
@@ -163,7 +163,7 @@ export class SprintRepository {
     }
 
     /**
-     * Get sprint with hierarchical work items
+     * Buscar sprint com work items hierarquicos
      */
     async findByIdWithHierarchy(id: string) {
         return prisma.sprint.findUnique({
@@ -186,5 +186,5 @@ export class SprintRepository {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const sprintRepository = new SprintRepository();

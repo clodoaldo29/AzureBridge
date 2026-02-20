@@ -1,89 +1,113 @@
-# AzureBridge — Manual do Usuário
+# 📖 AzureBridge — Manual do Usuário
 
-Este documento explica como usar o dashboard do AzureBridge e o significado de cada indicador, gráfico e informação exibida.
+> Guia completo para usar o dashboard e interpretar cada indicador, gráfico e métrica exibida.
 
 ---
 
-## Verificação de conexão
+## 📋 Índice
 
-Ao abrir o AzureBridge, o sistema verifica automaticamente a conexão com o servidor backend. Durante essa verificação:
+- [Verificação de conexão](#-verificação-de-conexão)
+- [Navegação básica](#️-navegação-básica)
+- [Cabeçalho da Sprint](#-cabeçalho-da-sprint)
+- [Cards de Métricas](#-cards-de-métricas)
+- [Barra de Progresso da Sprint](#-barra-de-progresso-da-sprint)
+- [Sprint Health Score](#-sprint-health-score)
+- [Blockers Ativos](#-blockers-ativos)
+- [Capacidade vs Planejado](#-capacidade-vs-planejado)
+- [Capacidade por Pessoa](#-capacidade-por-pessoa)
+- [Burndown Chart](#-burndown-chart--análise-de-burn-da-sprint)
+- [Fluxo Acumulado (CFD)](#-fluxo-acumulado-da-sprint-cumulative-flow-diagram)
+- [Distribuição de Work Items](#-distribuição-de-work-items)
+- [Work Item Aging](#⏳-work-item-aging)
+- [Dicas de uso](#-dicas-de-uso)
 
-- A tela exibe "Conectando ao Servidor..." com uma barra de progresso animada
+---
+
+## 🔗 Verificação de conexão
+
+Ao abrir o AzureBridge, o sistema verifica automaticamente a conexão com o servidor backend:
+
+- A tela exibe **"Conectando ao Servidor..."** com uma barra de progresso animada
 - O frontend faz polling a cada 2 segundos no endpoint `/api/health`
-- Se o servidor responder com sucesso, o dashboard é exibido normalmente
-- Se após ~2 minutos o servidor não responder, uma tela de erro aparece com o botão "Tentar Novamente"
+- Se o servidor responder com sucesso, o dashboard é carregado normalmente
+- Após ~2 minutos sem resposta, exibe uma tela de erro com o botão **"Tentar Novamente"**
 
-> Essa verificação é útil quando os serviços em nuvem (Supabase, containers) estão inicializando.
+> Essa verificação é útil quando os serviços em nuvem (Supabase, containers) ainda estão inicializando.
 
 ---
 
-## Navegação básica
+## 🗂️ Navegação básica
 
 ### Seletor de projeto
 
-No canto superior direito do dashboard há um seletor de projeto. O sistema lista todos os projetos Azure DevOps sincronizados.
+No canto superior direito do dashboard há um seletor de projeto. O sistema lista todos os projetos Azure DevOps sincronizados que possuem sprint ativa.
 
 Ao selecionar um projeto, o dashboard exibe automaticamente os dados da sprint ativa daquele projeto.
 
-Se não houver sprint ativa, o dashboard exibe a mensagem:
-> "Nenhuma sprint ativa encontrada no momento."
+> Se não houver sprint ativa: **"Nenhuma sprint ativa encontrada no momento."**
 
 ---
 
-## Cabeçalho da Sprint
+## 📌 Cabeçalho da Sprint
 
 No topo do conteúdo, são exibidos:
-- **Nome da sprint** — ex: `Sprint 45`
-- **Período** — datas de início e fim no formato `dd/mm/aaaa - dd/mm/aaaa`
+
+| Campo | Exemplo |
+|---|---|
+| Nome da sprint | `Sprint 45` |
+| Período | `27/01/2026 - 07/02/2026` |
 
 ---
 
-## Cards de Métricas (topo)
+## 📊 Cards de Métricas
 
 Cinco cards exibem os indicadores principais da sprint ativa:
 
-### Capacidade Total
+### 👥 Capacidade Total
 
-Total de horas disponíveis do time na sprint, já descontando dias off (férias, feriados, folgas) configurados no Azure DevOps.
+Total de horas disponíveis do time na sprint, descontando dias off (férias, feriados, folgas) configurados no Azure DevOps.
 
-> Exemplo: Se o time tem 5 membros com 8h/dia e 10 dias úteis de sprint = 400h teóricas. Se um membro tem 2 dias de folga (−16h), a capacidade total fica 384h.
+> **Exemplo:** Time com 5 membros × 8h/dia × 10 dias úteis = 400h teóricas. Se um membro tem 2 dias de folga (−16h), a capacidade total fica **384h**.
 
 ---
 
-### Planejamento
+### 🎯 Planejamento
 
 Horas totais planejadas nos work items da sprint. Exibe três valores:
-- **Inicial** — total de `originalEstimate` dos work items no início da sprint
-- **Final** — total atual (pode ter aumentado com scope creep)
-- **Delta** — diferença entre final e inicial (`+Xh` se houve adição de escopo)
 
-> Se Delta for positivo (vermelho), significa que o escopo cresceu após o início da sprint.
+| Valor | Descrição |
+|---|---|
+| **Inicial** | Total de `originalEstimate` dos work items no início da sprint |
+| **Final** | Total atual (pode ter aumentado com scope creep) |
+| **Delta** | Diferença entre Final e Inicial (`+Xh` se houve adição de escopo) |
 
----
-
-### Restante
-
-Total de horas de `remainingWork` em todos os work items ativos da sprint no momento. Representa o trabalho que ainda precisa ser feito.
+> Delta **positivo** (vermelho) significa que o escopo cresceu após o início da sprint.
 
 ---
 
-### Concluído
+### ⏰ Restante
+
+Total de horas de `remainingWork` em todos os work items ativos da sprint. Representa o trabalho que ainda precisa ser feito.
+
+---
+
+### ✅ Concluído
 
 Horas de trabalho já concluídas na sprint, obtidas do campo `completedWork` do snapshot mais recente do burndown.
 
-> Quando há dados de snapshot disponíveis, os cards de métricas (Planejamento, Restante, Concluído) usam os valores do burndown para maior precisão. Se não houver snapshots, os dados da capacidade são usados como fallback.
+> Quando há snapshots disponíveis, os cards de Planejamento, Restante e Concluído usam os valores do burndown para maior precisão. Sem snapshots, os dados da capacidade são usados como fallback.
 
 ---
 
-### Impedimentos
+### 🚨 Impedimentos
 
-Quantidade de work items com flag `isBlocked = true` no momento. Um item é considerado bloqueado quando seu estado no Azure DevOps é alterado para "Impedido" ou a tag de bloqueio é ativada.
+Quantidade de work items com `isBlocked = true`. Um item é considerado bloqueado quando seu estado no Azure DevOps é alterado para "Impedido" ou a tag de bloqueio é ativada.
 
 ---
 
-## Barra de Progresso da Sprint
+## 📈 Barra de Progresso da Sprint
 
-Exibida abaixo dos cards, a barra mostra o percentual de conclusão da sprint com base em horas, comparando o progresso real com o ideal do dia.
+Exibida abaixo dos cards, mostra o percentual de conclusão com base em horas, comparando o progresso real com o ideal do dia.
 
 **Cálculo:**
 ```
@@ -92,20 +116,20 @@ Exibida abaixo dos cards, a barra mostra o percentual de conclusão da sprint co
 
 ### Elementos visuais
 
-- **Barra azul** — percentual concluído (vermelha se o restante ultrapassar o total planejado)
-- **Marcador vertical escuro** — posição ideal de progresso para o dia atual, calculada pelo modelo piecewise (recalculada quando o escopo muda)
-- **Badge de escopo** — se houve adição de escopo, exibe `Escopo +Xh` em vermelho no título
+| Elemento | Significado |
+|---|---|
+| Barra azul | Percentual concluído (vermelha se o restante ultrapassar o total planejado) |
+| Marcador vertical escuro | Posição ideal de progresso para hoje (modelo piecewise) |
+| Badge "Escopo +Xh" | Indica que houve adição de escopo durante a sprint |
 
 ### Status de progresso
 
-Um badge no canto direito classifica o andamento com base no desvio entre o restante real e o ideal do dia:
-
 | Status | Condição | Cor |
 |---|---|---|
-| Adiantado | Desvio ≤ −5% | Verde |
-| No Prazo | Desvio entre −5% e +5% | Azul |
-| Em Risco | Desvio entre +5% e +15% | Âmbar |
-| Atrasado | Desvio > +15% | Vermelho |
+| ✅ Adiantado | Desvio ≤ −5% | Verde |
+| 🔵 No Prazo | −5% < Desvio ≤ +5% | Azul |
+| ⚠️ Em Risco | +5% < Desvio ≤ +15% | Âmbar |
+| 🔴 Atrasado | Desvio > +15% | Vermelho |
 
 **Cálculo do desvio:**
 ```
@@ -113,21 +137,13 @@ desvio_horas = remaining_atual − ideal_remaining_hoje
 desvio% = desvio_horas / totalWork × 100
 ```
 
-### Informações exibidas
-
-- **Subtítulo** — "Ideal hoje: Xh (X%)" mostrando quanto deveria estar concluído segundo a linha ideal
-- **Rodapé esquerdo** — "Xh concluídas de Yh planejadas"
-- **Rodapé direito** — desvio em horas vs ideal do dia (verde se adiantado, vermelho se atrasado)
-
 ---
 
-## Sprint Health Score
+## 🏥 Sprint Health Score
 
-Painel que exibe um score de 0 a 100 representando a saúde geral da sprint. Quanto maior, melhor.
+Score de **0 a 100** representando a saúde geral da sprint. O score começa em 100 e penalidades são subtraídas conforme os problemas detectados.
 
-### Como é calculado
-
-O score começa em 100 e penalidades são subtraídas conforme os problemas detectados:
+### Tabela de penalidades
 
 | Situação | Penalidade |
 |---|---|
@@ -137,49 +153,44 @@ O score começa em 100 e penalidades são subtraídas conforme os problemas dete
 | Desvio progresso vs tempo > 10% | −10 |
 | Desvio progresso vs tempo > 20% | −20 |
 | Desvio progresso vs tempo > 30% | −30 |
-| Cada blocker (máx. 4 blockers) | −5 por blocker |
+| Cada blocker ativo (máx. 4) | −5 por blocker |
 | Sprint fora do tracking (`isOnTrack = false`) | −10 |
 
-**Desvio de progresso** é a diferença entre:
-- % do tempo da sprint decorrido (baseado em data)
-- % de horas concluídas (baseado em trabalho)
-
+> **Desvio de progresso:** diferença entre % do tempo decorrido e % de horas concluídas.
 > Exemplo: 60% do tempo passou, mas apenas 30% do trabalho foi concluído → desvio de 0.30 → penalidade de −30.
 
 ### Classificações
 
-| Score | Classificação | Cor |
-|---|---|---|
-| 80 – 100 | Excelente | Verde |
-| 60 – 79 | Bom | Azul |
-| 40 – 59 | Atenção | Âmbar |
-| 0 – 39 | Crítico | Vermelho |
+| Score | Classificação |
+|---|---|
+| 80 – 100 | ✅ Excelente |
+| 60 – 79 | 🔵 Bom |
+| 40 – 59 | ⚠️ Atenção |
+| 0 – 39 | 🔴 Crítico |
 
-### Seção "Por que essa nota?"
-
-Abaixo do score, cada penalidade aplicada é listada com sua descrição. Se não houve penalidades: "Sem penalidades."
+A seção **"Por que essa nota?"** lista cada penalidade aplicada. Se não houve penalidades: "Sem penalidades."
 
 ---
 
-## Blockers Ativos
+## 🚨 Blockers Ativos
 
 Painel que lista os work items com `isBlocked = true`.
 
-**Quando não há blockers:** exibe uma mensagem de celebração.
+**Sem blockers:** exibe uma mensagem de celebração.
 
-**Quando há blockers:**
+**Com blockers:**
 - Fundo âmbar de alerta
-- Cada item mostra: ID do work item (`#1234`), tipo (`Task`, `Bug`, etc.), título e há quanto tempo está bloqueado
+- Cada item mostra: ID (`#1234`), tipo, título e **há quanto tempo está bloqueado**
 
-**O que fazer:** acesse o Azure DevOps no link do work item para identificar e resolver o impedimento. O sistema atualiza o status automaticamente no próximo sync (geralmente a cada 1 hora).
+> O sistema atualiza o status automaticamente no próximo sync (geralmente a cada 1 hora). Para forçar atualização, veja a seção de Dicas.
 
 ---
 
-## Capacidade vs Planejado
+## 👥 Capacidade vs Planejado
 
-Tabela que compara a capacidade disponível do time com o trabalho planejado.
+Tabela que compara a capacidade disponível com o trabalho planejado por membro.
 
-### Resumo no topo
+### Resumo
 
 | Campo | Significado |
 |---|---|
@@ -187,251 +198,158 @@ Tabela que compara a capacidade disponível do time com o trabalho planejado.
 | Total Planejado | Soma das horas planejadas nos work items |
 | Balanço | `Disponível − Planejado` |
 
-- **Balanço verde (+)** — o time tem mais capacidade do que trabalho planejado (folga de capacidade)
+- **Balanço verde (+)** — o time tem mais capacidade do que trabalho planejado
 - **Balanço vermelho (−)** — o time está planejando mais trabalho do que tem capacidade
 
 ### Alerta de trabalho não alocado
 
-Se houver work items da sprint sem responsável (`assignedTo` vazio), um alerta âmbar aparece mostrando:
-- Quantidade de itens sem alocação
-- Total de horas nesses itens
+Se houver work items sem responsável, um alerta âmbar aparece mostrando a quantidade de itens e o total de horas não alocadas.
 
 > Itens sem responsável não entram no cálculo de capacidade por membro, podendo distorcer o balanço.
 
 ---
 
-## Capacidade por Pessoa
+## 📊 Capacidade por Pessoa
 
-Gráfico de barras horizontais empilhadas que mostra o progresso individual de cada membro do time na sprint.
+Gráfico de barras horizontais empilhadas mostrando o progresso individual de cada membro.
 
-### Cabeçalho
-
-No topo, exibe os totais do time:
-- **Xh de Yh · Z%** — horas concluídas, capacidade total e percentual geral
-
-### Legenda
-
-Três indicadores de cores:
+### Legenda de cores
 
 | Cor | Significado |
 |---|---|
-| Azul | Horas concluídas (dentro da capacidade) |
-| Cinza | Horas restantes para atingir a capacidade |
-| Âmbar | Horas excedentes (acima da capacidade) |
+| 🔵 Azul | Horas concluídas (dentro da capacidade) |
+| ⬜ Cinza | Horas restantes para atingir a capacidade |
+| 🟡 Âmbar | Horas excedentes (acima da capacidade — sobrecarga) |
 
-### Barras
+O tooltip exibe: capacidade disponível, horas concluídas, restantes, excedentes e percentual de conclusão.
 
-Cada membro tem uma barra horizontal empilhada com até três segmentos:
-- **Azul** — trabalho concluído até o limite da capacidade disponível
-- **Cinza** — espaço restante até a capacidade
-- **Âmbar** — horas que ultrapassaram a capacidade (sobrecarga)
-
-### Tooltip
-
-Ao passar o mouse sobre uma barra, o tooltip exibe:
-- Capacidade disponível do membro
-- Horas concluídas
-- Horas restantes
-- Horas excedentes (se houver)
-- Percentual de conclusão
-
-### Ordenação
-
-Os membros são ordenados do maior para o menor percentual de conclusão. Membros com capacidade zero são omitidos do gráfico.
+> Membros são ordenados do maior para o menor percentual de conclusão. Membros com capacidade zero são omitidos.
 
 ---
 
-## Burndown Chart — Análise de Burn da Sprint
+## 📉 Burndown Chart — Análise de Burn da Sprint
 
-O gráfico mais completo do dashboard. Mostra a evolução do trabalho restante ao longo dos dias úteis da sprint.
-
-### Cabeçalho do gráfico
-
-- **Título** — "Análise de Burn da Sprint"
-- **Subtítulo** — quantidade de dias úteis da sprint
-- **Planejamento** — Inicial Xh | Final Xh | Delta +Xh (scope adicionado) ou −Xh (scope removido)
-- **Badge de status** — situação atual da sprint (ver abaixo)
-
----
+O gráfico principal do dashboard. Mostra a evolução do trabalho restante ao longo dos dias úteis da sprint.
 
 ### Mini-cards de métricas
 
-Quatro cards acima do gráfico mostram os números mais importantes:
-
 | Card | O que mostra |
 |---|---|
-| **Restante** | Horas restantes atualmente na sprint |
-| **Concluído** | Horas já concluídas e percentual da sprint |
-| **Vel. Média** | Velocidade média real (h/dia) e velocidade necessária para terminar no prazo |
-| **Dias Restantes** | Dias úteis restantes e progresso (trabalhados / total) |
+| **Restante** | Horas restantes atualmente |
+| **Concluído** | Horas concluídas e percentual da sprint |
+| **Vel. Média** | Velocidade real (h/dia) vs velocidade necessária |
+| **Dias Restantes** | Dias úteis restantes e trabalhados / total |
 
-**Velocidade necessária** é calculada como:
-```
-horas restantes / dias úteis restantes
-```
+> Se a **velocidade necessária** for maior que a média atual, o time precisará acelerar.
 
-Se a velocidade média atual for menor que a necessária, o time precisará acelerar para entregar no prazo.
+### Séries do gráfico
 
----
+Todas são opcionalmente visíveis via checkbox na legenda:
 
-### Linhas do gráfico
+#### 🔵 Ideal (área preenchida)
 
-O gráfico combina cinco séries de dados, todas opcionalmente visíveis via checkbox na legenda:
-
-#### Ideal (azul, área preenchida)
-
-Linha que representa o ritmo ideal de burn para concluir tudo no último dia útil.
-
-**Como é calculada:** no primeiro dia, a linha parte do total de horas planejadas e desce linearmente até zero no último dia. Quando o escopo muda (work items adicionados), a linha é **recalculada a partir daquele ponto** — ela se adapta ao novo total, redistribuindo o trabalho restante pelos dias que ainda sobram.
-
-> Esse comportamento é chamado de *piecewise ideal burn*. Diferente de uma linha reta fixa desde o início, esta linha reflete o escopo real de cada momento.
+Linha que representa o ritmo ideal de burn. No primeiro dia parte do total planejado e desce até zero no último dia. Quando o escopo muda, é **recalculada a partir daquele ponto** (*piecewise ideal burn*) — diferente de uma linha reta fixa desde o início.
 
 ---
 
-#### Remaining — Trabalho Restante (laranja)
+#### 🟠 Remaining — Trabalho Restante
 
-Linha que mostra o `remainingWork` total da sprint em cada dia, obtido dos snapshots diários.
+Mostra o `remainingWork` total em cada dia. Para no dia de hoje — dias futuros não têm valor real.
 
-- Quando desce mais rápido que a linha Ideal: o time está **adiantado**
-- Quando desce mais devagar: o time está **atrasado**
-- Quando sobe: houve adição de escopo naquele dia
-- A linha **para no dia de hoje** — dias futuros não têm valor real
+- Desce mais rápido que o Ideal → **adiantado**
+- Desce mais devagar → **atrasado**
+- Sobe → adição de escopo naquele dia
 
 ---
 
-#### Projeção (roxo, tracejado)
+#### 🟣 Projeção (tracejado)
 
-Extrapolação do trabalho restante nos dias futuros, baseada na **velocidade média** dos dias já trabalhados.
+Extrapolação do trabalho restante nos dias futuros, baseada na velocidade média:
 
-**Como é calculada:**
 ```
 velocidade média = (total planejado − restante atual) / dias trabalhados
 projeção D+n = restante atual − (velocidade média × n)
 ```
 
-- Se a linha de projeção chegar a zero **antes** do último dia: o time está no caminho certo para terminar antes do fim da sprint
-- Se a linha de projeção **não chegar a zero** no último dia: há risco de não entrega
+- Projeção chega a zero antes do último dia → time no caminho para entregar
+- Projeção não chega a zero → risco de não entrega
 
 ---
 
-#### Mudanças de Escopo (barras vermelhas)
+#### 🔴 Mudanças de Escopo (barras)
 
-Barras verticais que aparecem nos dias em que houve adição de work items ao escopo da sprint. Os dados vêm diretamente dos campos `addedCount` e `removedCount` dos snapshots (histórico real), não derivados da diferença de `totalWork`.
+Barras verticais nos dias em que houve adição de work items ao escopo. Dados vêm de `addedCount`/`removedCount` dos snapshots (histórico real).
 
-Quando há escopo removido, o tooltip exibe "Escopo removido: −Xh" e o Delta no cabeçalho pode ser negativo.
-
-> Scope creep frequente (muitas barras) indica instabilidade de planejamento. Verificar se os requisitos estavam bem definidos antes do início da sprint.
+> Scope creep frequente indica instabilidade de planejamento.
 
 ---
 
-#### Concluído no dia (barras verdes)
+#### 🟢 Concluído no dia (barras)
 
-Barras verticais que mostram quantas horas de trabalho foram concluídas em cada dia. O valor é calculado pela diferença acumulada de `completedWork` entre snapshots consecutivos.
+Barras verticais mostrando horas concluídas por dia (diferença acumulada de `completedWork`).
 
-> Útil para identificar dias de baixa produtividade e avaliar a consistência do ritmo de entrega.
-
----
-
-### Badge de status (canto superior direito)
-
-Classifica a saúde do burndown com base no desvio entre o trabalho restante atual e o ideal:
-
-| Status | Condição | Cor |
-|---|---|---|
-| Adiantado | Desvio < −5% | Verde |
-| No Prazo | Desvio entre −5% e +5% | Azul |
-| Em Risco | Desvio entre +5% e +15% | Âmbar |
-| Atrasado | Desvio > +15% | Vermelho |
-
-**Cálculo do desvio:**
-```
-desvio% = (remaining_atual − ideal_hoje) / total_horas × 100
-```
-
-Um desvio **positivo** significa que há mais trabalho restante do que deveria haver segundo o ideal — ou seja, o time está atrasado. Um desvio **negativo** indica que está adiantado.
+> Útil para identificar dias de baixa produtividade.
 
 ---
 
-### Interatividade
+### Badge de status
 
-- **Hover no gráfico** — exibe tooltip com os valores exatos do dia: Ideal, Remaining, Projeção, Escopo adicionado, Escopo removido e Concluído no dia
-- **Checkboxes da legenda** — ativa/desativa individualmente cada série (Ideal, Remaining, Projeção, Mudanças de Escopo, Concluído no dia)
-- **Dias off** — fins de semana e dias off configurados são excluídos do eixo X (apenas dias úteis são exibidos)
+| Status | Condição |
+|---|---|
+| ✅ Adiantado | Desvio < −5% |
+| 🔵 No Prazo | −5% ≤ Desvio ≤ +5% |
+| ⚠️ Em Risco | +5% < Desvio ≤ +15% |
+| 🔴 Atrasado | Desvio > +15% |
 
 ---
 
-## Fluxo Acumulado da Sprint (Cumulative Flow Diagram)
+## 🌊 Fluxo Acumulado da Sprint (Cumulative Flow Diagram)
 
-Gráfico de áreas empilhadas que mostra a evolução diária da quantidade de work items em cada estado ao longo da sprint.
+Gráfico de áreas empilhadas mostrando a evolução diária da quantidade de work items por estado.
 
-### Camadas
-
-O gráfico empilha quatro camadas, de baixo para cima:
+### Camadas (de baixo para cima)
 
 | Camada | Cor | Dado |
 |---|---|---|
-| Concluído | Verde (`#48BB78`) | `doneCount` do snapshot |
-| Bloqueado | Vermelho (`#FC8181`) | `blockedCount` (subconjunto de In Progress) |
-| Em Progresso | Azul (`#63B3ED`) | `inProgressCount` menos bloqueados |
-| A Fazer | Cinza (`#CBD5E1`) | `todoCount` do snapshot |
+| ✅ Concluído | Verde | `doneCount` |
+| 🔴 Bloqueado | Vermelho | `blockedCount` (subconjunto de In Progress) |
+| 🔵 Em Progresso | Azul | `inProgressCount` menos bloqueados |
+| ⬜ A Fazer | Cinza | `todoCount` |
 
 > A camada "Bloqueado" só aparece se houver pelo menos um item bloqueado em algum dia da sprint.
 
-### Badge de total
-
-No canto superior direito, um badge exibe a quantidade total de itens na sprint.
-
-### Eixo X
-
-Apenas dias úteis são exibidos (fins de semana e dias off configurados são excluídos). Os rótulos aparecem no formato `Seg 03/02` (dia da semana abreviado + data).
-
-### Tooltip
-
-Ao passar o mouse sobre o gráfico, o tooltip exibe os valores de cada camada mais o total do dia.
-
 ### Como interpretar
 
-- **Banda "Concluído" crescendo** — time está entregando, progresso saudável
-- **Banda "A Fazer" alargando** — o time não está puxando trabalho, possível impedimento
-- **Banda "Em Progresso" alargando** — itens ficando travados, possível gargalo
-- **Banda "Bloqueado" aparecendo** — impedimentos ativos que precisam ser resolvidos
-- **Todas as bandas convergindo para "Concluído" no final** — sprint bem-sucedida
-
-### Dados
-
-O CFD usa os mesmos snapshots diários do Burndown (`GET /sprints/:id/burndown`), especificamente os campos `todoCount`, `inProgressCount`, `doneCount` e `blockedCount` de cada `SprintSnapshot`.
+| Padrão | Significado |
+|---|---|
+| Banda "Concluído" crescendo | Progresso saudável ✅ |
+| Banda "A Fazer" alargando | Time não está puxando trabalho ⚠️ |
+| Banda "Em Progresso" alargando | Itens travados, possível gargalo ⚠️ |
+| Banda "Bloqueado" aparecendo | Impedimentos ativos — resolver urgente 🚨 |
+| Todas as bandas em "Concluído" no final | Sprint bem-sucedida ✅ |
 
 ---
 
-## Distribuição de Work Items
+## 🍩 Distribuição de Work Items
 
-Três gráficos donut lado a lado que mostram como os work items da sprint estão distribuídos.
+Três gráficos donut lado a lado mostrando a distribuição dos work items da sprint.
 
-> Estes gráficos filtram apenas tipos operacionais: Task, Bug e Test Case. PBIs, Features e Epics são excluídos.
+> Filtram apenas tipos operacionais: **Task**, **Bug** e **Test Case**. PBIs, Features e Epics são excluídos.
 
-### Work Items por Estado
+### Por Estado
 
-Donut que agrupa os work items pelo estado atual (New, To Do, In Progress, Done, etc.).
-
-**Cores por estado:**
+Agrupa por estado atual com cores:
 
 | Estado | Cor |
 |---|---|
 | New | Cinza |
 | To Do / Active / Approved | Azul claro |
-| Committed | Azul |
 | In Progress | Laranja |
 | In Test | Roxo |
 | Done / Closed | Verde |
 | Removed | Vermelho |
 
-O centro do donut exibe a contagem total de itens. A legenda abaixo mostra cada estado com sua contagem.
-
-### Work Items por Tipo
-
-Donut que agrupa os work items pelo tipo.
-
-**Cores por tipo:**
+### Por Tipo
 
 | Tipo | Cor |
 |---|---|
@@ -439,96 +357,73 @@ Donut que agrupa os work items pelo tipo.
 | Bug | Vermelho |
 | Test Case | Roxo |
 
-### Work Items por Membro
+### Por Membro
 
-Donut que agrupa os work items pelo responsável (assignedTo).
-
-- Cada membro recebe uma cor de uma paleta de 15 cores
-- Itens sem responsável aparecem como "Não Alocados" em cinza
-- Nomes são abreviados automaticamente: primeiro nome quando único, primeiro + último quando há ambiguidade
+Cada membro recebe uma cor de uma paleta de 15 cores. Itens sem responsável aparecem como **"Não Alocados"** em cinza.
 
 ---
 
-## Work Item Aging
+## ⏳ Work Item Aging
 
-Painel que analisa o "envelhecimento" de Tasks que estão "In Progress", comparando o tempo real gasto com o tempo esperado baseado no esforço e capacidade do responsável.
+Analisa o "envelhecimento" de Tasks "In Progress", comparando o tempo real gasto com o tempo esperado baseado no esforço e capacidade do responsável.
 
 ### Cards de resumo
 
-Três cards coloridos mostram a distribuição:
+| Card | Condição |
+|---|---|
+| 🔴 Crítico | Ratio > 1.2 (levando mais de 120% do esperado) |
+| ⚠️ Atenção | 1.0 < Ratio ≤ 1.2 (levando mais que o esperado) |
+| ✅ No prazo | Ratio ≤ 1.0 (dentro do esperado) |
 
-| Card | Cor | Condição |
-|---|---|---|
-| Crítico | Vermelho | Ratio > 1.2 (item levando mais de 120% do esperado) |
-| Atenção | Âmbar | Ratio entre 1.0 e 1.2 (item levando mais que o esperado) |
-| No prazo | Verde | Ratio ≤ 1.0 (item dentro do esperado) |
-
-### Como o ratio é calculado
+### Cálculo do ratio
 
 ```
 ratio = horas úteis reais em progresso / horas esperadas
+
+horas úteis reais: considera apenas 8h-17h (menos 1h almoço),
+                   dias úteis, desde activatedDate até agora
+
+horas esperadas: esforço / capacidade diária do responsável
+  esforço = max(initialRemainingWork, originalEstimate,
+                completedWork+remainingWork, lastRemainingWork)
+  (mínimo: 1h)
 ```
-
-**Horas úteis reais:** contabiliza apenas horas de trabalho (8h-17h, excluindo almoço 12h-13h), em dias úteis (sem fins de semana e sem dias off da sprint), desde a data de ativação (`activatedDate`) até agora.
-
-**Horas esperadas:** derivadas do esforço planejado e da capacidade diária do responsável:
-```
-esforço = max(initialRemainingWork, originalEstimate, completedWork+remainingWork, lastRemainingWork)
-         mínimo: 1h
-
-capacidade por hora = capacidade diária do membro / 8h
-horas esperadas = esforço / capacidade por hora
-```
-
-A capacidade diária vem dos dados de capacidade da sprint (`CapacityComparison`). Se o membro não tiver capacidade definida, usa a média do time (fallback: 5h/dia).
 
 ### Modal de detalhes
 
-Ao clicar em "Ver críticos", "Ver atenção" ou "Ver no prazo", abre um modal com a lista filtrada de work items. Para cada item:
+Ao clicar nos cards, abre modal com lista de itens. Para cada work item:
 
-- **ID e título** — identificação do work item
-- **Responsável** — membro alocado
-- **Badge** — dias reais / dias esperados
-- **Botão "Ver detalhes"** — expande detalhes adicionais:
-  - Horas previstas (esforço estimado)
-  - Capacidade diária do responsável
-  - Início em progresso (data de ativação)
-  - Previsão de conclusão (calculada adicionando as horas esperadas em horário comercial a partir da ativação)
-  - Dias e horas úteis em atraso
-  - Status do prazo — "vencido há Xh úteis" ou "faltam Xh úteis"
-  - Link "Abrir no Azure DevOps" (requer `VITE_AZURE_DEVOPS_ORG_URL` configurada no `.env`)
-
-### Filtros do modal
-
-No topo do modal, botões permitem alternar entre: Todos, Críticos, Atenção e No prazo.
+- ID e título
+- Responsável e badge de status
+- Horas previstas vs capacidade diária
+- Data de início em progresso (ativação)
+- Previsão de conclusão calculada em horas úteis
+- Link **"Abrir no Azure DevOps"** _(requer `VITE_AZURE_DEVOPS_ORG_URL` configurada)_
 
 ---
 
-## Dicas de uso
+## 💡 Dicas de uso
 
 **A velocidade necessária é muito maior que a atual?**
-Verifique o painel de Blockers — impedimentos não resolvidos reduzem a velocidade do time.
+→ Verifique o painel de Blockers — impedimentos não resolvidos reduzem a velocidade.
 
 **O Health Score caiu para "Atenção" ou "Crítico"?**
-Clique na seção "Por que essa nota?" para ver quais fatores estão contribuindo. Cada penalidade aponta para um problema específico (sobrecarga, atraso, blockers).
+→ Veja "Por que essa nota?" para identificar quais fatores estão contribuindo.
 
 **O balanço de capacidade está muito negativo?**
-O time está comprometendo mais horas do que tem disponível. Considere revisar o escopo da sprint ou redistribuir tarefas.
+→ O time está comprometendo mais horas do que tem disponível. Revise o escopo ou redistribua tarefas.
 
 **As barras de escopo aparecem com frequência?**
-Indica que itens novos estão sendo adicionados durante a sprint. Isso impacta a linha ideal e pode ser a causa de atrasos.
+→ Itens novos estão sendo adicionados durante a sprint. Isso impacta a linha ideal e pode causar atrasos.
 
 **Os dados não estão atualizando?**
-O sync automático ocorre a cada hora. Para forçar uma atualização imediata, um administrador pode disparar um sync incremental via API (`POST /sync/incremental`) ou aguardar o próximo ciclo.
+→ O sync automático ocorre a cada hora. Para forçar atualização imediata: `POST /sync/incremental` via API.
 
 **O CFD mostra bandas alargando?**
-Indica gargalo no fluxo. Se a banda "A Fazer" cresce, o time não está puxando trabalho. Se "Em Progresso" cresce, há itens travados. Verifique os blockers e redistribua tarefas.
+→ Gargalo no fluxo. Banda "A Fazer" crescendo: time não está puxando trabalho. Banda "Em Progresso" crescendo: itens travados.
 
 **Muitos itens no Aging "Crítico"?**
-Revise as estimativas de esforço ou verifique se a capacidade diária dos membros está correta no Azure DevOps. Itens sem estimativa recebem um mínimo de 1h, o que pode distorcer o ratio.
-
-**A distribuição por membro está desigual?**
-Use o gráfico "Work Items por Membro" para identificar sobrecarga e redistribuir tarefas. Itens "Não Alocados" não entram no cálculo de capacidade.
+→ Revise as estimativas de esforço ou verifique se a capacidade diária dos membros está correta no Azure DevOps.
 
 **Os links "Abrir no Azure DevOps" não funcionam no Aging?**
-Configure a variável `VITE_AZURE_DEVOPS_ORG_URL` no arquivo `.env` do frontend com a URL da sua organização (ex: `https://dev.azure.com/sua-organizacao`).
+→ Configure `VITE_AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao` no `.env` do frontend.

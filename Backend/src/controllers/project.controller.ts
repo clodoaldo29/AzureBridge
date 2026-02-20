@@ -6,11 +6,11 @@ import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 
 export class ProjectController {
     /**
-     * List all active projects
+     * Listar todos os projetos ativos
      */
     async listProjects(_req: FastifyRequest, reply: FastifyReply) {
-        // Keeping prisma direct here as it's simple, or move to project.service if strict
-        // Use a narrow guard for missing tables to keep the UI usable when migrations aren't applied.
+        // Usando prisma diretamente aqui por ser simples
+        // Guarda para tabelas faltantes, mantendo a UI funcional quando migrations nao foram aplicadas.
         try {
             const projects = await prisma.project.findMany({
                 where: {
@@ -39,7 +39,7 @@ export class ProjectController {
     }
 
     /**
-     * Get project details
+     * Obter detalhes do projeto
      */
     async getProject(req: FastifyRequest, reply: FastifyReply) {
         const { id } = projectParamsSchema.parse(req.params);
@@ -65,12 +65,12 @@ export class ProjectController {
     }
 
     /**
-     * Get Project Statistics (Work Items by State, etc)
+     * Obter Estatisticas do Projeto (Work Items por Estado, etc)
      */
     async getProjectStats(req: FastifyRequest, reply: FastifyReply) {
         const { id } = projectParamsSchema.parse(req.params);
 
-        // Fetch aggregate counts
+        // Buscar contagens agregadas
         const [totalSprints, totalMembers, workItemStats] = await Promise.all([
             prisma.sprint.count({ where: { projectId: id } }),
             prisma.teamMember.count({ where: { projectId: id, isActive: true } }),

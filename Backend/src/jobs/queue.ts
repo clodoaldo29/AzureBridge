@@ -9,12 +9,12 @@ const connection = {
     port: REDIS_PORT,
 };
 
-// Queue Names
+// Nomes das filas
 export const QUEUE_NAMES = {
     AZURE_SYNC: 'azure-sync-queue',
 };
 
-// Queue Instances
+// Instancias das filas
 export const azureSyncQueue = new Queue(QUEUE_NAMES.AZURE_SYNC, {
     connection,
     defaultJobOptions: {
@@ -24,16 +24,16 @@ export const azureSyncQueue = new Queue(QUEUE_NAMES.AZURE_SYNC, {
             delay: 1000,
         },
         removeOnComplete: {
-            age: 24 * 3600, // Keep for 24 hours
+            age: 24 * 3600, // Manter por 24 horas
             count: 1000,
         },
         removeOnFail: {
-            age: 7 * 24 * 3600, // Keep for 7 days
+            age: 7 * 24 * 3600, // Manter por 7 dias
         },
     },
 });
 
-// Setup Queue Events (optional, for global monitoring)
+// Configurar eventos da fila (opcional, para monitoramento global)
 export const azureSyncEvents = new QueueEvents(QUEUE_NAMES.AZURE_SYNC, { connection });
 
 logger.info(`BullMQ Queues initialized on ${REDIS_HOST}:${REDIS_PORT}`);

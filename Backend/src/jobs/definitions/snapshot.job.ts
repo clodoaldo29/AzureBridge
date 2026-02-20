@@ -6,12 +6,12 @@ export const JOB_IDS = {
 };
 
 /**
- * Schedule the Daily Snapshot Job
- * Runs every day at 23:55
+ * Agendar Job de Snapshot Diario
+ * Executa todos os dias as 23:55
  */
 export async function scheduleSnapshotJob() {
     try {
-        // Remove existing
+        // Remover existentes
         const repeatableJobs = await azureSyncQueue.getRepeatableJobs();
         for (const job of repeatableJobs) {
             if (job.key.includes('daily-snapshot')) {
@@ -19,15 +19,15 @@ export async function scheduleSnapshotJob() {
             }
         }
 
-        // Add new job
+        // Adicionar novo job
         await azureSyncQueue.add(
             'daily-snapshot',
             {},
             {
                 jobId: JOB_IDS.DAILY_SNAPSHOT,
                 repeat: {
-                    pattern: '55 23 * * *', // At 23:55 every day
-                    // For testing/demo purposes, we could run it more often, but PROD is daily
+                    pattern: '55 23 * * *', // As 23:55 todos os dias
+                    // Para testes/demo, podemos executar com mais frequencia, mas PROD e diario
                 },
             }
         );

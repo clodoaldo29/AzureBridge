@@ -2,11 +2,13 @@ import * as azdev from 'azure-devops-node-api';
 import { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import { IWorkApi } from 'azure-devops-node-api/WorkApi';
 import { ICoreApi } from 'azure-devops-node-api/CoreApi';
+import { IGitApi } from 'azure-devops-node-api/GitApi';
+import { IWikiApi } from 'azure-devops-node-api/WikiApi';
 import { logger } from '@/utils/logger';
 import type { AzureDevOpsConfig } from './types';
 
 /**
- * Azure DevOps Client
+ * Cliente Azure DevOps
  * Gerencia conexão e autenticação com Azure DevOps API
  */
 export class AzureDevOpsClient {
@@ -26,7 +28,7 @@ export class AzureDevOpsClient {
     }
 
     /**
-     * Get Work Item Tracking API
+     * Obter API de Rastreamento de Work Items
      */
     async getWorkItemTrackingApi(): Promise<IWorkItemTrackingApi> {
         try {
@@ -38,7 +40,7 @@ export class AzureDevOpsClient {
     }
 
     /**
-     * Get Work API (for sprints, iterations, capacity)
+     * Obter API de Work (para sprints, iteracoes, capacidade)
      */
     async getWorkApi(): Promise<IWorkApi> {
         try {
@@ -50,7 +52,7 @@ export class AzureDevOpsClient {
     }
 
     /**
-     * Get Core API (for projects, teams)
+     * Obter API Core (para projetos, equipes)
      */
     async getCoreApi(): Promise<ICoreApi> {
         try {
@@ -62,7 +64,31 @@ export class AzureDevOpsClient {
     }
 
     /**
-     * Test connection to Azure DevOps
+     * Obter API Git
+     */
+    async getGitApi(): Promise<IGitApi> {
+        try {
+            return await this.connection.getGitApi();
+        } catch (error) {
+            logger.error('Failed to get Git API', error);
+            throw new Error('Failed to connect to Azure DevOps Git API');
+        }
+    }
+
+    /**
+     * Obter API Wiki (para acesso a páginas Wiki do projeto)
+     */
+    async getWikiApi(): Promise<IWikiApi> {
+        try {
+            return await this.connection.getWikiApi();
+        } catch (error) {
+            logger.error('Failed to get Wiki API', error);
+            throw new Error('Failed to connect to Azure DevOps Wiki API');
+        }
+    }
+
+    /**
+     * Testar conexao com Azure DevOps
      */
     async testConnection(): Promise<boolean> {
         try {
@@ -81,18 +107,18 @@ export class AzureDevOpsClient {
     }
 
     /**
-     * Get project configuration
+     * Obter configuracao do projeto
      */
     getConfig(): AzureDevOpsConfig {
         return { ...this.config };
     }
 }
 
-// Singleton instance
+// Instancia singleton
 let clientInstance: AzureDevOpsClient | null = null;
 
 /**
- * Get or create Azure DevOps Client instance
+ * Obter ou criar instancia do cliente Azure DevOps
  */
 export function getAzureDevOpsClient(): AzureDevOpsClient {
     if (!clientInstance) {
@@ -116,7 +142,7 @@ export function getAzureDevOpsClient(): AzureDevOpsClient {
 }
 
 /**
- * Reset client instance (useful for testing)
+ * Resetar instancia do cliente (util para testes)
  */
 export function resetAzureDevOpsClient(): void {
     clientInstance = null;

@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: azurebridge-api
     restart: unless-stopped
+    user: "0:0"
     ports:
       - "3001:3001"
     environment:
@@ -16,11 +17,16 @@ services:
       HOST: 0.0.0.0
       # Database
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
       DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -28,6 +34,8 @@ services:
       # Features
       FEATURE_ANALYTICS: ${FEATURE_ANALYTICS:-true}
       FEATURE_REPORTS: ${FEATURE_REPORTS:-true}
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+      RDA_UPLOADS_DIR: /app/uploads
     depends_on:
       redis:
         condition: service_healthy
@@ -35,10 +43,45 @@ services:
       - azurebridge-network
     volumes:
       - api-logs:/app/logs
+      - api-uploads:/app/uploads
 
   # ========================================
   # Auto Sync Scheduler
   # ========================================
+  worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: azurebridge-worker
+    restart: unless-stopped
+    user: "0:0"
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
+      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
+      AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+      RDA_UPLOADS_DIR: /app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - azurebridge-network
+    volumes:
+      - api-logs:/app/logs
+      - api-uploads:/app/uploads
+
   auto-sync:
     build:
       context: ./Backend
@@ -49,11 +92,16 @@ services:
       NODE_ENV: production
       # Database
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_FALLBACK: ${DATABASE_URL_FALLBACK:-}
+      DATABASE_URL_SOURCE: ${DATABASE_URL_SOURCE:-primary}
       DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Redis (if needed by any scripts)
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -82,6 +130,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+        VITE_FEATURE_RDA_MODULE: ${VITE_FEATURE_RDA_MODULE:-false}
     container_name: azurebridge-web
     restart: unless-stopped
     ports:
@@ -123,4 +172,6 @@ volumes:
   redis-data:
     driver: local
   api-logs:
+    driver: local
+  api-uploads:
     driver: local

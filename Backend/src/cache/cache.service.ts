@@ -2,14 +2,14 @@ import { redisClient } from './redis.client';
 import { logger } from '@/utils/logger';
 
 /**
- * Cache Service
- * Handles caching operations with Redis
+ * Servico de Cache
+ * Gerencia operacoes de cache com Redis
  */
 export class CacheService {
-    private readonly DEFAULT_TTL = 3600; // 1 hour
+    private readonly DEFAULT_TTL = 3600; // 1 hora
 
     /**
-     * Get value from cache
+     * Obter valor do cache
      */
     async get<T>(key: string): Promise<T | null> {
         try {
@@ -28,7 +28,7 @@ export class CacheService {
     }
 
     /**
-     * Set value in cache
+     * Definir valor no cache
      */
     async set(key: string, value: any, ttl: number = this.DEFAULT_TTL): Promise<void> {
         try {
@@ -40,7 +40,7 @@ export class CacheService {
     }
 
     /**
-     * Delete value from cache
+     * Remover valor do cache
      */
     async delete(key: string): Promise<void> {
         try {
@@ -52,7 +52,7 @@ export class CacheService {
     }
 
     /**
-     * Delete multiple keys by pattern
+     * Remover multiplas chaves por padrao
      */
     async deletePattern(pattern: string): Promise<void> {
         try {
@@ -69,7 +69,7 @@ export class CacheService {
     }
 
     /**
-     * Check if key exists
+     * Verificar se a chave existe
      */
     async exists(key: string): Promise<boolean> {
         try {
@@ -83,30 +83,30 @@ export class CacheService {
     }
 
     /**
-     * Get or set (cache-aside pattern)
+     * Obter ou definir (padrao cache-aside)
      */
     async getOrSet<T>(
         key: string,
         factory: () => Promise<T>,
         ttl: number = this.DEFAULT_TTL
     ): Promise<T> {
-        // Try to get from cache
+        // Tentar obter do cache
         const cached = await this.get<T>(key);
         if (cached !== null) {
             return cached;
         }
 
-        // Not in cache, get from factory
+        // Nao esta no cache, obter via factory
         const value = await factory();
 
-        // Store in cache
+        // Armazenar no cache
         await this.set(key, value, ttl);
 
         return value;
     }
 
     /**
-     * Invalidate cache for work items
+     * Invalidar cache de work items
      */
     async invalidateWorkItems(sprintId?: string): Promise<void> {
         if (sprintId) {
@@ -117,7 +117,7 @@ export class CacheService {
     }
 
     /**
-     * Invalidate cache for sprints
+     * Invalidar cache de sprints
      */
     async invalidateSprints(projectId?: string): Promise<void> {
         if (projectId) {
@@ -128,7 +128,7 @@ export class CacheService {
     }
 
     /**
-     * Clear all cache
+     * Limpar todo o cache
      */
     async clear(): Promise<void> {
         try {
@@ -141,5 +141,5 @@ export class CacheService {
     }
 }
 
-// Export singleton instance
+// Exporta instancia singleton
 export const cacheService = new CacheService();

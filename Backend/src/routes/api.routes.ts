@@ -6,31 +6,25 @@ import { syncController } from '@/controllers/sync.controller';
 import { dashboardController } from '@/controllers/dashboard.controller';
 import { capacityController } from '@/controllers/capacity.controller';
 import { logger } from '@/utils/logger';
+import { checkDatabaseConnection } from '@/database/client';
 
 export async function apiRoutes(fastify: FastifyInstance) {
-    // Health Check
+    // Verificacao de saude
     fastify.get('/health', async () => {
-        try {
-            // Check database connectivity
-            const { PrismaClient } = await import('@prisma/client');
-            const prisma = new PrismaClient();
-            await prisma.$queryRaw`SELECT 1`;
-
-            return {
-                status: 'ok',
-                database: 'connected',
-                timestamp: new Date(),
-                version: '2.0.0'
-            };
-        } catch (error) {
-            logger.error('Database health check failed:', error);
-            const err = new Error('Database not ready');
-            (err as any).statusCode = 503;
-            throw err;
+        const dbConnected = await checkDatabaseConnection();
+        if (!dbConnected) {
+            logger.warn('Health check em modo degradado: sem conexao com banco.');
         }
+
+        return {
+            status: dbConnected ? 'ok' : 'degraded',
+            database: dbConnected ? 'connected' : 'disconnected',
+            timestamp: new Date(),
+            version: '2.0.0',
+        };
     });
 
-    // Projects
+    // Projetos
     fastify.get('/projects', projectController.listProjects);
     fastify.get('/projects/:id', projectController.getProject);
     fastify.get('/projects/:id/stats', projectController.getProjectStats);
@@ -39,7 +33,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
     fastify.get('/sprints', sprintController.listSprints);
     fastify.get('/sprints/:id', sprintController.getSprint);
     fastify.get('/sprints/:id/burndown', sprintController.getSprintBurndown);
-    // Capacity specific
+    // Especifico de capacidade
     fastify.get('/sprints/:sprintId/capacity/comparison', capacityController.getComparison);
 
     // Work Items
@@ -48,7 +42,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
     fastify.get('/work-items/:id/hierarchy', workItemController.getWorkItemWithChildren);
     fastify.get('/work-items/blocked', workItemController.getBlockedWorkItems);
 
-    // Sync
+    // Sincronizacao
     fastify.post('/sync/full', syncController.triggerFullSync);
     fastify.post('/sync/incremental', syncController.triggerIncrementalSync);
 

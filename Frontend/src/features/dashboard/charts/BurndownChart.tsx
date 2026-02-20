@@ -332,14 +332,14 @@ export function BurndownChart({
         );
         if (points.length > 0) {
             points[0].ideal = baseInitial;
-            // Scope changes come from snapshot fields (real history), not derived from totalWork diff.
+            // Mudanças de escopo vêm dos campos do snapshot (histórico real), não derivadas da diferença de totalWork.
             for (let i = 0; i < points.length; i++) {
                 const snap = snapshotByDay.get(points[i].dateMs);
                 points[i].scopeAdded = Math.max(0, Math.round(snap?.addedCount || 0));
                 points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
             }
 
-            // Piecewise ideal: every scope increase recalculates the ideal burn for remaining days.
+            // Ideal piecewise: cada aumento de escopo recalcula o burn ideal para os dias restantes.
             let idealCursor = baseInitial;
             for (let i = 1; i < points.length; i++) {
                 idealCursor += points[i].scopeAdded - points[i].scopeRemoved;
@@ -366,7 +366,7 @@ export function BurndownChart({
             }
         }
 
-        // Completed in day uses snapshot accumulated completedWork (real history).
+        // Concluído no dia usa completedWork acumulado do snapshot (histórico real).
         const completedAccum: number[] = new Array(points.length).fill(0);
         for (let i = 0; i < points.length; i++) {
             completedAccum[i] = Math.max(0, Math.round(points[i].completedAccum || 0));
@@ -377,8 +377,8 @@ export function BurndownChart({
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
         const snapshotInitialD1 = Math.round(points[0]?.totalWork ?? 0);
         const dayOneNetScope = Math.round((points[0]?.scopeAdded || 0) - (points[0]?.scopeRemoved || 0));
-        // Header baseline (D0) = first visible day total minus the D1 net scope.
-        // This keeps all D1..Dn scope bars visible and makes Delta match bar net sum.
+        // Baseline do cabeçalho (D0) = total do primeiro dia visível menos o escopo líquido do D1.
+        // Isso mantém todas as barras de escopo D1..Dn visíveis e faz o Delta bater com o somatório líquido.
         const snapshotInitial = Math.max(0, snapshotInitialD1 - dayOneNetScope);
         const snapshotFinal = Math.round(
             lastActualIdx >= 0

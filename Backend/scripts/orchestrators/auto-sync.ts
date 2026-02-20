@@ -129,12 +129,14 @@ async function main() {
     const steps: Step[] = [];
 
     if (mode === 'hourly') {
+        steps.push(tsxStep('WIKI SYNC (INCREMENTAL)', 'scripts/sync/wiki-sync.ts', { WIKI_SYNC_MODE: 'incremental' }));
         steps.push(tsxStep('SMART SYNC', 'scripts/sync/smart-sync.ts'));
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
         steps.push(tsxStep('REBUILD ACTIVE BURNDOWN (EVENT MODEL)', 'scripts/backfill/rebuild-active-burndown-event-model.ts'));
     } else if (mode === 'full') {
         steps.push(nodeStep('SYNC ALL PROJECTS', 'scripts/sync/sync-all-projects.js'));
         steps.push(nodeStep('SYNC ALL TEAM MEMBERS', 'scripts/sync/sync-all-team-members.js'));
+        steps.push(tsxStep('WIKI SYNC (FULL)', 'scripts/sync/wiki-sync.ts', { WIKI_SYNC_MODE: 'full', WIKI_SYNC_REMOVE_MISSING: 'true' }));
         steps.push(nodeStep('FULL SYNC (ALL WORK ITEMS)', 'scripts/sync/complete-massive-sync.js'));
         steps.push(tsxStep('BACKFILL HISTORY (MISSING FIELDS)', 'scripts/backfill-project-history-batch.ts'));
         steps.push(tsxStep('BACKFILL CLOSED DATES', 'scripts/backfill/backfill-closed-dates.ts'));
@@ -147,6 +149,7 @@ async function main() {
     } else {
         steps.push(nodeStep('SYNC ALL PROJECTS', 'scripts/sync/sync-all-projects.js'));
         steps.push(nodeStep('SYNC ALL TEAM MEMBERS', 'scripts/sync/sync-all-team-members.js'));
+        steps.push(tsxStep('WIKI SYNC (INCREMENTAL)', 'scripts/sync/wiki-sync.ts', { WIKI_SYNC_MODE: 'incremental' }));
 
         if (runNewProjects) {
             const newProjects = await getProjectsNeedingInitialSync();

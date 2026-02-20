@@ -10,11 +10,38 @@ services:
     volumes:
       - ./Backend/src:/app/src
       - ./Backend/prisma:/app/prisma
+      - ./Backend/uploads:/app/uploads
     environment:
       NODE_ENV: development
       LOG_PRETTY: "true"
       PORT: 3001
       HOST: 0.0.0.0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+      RDA_UPLOADS_DIR: /app/uploads
+
+  worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: builder
+    user: "0:0"
+    command: npm run worker
+    volumes:
+      - ./Backend/src:/app/src
+      - ./Backend/prisma:/app/prisma
+      - ./Backend/uploads:/app/uploads
+    environment:
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+      RDA_UPLOADS_DIR: /app/uploads
+    depends_on:
+      - redis
 
   web:
     build:
@@ -29,5 +56,12 @@ services:
       - ./Frontend/public:/app/public
     environment:
       VITE_API_URL: http://localhost:3001
+      API_PROXY_TARGET: http://api:3001
       VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+      VITE_FEATURE_RDA_MODULE: ${VITE_FEATURE_RDA_MODULE:-false}
       VITE_ENABLE_DEVTOOLS: "true"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

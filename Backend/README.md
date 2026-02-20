@@ -1,19 +1,39 @@
-# AzureBridge — Backend
+# ⚙️ AzureBridge — Backend
 
-API REST responsável por sincronizar dados do Azure DevOps, calcular métricas e servir o dashboard.
+> API REST responsável por sincronizar dados do Azure DevOps, calcular métricas e servir o dashboard.
 
-## Stack
+---
 
-- **Node.js 20** + TypeScript
-- **Fastify** — framework HTTP
-- **Prisma 5** — ORM com PostgreSQL
-- **BullMQ** — fila de jobs assíncronos
-- **Redis** — cache e backend de filas
-- **azure-devops-node-api** — integração com Azure DevOps
-- **Pino** — logging estruturado
-- **Zod** — validação de schemas
+## 📋 Índice
 
-## Arquitetura interna
+- [Stack](#️-stack)
+- [Arquitetura interna](#-arquitetura-interna)
+- [Estrutura de diretórios](#-estrutura-de-diretórios)
+- [Variáveis de ambiente](#️-variáveis-de-ambiente)
+- [Comandos](#-comandos)
+- [Jobs e Workers](#-jobs-e-workers)
+- [Cache Redis](#-cache-redis)
+- [Endpoints da API](#-endpoints-da-api)
+- [Docker](#-docker)
+
+---
+
+## 🛠️ Stack
+
+| Tecnologia | Uso |
+|---|---|
+| **Node.js 20** + TypeScript | Runtime e linguagem |
+| **Fastify 4** | Framework HTTP |
+| **Prisma 5** | ORM com PostgreSQL |
+| **BullMQ 5** | Fila de jobs assíncronos |
+| **Redis 7** | Cache e backend de filas |
+| **azure-devops-node-api** | Integração com Azure DevOps |
+| **Pino** | Logging estruturado |
+| **Zod** | Validação de schemas |
+
+---
+
+## 🏗️ Arquitetura interna
 
 ```
 HTTP Request
@@ -40,7 +60,9 @@ Paralelamente:
   PostgreSQL
 ```
 
-## Estrutura de diretórios
+---
+
+## 📁 Estrutura de diretórios
 
 ```
 src/
@@ -73,7 +95,7 @@ src/
 │   ├── client.ts              # Configuração do cliente autenticado
 │   ├── sprints.service.ts     # Busca de sprints e iterações
 │   ├── teams.service.ts       # Membros e capacidade dos times
-│   ├── work-items.service.ts  # Work items e histórico
+│   ├── work-items.service.ts  # Work items e histórico de revisões
 │   └── types.ts               # Tipos da API Azure
 │
 ├── jobs/                  # Workers BullMQ
@@ -96,36 +118,36 @@ src/
 └── utils/                 # Logger, formatadores
 ```
 
-## Instalação e configuração
+---
+
+## ⚙️ Variáveis de ambiente
 
 ```bash
-npm ci
-
 cp .env.example .env
-# Preencha as variáveis — ver seção abaixo
+# Preencha com seus valores
 ```
 
-### Variáveis de ambiente
-
-| Variável | Obrigatória | Descrição |
-|---|---|---|
-| `NODE_ENV` | Sim | `development` ou `production` |
-| `PORT` | Não | Porta da API (padrão: `3001`) |
-| `AZURE_DEVOPS_ORG_URL` | Sim | URL da organização: `https://dev.azure.com/org` |
-| `AZURE_DEVOPS_PAT` | Sim | Personal Access Token do Azure DevOps |
-| `DATABASE_URL` | Sim | Connection string PostgreSQL (pooler, para runtime) |
-| `DIRECT_DATABASE_URL` | Sim | Connection string PostgreSQL (direta, para migrations) |
-| `REDIS_HOST` | Sim | Host do Redis (ex: `localhost` ou `redis`) |
-| `REDIS_PORT` | Não | Porta Redis (padrão: `6379`) |
-| `REDIS_PASSWORD` | Não | Senha Redis (se aplicável) |
-| `CORS_ORIGIN` | Não | Origin permitida (padrão: `http://localhost:5173`) |
-| `SYNC_INTERVAL_HOURS` | Não | Intervalo entre syncs automáticos (padrão: `1`) |
-| `SNAPSHOT_INTERVAL_HOURS` | Não | Intervalo entre snapshots (padrão: `4`) |
-| `LOG_LEVEL` | Não | `debug`, `info`, `warn`, `error` (padrão: `info`) |
+| Variável | Obrigatória | Padrão | Descrição |
+|---|:---:|---|---|
+| `NODE_ENV` | ✅ | — | `development` ou `production` |
+| `PORT` | — | `3001` | Porta da API |
+| `AZURE_DEVOPS_ORG_URL` | ✅ | — | URL da organização: `https://dev.azure.com/org` |
+| `AZURE_DEVOPS_PAT` | ✅ | — | Personal Access Token do Azure DevOps |
+| `DATABASE_URL` | ✅ | — | Connection string PostgreSQL (pooler, para runtime) |
+| `DIRECT_DATABASE_URL` | ✅ | — | Connection string PostgreSQL (direta, para migrations) |
+| `REDIS_HOST` | ✅ | — | Host do Redis (ex: `localhost` ou `redis`) |
+| `REDIS_PORT` | — | `6379` | Porta Redis |
+| `REDIS_PASSWORD` | — | — | Senha Redis (se aplicável) |
+| `CORS_ORIGIN` | — | `http://localhost:5173` | Origin permitida pelo CORS |
+| `SYNC_INTERVAL_HOURS` | — | `1` | Intervalo entre syncs automáticos (horas) |
+| `SNAPSHOT_INTERVAL_HOURS` | — | `4` | Intervalo entre snapshots |
+| `LOG_LEVEL` | — | `info` | `debug`, `info`, `warn`, `error` |
 
 Ver arquivo completo em [.env.example](.env.example).
 
-## Executando
+---
+
+## 🚀 Comandos
 
 ### Desenvolvimento
 
@@ -163,7 +185,7 @@ npm run db:seed           # popula dados iniciais
 npm run db:reset          # reseta banco e re-seed (apenas dev)
 ```
 
-## Testes
+### Testes
 
 ```bash
 npm test              # todos os testes com coverage
@@ -171,7 +193,9 @@ npm run test:watch    # modo watch
 npm run test:e2e      # testes end-to-end
 ```
 
-## Jobs e Workers
+---
+
+## ⚡ Jobs e Workers
 
 O backend possui três tipos de jobs processados pelo BullMQ:
 
@@ -181,50 +205,33 @@ O backend possui três tipos de jobs processados pelo BullMQ:
 | `snapshot` | Diário (cron) | Captura estado atual da sprint para o burndown histórico |
 | `metrics` | Após sync | Calcula velocity, cycle time, lead time, throughput |
 
-O processo worker (`src/worker.ts`) é separado do servidor HTTP e deve rodar em paralelo em produção.
+> O processo worker (`src/worker.ts`) é separado do servidor HTTP e deve rodar em paralelo em produção.
 
-## Sistema de cache
+---
 
-As respostas das rotas mais pesadas são cacheadas no Redis com TTL configurável via `REDIS_KEY_PREFIX`. O cache é invalidado automaticamente após um sync bem-sucedido.
+## 🗃️ Cache Redis
 
-## Rotas da API
+As respostas das rotas mais pesadas são cacheadas no Redis com TTL configurável. O cache é invalidado automaticamente após um sync bem-sucedido.
+
+---
+
+## 🔌 Endpoints da API
 
 Ver documentação completa em [../docs/API.md](../docs/API.md).
 
-Grupos de endpoints:
-
 | Grupo | Método | Prefixo |
 |---|---|---|
-| Health | GET | `/health` |
-| Projetos | GET | `/projects` |
-| Sprints | GET | `/sprints` |
-| Work Items | GET | `/work-items` |
-| Capacidade | GET | `/sprints/:id/capacity/comparison` |
-| Sync | POST | `/sync/*` |
-| Dashboard | GET | `/dashboard/*` |
+| Health | `GET` | `/health` |
+| Projetos | `GET` | `/projects` |
+| Sprints | `GET` | `/sprints` |
+| Work Items | `GET` | `/work-items` |
+| Capacidade | `GET` | `/sprints/:id/capacity/comparison` |
+| Sync | `POST` | `/sync/*` |
+| Dashboard | `GET` | `/dashboard/*` |
 
-## Scripts e pipeline de sync
+---
 
-O diretório `scripts/` contém o pipeline de sincronização automática, scripts de backfill e ferramentas de manutenção. O container `auto-sync` executa o pipeline via cron, controlado pela variável `AUTO_SYNC_MODE`:
-
-| Modo | Frequência | Etapas |
-|---|---|---|
-| `hourly` | A cada hora | smart-sync → snapshot → rebuild burndown (evento) |
-| `daily` | Uma vez/dia | projetos → membros → smart-sync → backfill histórico → closedDate → capacidade → snapshot → rebuild burndown → validação |
-| `full` / `bootstrap` | Manual | Tudo do daily + carga completa de work items + rebuilds completos |
-
-### Categorias de scripts
-
-- **Orquestração**: `auto-sync.ts` (orquestrador principal), `hourly-sync.ts`, `daily-sync.ts`, `full-sync.ts` (wrappers por modo)
-- **Sync**: sincronização incremental (`smart-sync.ts`) e completa, com captura automática de `closedDate` via revisões
-- **Backfill**: recuperação de `closedDate`, reconstrução de contadores de snapshots, burndown histórico, rebuild via modelo de eventos (`rebuild-active-burndown-event-model.ts`)
-- **Manutenção**: snapshot manual, validação de contadores, reset de banco (dev)
-
-O modelo baseado em eventos (`rebuild-active-burndown-event-model.ts`) reconstrói o burndown de sprints ativas usando revisões de work items do Azure DevOps, garantindo precisão mesmo quando o sync diário não captura todos os estados intermediários.
-
-Ver documentação completa em [scripts/README.md](scripts/README.md).
-
-## Docker
+## 🐳 Docker
 
 ```bash
 # Build da imagem

@@ -84,7 +84,7 @@ export function SprintHealthCard({ score, factors, reasons }: SprintHealthCardPr
                     )}
                 </div>
 
-                {/* Metrics block removed per request */}
+                {/* Bloco de métricas removido a pedido */}
             </CardContent>
         </Card>
     );

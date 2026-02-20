@@ -41,13 +41,15 @@ logs/
 README.md
 *.md
 docs/
+!prompts/
+!prompts/rda/
+!prompts/rda/Guia_Preenchimento_Placeholders_RDA.md
 
 # CI/CD
 .github/
 .gitlab-ci.yml
 
 # Database
-prisma/migrations/
 *.db
 *.sqlite
 

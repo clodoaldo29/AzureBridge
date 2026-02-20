@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 export class CapacityController {
     /**
-     * Get capacity vs planned comparison for a sprint
+     * Obter comparacao capacidade vs planejado para uma sprint
      */
     async getComparison(req: FastifyRequest, reply: FastifyReply) {
         const paramsSchema = z.object({

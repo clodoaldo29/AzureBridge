@@ -14,6 +14,8 @@ export type {
     Alert,
     UserPreference,
     SyncLog,
+    RDATemplate,
+    RDAGeneration,
 } from '@prisma/client';
 
 // Tipos auxiliares

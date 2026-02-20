@@ -105,7 +105,7 @@ function getIdealRemainingToday(params: {
 export function Dashboard() {
     const { selectedProjectId, setSelectedProjectId } = useAppStore();
 
-    // Fetch all projects to get project name
+    // Busca todos os projetos para obter o nome do projeto selecionado
     const { data: projectsResponse } = useQuery<{ data: Project[] }>({
         queryKey: ['projects'],
         queryFn: async () => {
@@ -115,7 +115,7 @@ export function Dashboard() {
     });
     const projects = projectsResponse?.data || [];
 
-    // Fetch current sprints (Active)
+    // Busca as sprints ativas
     const {
         data: sprints,
         isLoading: sprintsLoading,
@@ -144,31 +144,31 @@ export function Dashboard() {
         }
     }, [activeProjects, selectedProjectId, setSelectedProjectId]);
 
-    // Filter sprints by selected project ID (more reliable than path comparison)
+    // Filtra sprints pelo projeto selecionado (mais confiável que comparar por path)
     const currentSprint = selectedProject
         ? sprints?.find((sprint: Sprint) => sprint.projectId === selectedProject.id)
         : sprints?.[0];
 
-    // Fetch capacity data for current sprint
+    // Busca dados de capacidade para a sprint atual
     const {
         data: capacityData,
         isLoading: capacityLoading,
         isError: capacityError,
     } = useCapacityComparison(currentSprint?.id || '');
 
-    // Fetch burndown data
+    // Busca dados de burndown
     const { data: burndownData } = useSprintBurndown(currentSprint?.id || '');
 
-    // Fetch blocked work items
+    // Busca work items bloqueados
     const { data: blockedItems } = useBlockedWorkItems();
 
-    // Fetch all work items for the current sprint (donuts)
+    // Busca todos os work items da sprint atual (para os gráficos donut)
     const { data: workItemsResponse } = useWorkItems(
         currentSprint ? { sprintId: currentSprint.id, limit: 500 } : undefined
     );
     const sprintWorkItems = workItemsResponse?.data || [];
 
-    // Calculate sprint health score
+    // Calcula o score de saúde da sprint
     const healthDetails = currentSprint
         ? calculateSprintHealthDetails(currentSprint, capacityData, burndownData?.raw)
         : null;
@@ -268,7 +268,7 @@ export function Dashboard() {
 
     return (
         <div className="space-y-6 p-6">
-            {/* Header */}
+            {/* Cabeçalho */}
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">
@@ -302,7 +302,7 @@ export function Dashboard() {
             </div>
             {currentSprint ? (
                 <>
-                    {/* Stats Cards */}
+                    {/* Cards de Métricas */}
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <StatCard
                             title="Capacidade Total"
@@ -332,7 +332,7 @@ export function Dashboard() {
                         />
                     </div>
 
-                    {/* Sprint Progress Bar based on Planned vs Remaining */}
+                    {/* Barra de Progresso da Sprint baseada em Planejado vs Restante */}
                     {capacityData && plannedCurrent > 0 && (
                         <div className="bg-card rounded-lg shadow p-4 border border-border">
                             <div className="flex justify-between items-start gap-3 mb-3">
@@ -361,7 +361,7 @@ export function Dashboard() {
                             <div className="relative w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                                 <div
                                     className={`h-3 rounded-full transition-all duration-500 ${remainingHours > plannedCurrent
-                                        ? 'bg-red-500' // Red if over planned
+                                        ? 'bg-red-500' // Vermelho se ultrapassou o planejado
                                         : 'bg-blue-600'
                                         }`}
                                     style={{ width: `${progressPct}%` }}
@@ -383,7 +383,7 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    {/* Sprint Health + Work Item Aging */}
+                    {/* Saúde da Sprint + Work Item Aging */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {healthScore !== null && (
                             <SprintHealthCard
@@ -401,7 +401,7 @@ export function Dashboard() {
                         />
                     </div>
 
-                    {/* Work Items Distribution Donuts */}
+                    {/* Distribuição de Work Items (Donuts) */}
                     {sprintWorkItems.length > 0 && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <WorkItemsByStateChart workItems={sprintWorkItems} />
@@ -410,13 +410,13 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    {/* Main Content */}
+                    {/* Conteúdo Principal */}
                     <div className="space-y-6">
-                        {/* Capacity Table */}
-                        {capacityData && <CapacityTable data={capacityData} />}
+                        {/* Tabela de Capacidade */}
+                        {capacityData && <CapacityTable data={capacityData} plannedCurrent={plannedCurrent} projectName={selectedProject?.name} />}
                         {capacityData && <MemberCapacityProgress data={capacityData} />}
 
-                        {/* Cumulative Flow Diagram */}
+                        {/* Diagrama de Fluxo Cumulativo (CFD) */}
                         {burndownData && (
                             <div className="pt-2">
                                 <CumulativeFlowChart
@@ -428,7 +428,7 @@ export function Dashboard() {
                             </div>
                         )}
 
-                        {/* Burndown Chart */}
+                        {/* Gráfico de Burndown */}
                         {burndownData && (
                             <div className="pt-2">
                                 <BurndownChart

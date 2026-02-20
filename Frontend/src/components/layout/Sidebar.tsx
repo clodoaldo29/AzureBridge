@@ -1,13 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Target, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Target, CheckSquare, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/utils/cn';
+
+const isRdaModuleEnabled = (import.meta.env.VITE_FEATURE_RDA_MODULE ?? 'false') === 'true';
 
 const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Sprints', href: '/sprints', icon: Target },
     { name: 'Work Items', href: '/work-items', icon: CheckSquare },
+    ...(isRdaModuleEnabled ? [{ name: 'RDA', href: '/rda', icon: FileText }] : []),
 ];
 
 export function Sidebar() {

@@ -12,6 +12,16 @@ export class SnapshotService {
         return t === 'task' || t === 'bug' || t === 'test case';
     }
 
+    private isDoneState(state?: string | null): boolean {
+        const s = String(state || '').trim().toLowerCase();
+        return s === 'done' || s === 'closed' || s === 'completed';
+    }
+
+    private isInProgressState(state?: string | null): boolean {
+        const s = String(state || '').trim().toLowerCase();
+        return s === 'in progress' || s === 'active' || s === 'committed' || s.includes('progress');
+    }
+
     private toUtcDay(date: Date): Date {
         const d = new Date(date);
         d.setUTCHours(0, 0, 0, 0);
@@ -41,13 +51,13 @@ export class SnapshotService {
         return set;
     }
     /**
-     * Capture daily snapshot for all active sprints
+     * Capturar snapshot diario para todas as sprints ativas
      */
     async captureDailySnapshots(): Promise<void> {
         try {
             logger.info('📸 Starting Daily Snapshot capture...');
 
-            // 1. Find all active sprints
+            // 1. Buscar todas as sprints ativas
             const activeSprints = await prisma.sprint.findMany({
                 where: {
                     state: { in: ['active', 'Active'] }
@@ -64,7 +74,7 @@ export class SnapshotService {
 
             logger.info(`Found ${activeSprints.length} active sprints.`);
 
-            // 2. Process each sprint
+            // 2. Processar cada sprint
             for (const sprint of activeSprints) {
                 await this.createSprintSnapshot(sprint.id);
             }
@@ -77,11 +87,11 @@ export class SnapshotService {
     }
 
     /**
-     * Create a snapshot for a specific sprint
+     * Criar um snapshot para uma sprint especifica
      */
     async createSprintSnapshot(sprintId: string): Promise<void> {
         try {
-            const today = this.toUtcDay(new Date()); // Always normalize to UTC day
+            const today = this.toUtcDay(new Date()); // Sempre normalizar para dia UTC
 
             const sprint = await prisma.sprint.findUnique({
                 where: { id: sprintId },
@@ -178,7 +188,7 @@ export class SnapshotService {
                 const points = item.storyPoints || 0;
                 totalPoints += points;
 
-                // CFD counts exclude PBI/User Story by rule.
+                // Contadores do CFD excluem PBI/User Story por regra.
                 if (!isPbi && isCountableForCharts) {
                     if ((item as any).isBlocked) blockedCount++;
                     if (state === 'done' || state === 'closed' || state === 'completed') {
@@ -191,7 +201,7 @@ export class SnapshotService {
                     }
                 }
 
-                // Points remain unchanged (not used by CFD visual stacks)
+                // Pontos permanecem inalterados (não usados pelas camadas visuais do CFD)
                 if (state === 'done' || state === 'closed' || state === 'completed') completedPoints += points;
                 else remainingPoints += points;
             }
@@ -244,6 +254,137 @@ export class SnapshotService {
             logger.error(`Failed to create snapshot for sprint ${sprintId}`, error);
             // Don't throw to allow other sprints to proceed
         }
+    }
+
+    /**
+     * Reconstroi snapshots historicos da sprint usando sinais temporais dos work items
+     * (created/activated/closed/changed). Nao depende de work_item_revisions.
+     */
+    async rebuildSprintHistorySnapshots(sprintId: string): Promise<void> {
+        const sprint = await prisma.sprint.findUnique({
+            where: { id: sprintId },
+            include: {
+                capacities: {
+                    select: { daysOff: true }
+                }
+            }
+        });
+
+        if (!sprint) {
+            logger.warn(`Sprint not found for history rebuild: ${sprintId}`);
+            return;
+        }
+
+        const offSet = this.extractDayOffSet(sprint.capacities);
+        const startMs = this.toUtcDay(new Date(sprint.startDate)).getTime();
+        const endCap = Math.min(
+            this.toUtcDay(new Date(sprint.endDate)).getTime(),
+            this.toUtcDay(new Date()).getTime()
+        );
+
+        const existing = await prisma.sprintSnapshot.findMany({
+            where: { sprintId },
+            orderBy: { snapshotDate: 'asc' }
+        });
+        const byDate = new Map(existing.map((s) => [this.toUtcDay(s.snapshotDate).getTime(), s]));
+
+        const workItems = await prisma.workItem.findMany({
+            where: {
+                sprintId,
+                isRemoved: false
+            },
+            select: {
+                type: true,
+                state: true,
+                isBlocked: true,
+                createdDate: true,
+                changedDate: true,
+                activatedDate: true,
+                closedDate: true
+            }
+        });
+
+        for (let ms = startMs; ms <= endCap; ms += 24 * 60 * 60 * 1000) {
+            const d = new Date(ms);
+            const wd = d.getUTCDay();
+            if (wd === 0 || wd === 6) continue;
+            const iso = d.toISOString().slice(0, 10);
+            if (offSet.has(iso)) continue;
+
+            let todoCount = 0;
+            let inProgressCount = 0;
+            let doneCount = 0;
+            let blockedCount = 0;
+
+            const dayEndMs = ms + (24 * 60 * 60 * 1000 - 1);
+
+            for (const item of workItems) {
+                if (!this.isCountableChartType(item.type)) continue;
+                const createdMs = this.toUtcDay(item.createdDate).getTime();
+                if (createdMs > ms) continue;
+
+                const closedMs = item.closedDate ? this.toUtcDay(item.closedDate).getTime() : null;
+                const activatedMs = item.activatedDate ? this.toUtcDay(item.activatedDate).getTime() : null;
+                const changedMs = this.toUtcDay(item.changedDate).getTime();
+
+                const doneByDate = closedMs !== null
+                    ? closedMs <= dayEndMs
+                    : (this.isDoneState(item.state) && changedMs <= dayEndMs);
+
+                if (doneByDate) {
+                    doneCount++;
+                    continue;
+                }
+
+                const inProgressByDate = activatedMs !== null
+                    ? activatedMs <= dayEndMs
+                    : (this.isInProgressState(item.state) && changedMs <= dayEndMs);
+
+                if (inProgressByDate) {
+                    inProgressCount++;
+                    if (item.isBlocked) blockedCount++;
+                } else {
+                    todoCount++;
+                }
+            }
+
+            const snapshotDate = new Date(ms);
+            const existingSnap = byDate.get(ms);
+
+            await prisma.sprintSnapshot.upsert({
+                where: {
+                    sprintId_snapshotDate: {
+                        sprintId,
+                        snapshotDate
+                    }
+                },
+                create: {
+                    sprintId,
+                    snapshotDate,
+                    remainingWork: existingSnap?.remainingWork || 0,
+                    completedWork: existingSnap?.completedWork || 0,
+                    totalWork: existingSnap?.totalWork || 0,
+                    remainingPoints: existingSnap?.remainingPoints || 0,
+                    completedPoints: existingSnap?.completedPoints || 0,
+                    totalPoints: existingSnap?.totalPoints || 0,
+                    todoCount,
+                    inProgressCount,
+                    doneCount,
+                    blockedCount,
+                    addedCount: existingSnap?.addedCount || 0,
+                    removedCount: existingSnap?.removedCount || 0,
+                    idealRemaining: existingSnap?.idealRemaining || null
+                },
+                update: {
+                    todoCount,
+                    inProgressCount,
+                    doneCount,
+                    blockedCount
+                }
+            });
+        }
+
+        logger.info(`Rebuilt historical snapshots for sprint ${sprintId}`);
     }
 }
 

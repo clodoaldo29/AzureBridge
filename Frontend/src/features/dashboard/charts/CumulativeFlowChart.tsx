@@ -205,7 +205,7 @@ export function CumulativeFlowChart({
             const rawBlocked = snap.blockedCount || 0;
             const rawInProgress = snap.inProgressCount || 0;
 
-            // Blocked is a subset of inProgress for stacking purposes
+            // Blocked é um subconjunto de inProgress para fins de empilhamento no gráfico
             const blocked = Math.min(rawBlocked, rawInProgress);
             const inProgress = rawInProgress - blocked;
             const done = snap.doneCount || 0;

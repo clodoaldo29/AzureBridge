@@ -3,27 +3,27 @@ import { prisma } from '@/database/client';
 
 export class DashboardController {
     /**
-     * Get Dashboard Overview Stats
+     * Obter Estatisticas Gerais do Dashboard
      */
     async getOverview(_req: FastifyRequest, reply: FastifyReply) {
         try {
-            // 1. Get Top Level Counts
+            // 1. Obter contagens de nivel superior
             const [activeProjects, activeSprints, totalWorkItems, warnings] = await Promise.all([
                 prisma.project.count({ where: { state: { not: 'deleting' } } }),
                 prisma.sprint.count({ where: { state: 'active' } }),
                 prisma.workItem.count({ where: { isRemoved: false, state: { not: 'Removed' } } }),
-                // Example "Warnings" - Blocked items
+                // Exemplo de "Avisos" - Itens bloqueados
                 prisma.workItem.count({ where: { isRemoved: false, isBlocked: true } })
             ]);
 
-            // 2. Get Recent Velocity for Global (Avg of all projects velocities)
+            // 2. Obter velocidade recente global (media das velocidades de todos os projetos)
             const recentMetrics = await prisma.metricSnapshot.findMany({
                 where: { metricType: 'velocity' },
                 orderBy: { snapshotDate: 'desc' },
                 take: 5
             });
 
-            // 3. Get Active Sprints with basic health info
+            // 3. Buscar Sprints ativas com info basica de saude
             const currentSprints = await prisma.sprint.findMany({
                 where: { state: 'active' },
                 take: 5,
@@ -41,7 +41,7 @@ export class DashboardController {
                         workItems: totalWorkItems,
                         warnings: warnings
                     },
-                    metrics: recentMetrics, // Fixed unused variable
+                    metrics: recentMetrics, // Variavel corrigida (antes nao utilizada)
                     recentActivity: {
                         sprints: currentSprints.map(s => ({
                             id: s.id,
@@ -60,18 +60,18 @@ export class DashboardController {
     }
 
     /**
-     * Get Alerts (Blocked items, Delayed sprints)
+     * Obter Alertas (Itens bloqueados, Sprints atrasadas)
      */
     async getAlerts(_req: FastifyRequest, reply: FastifyReply) {
         try {
-            // Fetch Blocked Items
+            // Buscar itens bloqueados
             const blockedItems = await prisma.workItem.findMany({
                 where: { isBlocked: true, isRemoved: false },
                 take: 10,
                 include: { assignedTo: true, project: true }
             });
 
-            // Fetch "At Risk" sprints
+            // Buscar sprints "Em Risco"
             const twoDaysFromNow = new Date();
             twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
 
@@ -96,7 +96,7 @@ export class DashboardController {
     }
 
     /**
-     * Get Current Sprints (Helper for dashboard list)
+     * Buscar Sprints Atuais (Helper para listagem do dashboard)
      */
     async getCurrentSprints(_req: FastifyRequest, reply: FastifyReply) {
         try {

@@ -1,8 +1,4 @@
-// ============================================
-// TYPE DEFINITIONS
-// ============================================
-
-export interface Project {
+﻿export interface Project {
     id: string;
     azureId: string;
     name: string;
@@ -102,15 +98,19 @@ export interface MemberCapacity {
         imageUrl?: string;
         uniqueName: string;
     };
-    capacity: number | {
-        total: number;
-        available: number;
-        daysOffCount: number;
-    };
-    planned: number | {
-        total: number;
-        itemsCount: number;
-    };
+    capacity:
+        | number
+        | {
+              total: number;
+              available: number;
+              daysOffCount: number;
+          };
+    planned:
+        | number
+        | {
+              total: number;
+              itemsCount: number;
+          };
     completed?: number;
     completionPct?: number;
     remainingToCapacity?: number;
@@ -140,6 +140,41 @@ export interface CapacityComparison {
         unassigned: {
             totalHours: number;
             items: number;
+            open?: {
+                totalHours: number;
+                remainingHours: number;
+                items: number;
+                byType: Array<{
+                    type: string;
+                    items: number;
+                    totalHours: number;
+                }>;
+                tasks?: Array<{
+                    id: number;
+                    title: string;
+                    state: string;
+                    plannedHours: number;
+                    remainingHours: number;
+                    url: string | null;
+                }>;
+            };
+            done?: {
+                totalHours: number;
+                items: number;
+                byType: Array<{
+                    type: string;
+                    items: number;
+                    totalHours: number;
+                }>;
+                tasks?: Array<{
+                    id: number;
+                    title: string;
+                    state: string;
+                    plannedHours: number;
+                    remainingHours: number;
+                    url: string | null;
+                }>;
+            };
         };
         balance: number;
         utilization: number;
@@ -159,4 +194,83 @@ export interface ApiListResponse<T> extends ApiResponse<T[]> {
         limit: number;
         offset: number;
     };
+}
+
+export interface Document {
+    id: string;
+    projectId?: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    uploadedBy: string;
+    extractedText?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface WikiPage {
+    id: string;
+    projectId?: string;
+    azureId?: number;
+    path: string;
+    title: string;
+    content?: string;
+    parentPath?: string;
+    order: number;
+    remoteUrl?: string;
+    lastSyncAt?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type RDAPeriodType = 'monthly' | 'general';
+export type RDAGenerationStatus = 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface GenerateRDARequest {
+    projectId: string;
+    templateId?: string;
+    periodType: RDAPeriodType;
+    periodStart: string;
+    periodEnd: string;
+    documentIds: string[];
+    wikiPageIds: string[];
+    generatedBy: string;
+}
+
+export interface RDAGeneration {
+    id: string;
+    projectId: string;
+    templateId: string;
+    status: RDAGenerationStatus;
+    progress: number;
+    currentStep?: string;
+    periodType: RDAPeriodType;
+    periodStart: string;
+    periodEnd: string;
+    outputFilePath?: string;
+    fileSize?: number;
+    tokensUsed?: number;
+    errorMessage?: string;
+    partialResults?: Array<{
+        agentName: string;
+        success: boolean;
+        durationMs?: number;
+        tokensUsed?: number;
+    }>;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface RDATemplate {
+    id: string;
+    projectId?: string;
+    name: string;
+    description?: string;
+    filePath: string;
+    placeholders: string[];
+    isActive: boolean;
+    version?: number;
+    createdAt?: string;
+    updatedAt?: string;
 }

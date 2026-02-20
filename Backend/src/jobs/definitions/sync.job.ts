@@ -6,12 +6,12 @@ export const JOB_IDS = {
 };
 
 /**
- * Schedule the Incremental Sync Job
- * Runs every 30 minutes
+ * Agendar Job de Sincronizacao Incremental
+ * Executa a cada 30 minutos
  */
 export async function scheduleSyncJob() {
     try {
-        // Remove existing repeatable jobs to avoid duplicates on restart
+        // Remover jobs repetitivos existentes para evitar duplicatas ao reiniciar
         const repeatableJobs = await azureSyncQueue.getRepeatableJobs();
         for (const job of repeatableJobs) {
             if (job.key.includes('incremental-sync')) {
@@ -19,15 +19,15 @@ export async function scheduleSyncJob() {
             }
         }
 
-        // Add new job with 30 min interval
+        // Adicionar novo job com intervalo de 30 min
         await azureSyncQueue.add(
             'incremental-sync',
             {},
             {
                 jobId: JOB_IDS.INCREMENTAL_SYNC,
                 repeat: {
-                    every: 30 * 60 * 1000, // 30 minutes in ms
-                    immediately: true,     // Run once on startup
+                    every: 30 * 60 * 1000, // 30 minutos em ms
+                    immediately: true,     // Executar uma vez ao iniciar
                 },
             }
         );

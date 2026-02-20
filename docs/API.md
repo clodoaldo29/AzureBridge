@@ -1,8 +1,10 @@
-# AzureBridge — Referência da API
+# 🔌 AzureBridge — Referência da API REST
 
-Base URL: `http://localhost:3001`
+> Documentação completa de todos os endpoints disponíveis na API do AzureBridge.
 
-Todos os endpoints retornam JSON. Erros seguem o formato:
+**Base URL:** `http://localhost:3001`
+
+Todos os endpoints retornam **JSON**. Erros seguem o formato:
 
 ```json
 {
@@ -13,13 +15,25 @@ Todos os endpoints retornam JSON. Erros seguem o formato:
 
 ---
 
-## Health Check
+## 📋 Índice
+
+- [Health Check](#-health-check)
+- [Projetos](#-projetos)
+- [Sprints](#-sprints)
+- [Work Items](#-work-items)
+- [Sync](#-sync)
+- [Dashboard](#-dashboard)
+- [Códigos de status](#-códigos-de-status)
+
+---
+
+## ❤️ Health Check
 
 ### `GET /health`
 
-Verifica a disponibilidade da API e conexão com o banco.
+Verifica a disponibilidade da API e a conexão com o banco de dados.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "status": "ok",
@@ -29,7 +43,7 @@ Verifica a disponibilidade da API e conexão com o banco.
 }
 ```
 
-**Response 503** — banco indisponível:
+**Resposta `503`** — banco indisponível:
 ```json
 {
   "error": "Database not ready",
@@ -39,13 +53,13 @@ Verifica a disponibilidade da API e conexão com o banco.
 
 ---
 
-## Projetos
+## 🗂️ Projetos
 
 ### `GET /projects`
 
 Lista todos os projetos sincronizados do Azure DevOps.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "data": [
@@ -71,9 +85,12 @@ Lista todos os projetos sincronizados do Azure DevOps.
 Retorna os detalhes de um projeto específico.
 
 **Parâmetros:**
-- `id` (path) — ID interno do projeto (cuid)
 
-**Response 200:**
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID interno do projeto (cuid) |
+
+**Resposta `200`:**
 ```json
 {
   "data": {
@@ -88,7 +105,7 @@ Retorna os detalhes de um projeto específico.
 }
 ```
 
-**Response 404:**
+**Resposta `404`:**
 ```json
 { "error": "Project not found", "statusCode": 404 }
 ```
@@ -100,9 +117,12 @@ Retorna os detalhes de um projeto específico.
 Retorna estatísticas agregadas do projeto (sprints, work items, membros).
 
 **Parâmetros:**
-- `id` (path) — ID interno do projeto
 
-**Response 200:**
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID interno do projeto |
+
+**Resposta `200`:**
 ```json
 {
   "data": {
@@ -117,21 +137,22 @@ Retorna estatísticas agregadas do projeto (sprints, work items, membros).
 
 ---
 
-## Sprints
+## 🏃 Sprints
 
 ### `GET /sprints`
 
 Lista sprints com filtros opcionais.
 
 **Query params:**
-| Param | Tipo | Descrição |
-|---|---|---|
-| `projectId` | string | Filtra por projeto |
-| `state` | string | `Active`, `Past`, `Future` |
-| `limit` | number | Máximo de resultados (padrão: 50) |
-| `offset` | number | Paginação |
 
-**Response 200:**
+| Param | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `projectId` | string | — | Filtra por projeto |
+| `state` | string | — | `Active`, `Past` ou `Future` |
+| `limit` | number | 50 | Máximo de resultados |
+| `offset` | number | 0 | Paginação |
+
+**Resposta `200`:**
 ```json
 [
   {
@@ -160,9 +181,12 @@ Lista sprints com filtros opcionais.
 Retorna os detalhes de uma sprint específica.
 
 **Parâmetros:**
-- `id` (path) — ID interno da sprint
 
-**Response 200:** mesmo schema do item da listagem acima.
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID interno da sprint |
+
+**Resposta `200`:** mesmo schema do item da listagem acima.
 
 ---
 
@@ -171,9 +195,12 @@ Retorna os detalhes de uma sprint específica.
 Retorna os dados de burndown da sprint (snapshots diários).
 
 **Parâmetros:**
-- `id` (path) — ID interno da sprint
 
-**Response 200:**
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID interno da sprint |
+
+**Resposta `200`:**
 ```json
 {
   "sprintId": "clsprint1",
@@ -200,6 +227,8 @@ Retorna os dados de burndown da sprint (snapshots diários).
 }
 ```
 
+> O array `raw` alimenta tanto o **Burndown Chart** quanto o **Cumulative Flow Diagram** no frontend.
+
 ---
 
 ### `GET /sprints/:sprintId/capacity/comparison`
@@ -207,9 +236,12 @@ Retorna os dados de burndown da sprint (snapshots diários).
 Retorna a comparação entre capacidade disponível e trabalho planejado/realizado para cada membro da sprint.
 
 **Parâmetros:**
-- `sprintId` (path) — ID interno da sprint
 
-**Response 200:**
+| Param | Tipo | Descrição |
+|---|---|---|
+| `sprintId` | path | ID interno da sprint |
+
+**Resposta `200`:**
 ```json
 {
   "sprint": {
@@ -258,13 +290,14 @@ Retorna a comparação entre capacidade disponível e trabalho planejado/realiza
 
 ---
 
-## Work Items
+## 📋 Work Items
 
 ### `GET /work-items`
 
 Lista work items com filtros.
 
 **Query params:**
+
 | Param | Tipo | Descrição |
 |---|---|---|
 | `projectId` | string | Filtra por projeto |
@@ -272,11 +305,11 @@ Lista work items com filtros.
 | `type` | string | `Product Backlog Item`, `Task`, `Bug`, `Feature`, `Epic` |
 | `state` | string | `New`, `To Do`, `In Progress`, `Done`, etc. |
 | `assignedToId` | string | Filtra por membro |
-| `isBlocked` | boolean | Apenas bloqueados |
-| `limit` | number | Máximo de resultados (padrão: 100) |
+| `isBlocked` | boolean | Retorna apenas bloqueados |
+| `limit` | number | Máximo de resultados (padrão: `100`) |
 | `offset` | number | Paginação |
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "data": [
@@ -313,7 +346,7 @@ Lista work items com filtros.
 
 Retorna todos os work items com `isBlocked = true` no momento.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 [
   {
@@ -338,9 +371,12 @@ Retorna todos os work items com `isBlocked = true` no momento.
 Retorna os detalhes completos de um work item.
 
 **Parâmetros:**
-- `id` (path) — ID do work item (número Azure)
 
-**Response 200:** objeto completo com todos os campos do modelo WorkItem (ver [DATABASE.md](DATABASE.md)).
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID do work item (número Azure) |
+
+**Resposta `200`:** objeto completo com todos os campos do modelo WorkItem (ver [DATABASE.md](DATABASE.md)).
 
 ---
 
@@ -349,9 +385,12 @@ Retorna os detalhes completos de um work item.
 Retorna o work item com seus filhos (ex: PBI com Tasks e Bugs).
 
 **Parâmetros:**
-- `id` (path) — ID do work item pai
 
-**Response 200:**
+| Param | Tipo | Descrição |
+|---|---|---|
+| `id` | path | ID do work item pai |
+
+**Resposta `200`:**
 ```json
 {
   "id": 100,
@@ -378,11 +417,13 @@ Retorna o work item com seus filhos (ex: PBI com Tasks e Bugs).
 
 ---
 
-## Sync
+## 🔄 Sync
 
 ### `POST /sync/full`
 
-Dispara uma sincronização completa de todos os projetos (trabalho intensivo — evite chamar com frequência).
+Dispara uma sincronização completa de todos os projetos.
+
+> ⚠️ Operação intensiva — evite chamar com frequência. Prefira o sync incremental.
 
 **Body (opcional):**
 ```json
@@ -393,7 +434,7 @@ Dispara uma sincronização completa de todos os projetos (trabalho intensivo �
 
 Se `projectId` não for informado, sincroniza todos os projetos.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "message": "Full sync triggered",
@@ -405,7 +446,7 @@ Se `projectId` não for informado, sincroniza todos os projetos.
 
 ### `POST /sync/incremental`
 
-Dispara uma sincronização incremental, buscando apenas work items alterados desde o último sync.
+Dispara um sync incremental, buscando apenas work items alterados desde o último sync.
 
 **Body (opcional):**
 ```json
@@ -414,7 +455,7 @@ Dispara uma sincronização incremental, buscando apenas work items alterados de
 }
 ```
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "message": "Incremental sync triggered",
@@ -424,13 +465,13 @@ Dispara uma sincronização incremental, buscando apenas work items alterados de
 
 ---
 
-## Dashboard
+## 📊 Dashboard
 
 ### `GET /dashboard/overview`
 
 Retorna uma visão consolidada com estatísticas globais de todos os projetos.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 {
   "totalProjects": 5,
@@ -445,9 +486,9 @@ Retorna uma visão consolidada com estatísticas globais de todos os projetos.
 
 ### `GET /dashboard/current-sprints`
 
-Retorna todas as sprints ativas no momento, com suas métricas resumidas.
+Retorna todas as sprints ativas com suas métricas resumidas.
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 [
   {
@@ -471,13 +512,14 @@ Retorna todas as sprints ativas no momento, com suas métricas resumidas.
 Retorna os alertas ativos (sprint em risco, blockers, sobrecarga de capacidade, scope creep).
 
 **Query params:**
+
 | Param | Tipo | Descrição |
 |---|---|---|
 | `projectId` | string | Filtra por projeto |
 | `severity` | string | `low`, `medium`, `high`, `critical` |
 | `type` | string | `sprint_risk`, `blocked_item`, `capacity_overload`, `scope_creep` |
 
-**Response 200:**
+**Resposta `200`:**
 ```json
 [
   {
@@ -496,13 +538,13 @@ Retorna os alertas ativos (sprint em risco, blockers, sobrecarga de capacidade, 
 
 ---
 
-## Códigos de status
+## 📌 Códigos de status
 
 | Código | Significado |
 |---|---|
-| `200` | Sucesso |
-| `400` | Parâmetros inválidos |
-| `404` | Recurso não encontrado |
-| `429` | Rate limit excedido |
-| `500` | Erro interno do servidor |
-| `503` | Serviço indisponível (banco offline) |
+| `200` | ✅ Sucesso |
+| `400` | ❌ Parâmetros inválidos |
+| `404` | 🔍 Recurso não encontrado |
+| `429` | ⏱️ Rate limit excedido |
+| `500` | 💥 Erro interno do servidor |
+| `503` | 🔌 Serviço indisponível (banco offline) |

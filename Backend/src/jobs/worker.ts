@@ -12,7 +12,7 @@ const connection = {
 };
 
 /**
- * Sync Job Processor
+ * Processador de Job de Sincronizacao
  */
 async function processSyncJob(job: Job) {
     logger.info(`[Job ${job.id}] Starting Sync Job: ${job.name}`);
@@ -36,7 +36,7 @@ async function processSyncJob(job: Job) {
 }
 
 /**
- * Initialize Workers
+ * Inicializar Workers
  */
 export function initWorkers() {
     const worker = new Worker(
@@ -44,7 +44,7 @@ export function initWorkers() {
         processSyncJob,
         {
             connection,
-            concurrency: 1, // Ensure only one sync runs at a time
+            concurrency: 1, // Garantir que apenas um sync rode por vez
         }
     );
 
