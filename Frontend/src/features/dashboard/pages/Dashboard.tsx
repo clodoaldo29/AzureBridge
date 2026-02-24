@@ -164,7 +164,7 @@ export function Dashboard() {
 
     // Busca todos os work items da sprint atual (para os gráficos donut)
     const { data: workItemsResponse } = useWorkItems(
-        currentSprint ? { sprintId: currentSprint.id, limit: 500 } : undefined
+        currentSprint ? { sprintId: currentSprint.id, includeRemoved: true, limit: 1000 } : undefined
     );
     const sprintWorkItems = workItemsResponse?.data || [];
 
@@ -216,7 +216,6 @@ export function Dashboard() {
     );
     const burndownInitial = Math.max(0, Math.round(Number(firstSnapshot?.totalWork || 0) - dayOneNetScope));
     const burndownCurrent = Math.max(0, Math.round(Number(lastSnapshot?.totalWork || 0)));
-    const burndownDelta = burndownCurrent - burndownInitial;
     const burndownRemaining = Math.max(0, Math.round(Number(lastSnapshot?.remainingWork || 0)));
     const burndownCompleted = Math.max(0, Math.round(Number(lastSnapshot?.completedWork || 0)));
 
@@ -226,9 +225,7 @@ export function Dashboard() {
     const plannedCurrent = sortedBurndown.length
         ? burndownCurrent
         : (capacityData?.summary.totalPlannedCurrent ?? capacityData?.summary.totalPlanned ?? 0);
-    const plannedDelta = sortedBurndown.length
-        ? burndownDelta
-        : (capacityData?.summary.totalPlannedDelta ?? (plannedCurrent - plannedInitial));
+    const plannedDelta = plannedCurrent - plannedInitial;
     const remainingHours = sortedBurndown.length
         ? burndownRemaining
         : (capacityData?.summary.totalRemaining ?? 0);
@@ -433,6 +430,7 @@ export function Dashboard() {
                             <div className="pt-2">
                                 <BurndownChart
                                     data={burndownData.raw}
+                                    workItems={sprintWorkItems}
                                     plannedInitial={plannedInitial}
                                     plannedCurrent={plannedCurrent}
                                     plannedDelta={plannedDelta}
@@ -453,5 +451,3 @@ export function Dashboard() {
         </div>
     );
 }
-
-

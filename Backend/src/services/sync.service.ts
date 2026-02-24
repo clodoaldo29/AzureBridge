@@ -6,7 +6,7 @@ import {
 } from '@/repositories';
 import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
-import type { AzureWorkItem } from '@/integrations/azure/types';
+import type { AzureWorkItem, AzureWorkItemRevision } from '@/integrations/azure/types';
 import { snapshotService } from '@/services/snapshot.service';
 
 /**
@@ -14,6 +14,128 @@ import { snapshotService } from '@/services/snapshot.service';
  * Sincroniza dados do Azure DevOps para o banco de dados
  */
 export class SyncService {
+    private readonly revisionPersistenceEnabled = this.parseBooleanEnv(process.env.ENABLE_REVISION_PERSISTENCE, false);
+    private readonly revisionSyncMaxItemsPerRun = this.parsePositiveIntEnv(process.env.REVISION_SYNC_MAX_ITEMS_PER_RUN, 100);
+
+    private parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
+        if (value == null) return fallback;
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'sim', 'on'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'nao', 'off'].includes(normalized)) return false;
+        return fallback;
+    }
+
+    private parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+        return Math.floor(parsed);
+    }
+
+    private normalizeToStartOfUtcDay(date: Date): Date {
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+    }
+
+    private normalizeToEndOfUtcDay(date: Date): Date {
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+    }
+
+    private mapSprintStateFromTimeFrame(timeFrameRaw?: string | null): 'Active' | 'Past' | 'Future' | null {
+        const timeFrame = String(timeFrameRaw || '').trim().toLowerCase();
+        if (timeFrame === 'current') return 'Active';
+        if (timeFrame === 'past') return 'Past';
+        if (timeFrame === 'future') return 'Future';
+        return null;
+    }
+
+    private mapSprintStateByDateWindow(startDate: Date, endDate: Date, now: Date = new Date()): 'Active' | 'Past' | 'Future' {
+        const windowStart = this.normalizeToStartOfUtcDay(startDate);
+        const windowEnd = this.normalizeToEndOfUtcDay(endDate);
+
+        if (now >= windowStart && now <= windowEnd) return 'Active';
+        if (now < windowStart) return 'Future';
+        return 'Past';
+    }
+
+    private resolveSprintState(timeFrameRaw: string | null | undefined, startDate: Date, endDate: Date): 'Active' | 'Past' | 'Future' {
+        const byTimeFrame = this.mapSprintStateFromTimeFrame(timeFrameRaw);
+        const byDateWindow = this.mapSprintStateByDateWindow(startDate, endDate);
+
+        // Regra de seguranca: se a sprint ainda esta dentro da janela de datas, manter como Active.
+        if (byDateWindow === 'Active') return 'Active';
+        return byTimeFrame ?? byDateWindow;
+    }
+
+    private isBlockedState(state?: string | null): boolean {
+        const s = String(state || '').trim().toLowerCase();
+        return s === 'blocked' || s === 'impeded' || s === 'impedido';
+    }
+
+    private hasBlockedTag(tagsRaw: unknown): boolean {
+        const tags = String(tagsRaw || '').toLowerCase();
+        return tags.includes('blocked') || tags.includes('blocker') || tags.includes('imped');
+    }
+
+    private isBlockedBoardColumn(boardColumnRaw: unknown): boolean {
+        const col = String(boardColumnRaw || '').trim().toLowerCase();
+        return col === 'blocked' || col.includes('imped');
+    }
+
+    private parseBlockedField(value: unknown): boolean {
+        if (typeof value === 'boolean') return value;
+        const s = String(value || '').trim().toLowerCase();
+        return s === 'true' || s === 'yes' || s === 'sim' || s === '1';
+    }
+
+    private extractRevisionChanges(value: unknown): Record<string, unknown> {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+        return value as Record<string, unknown>;
+    }
+
+    private extractChangedFieldsFromRevisionChanges(changes: Record<string, unknown>): string[] {
+        return Object.keys(changes).filter((key) => typeof key === 'string' && key.length > 0);
+    }
+
+    private async persistWorkItemRevisions(workItemId: number, revisions: AzureWorkItemRevision[]): Promise<number> {
+        if (!Array.isArray(revisions) || revisions.length === 0) return 0;
+
+        let persisted = 0;
+        for (const revision of revisions) {
+            if (typeof revision?.rev !== 'number') continue;
+
+            const fields = this.extractRevisionChanges(revision.fields);
+            const changedFields = this.extractChangedFieldsFromRevisionChanges(fields);
+            const revisedDateRaw = (fields['System.ChangedDate'] || fields['System.RevisedDate']) as string | undefined;
+            const revisedDate = revisedDateRaw ? new Date(revisedDateRaw) : new Date();
+            const revisedByRaw = fields['System.ChangedBy'] as { displayName?: string; uniqueName?: string } | undefined;
+            const revisedBy = revisedByRaw?.displayName || revisedByRaw?.uniqueName || revision.revisedBy?.displayName || 'Unknown';
+
+            await prisma.workItemRevision.upsert({
+                where: {
+                    workItemId_rev: {
+                        workItemId,
+                        rev: revision.rev,
+                    },
+                },
+                create: {
+                    workItemId,
+                    rev: revision.rev,
+                    revisedDate,
+                    revisedBy,
+                    changes: fields as any,
+                    changedFields,
+                },
+                update: {
+                    revisedDate,
+                    revisedBy,
+                    changes: fields as any,
+                    changedFields,
+                },
+            });
+            persisted++;
+        }
+
+        return persisted;
+    }
     /**
      * Sincronizacao completa - sincroniza tudo
      */
@@ -243,14 +365,19 @@ export class SyncService {
                     continue;
                 }
 
+                const startDate = new Date(azureSprint.attributes.startDate);
+                const endDate = new Date(azureSprint.attributes.finishDate);
+                const normalizedTimeFrame = String(azureSprint.attributes.timeFrame || '').trim().toLowerCase() || 'future';
+                const sprintState = this.resolveSprintState(azureSprint.attributes.timeFrame, startDate, endDate);
+
                 await sprintRepository.upsert({
                     azureId: azureSprint.id,
                     name: azureSprint.name,
                     path: azureSprint.path,
-                    startDate: new Date(azureSprint.attributes.startDate),
-                    endDate: new Date(azureSprint.attributes.finishDate),
-                    state: azureSprint.attributes.timeFrame === 'current' ? 'Active' : 'Past',
-                    timeFrame: azureSprint.attributes.timeFrame || 'future',
+                    startDate,
+                    endDate,
+                    state: sprintState,
+                    timeFrame: normalizedTimeFrame,
                     project: {
                         connect: { id: project.id },
                     },
@@ -294,6 +421,8 @@ export class SyncService {
      */
     private async processWorkItems(azureWorkItems: AzureWorkItem[]): Promise<number> {
         let count = 0;
+        let revisionPersistedCount = 0;
+        let revisionWorkItemBudget = this.revisionSyncMaxItemsPerRun;
 
         // Obter projeto
         const projects = await projectRepository.findAll();
@@ -357,6 +486,10 @@ export class SyncService {
                     : (existing?.activatedDate ?? null);
                 const state = (fields['System.State'] || '').toString();
                 const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
+                const isBlocked = this.isBlockedState(state)
+                    || this.isBlockedBoardColumn(fields['System.BoardColumn'])
+                    || this.parseBlockedField(fields['Microsoft.VSTS.Common.Blocked'])
+                    || this.hasBlockedTag(fields['System.Tags']);
                 const fallbackHistoricalEffort = Math.max(
                     Number(existing?.doneRemainingWork || 0),
                     Number(existing?.lastRemainingWork || 0),
@@ -453,6 +586,8 @@ export class SyncService {
                     closedBy: fields['System.ClosedBy']?.displayName,
                     resolvedBy: fields['System.ResolvedBy']?.displayName,
                     tags: fields['System.Tags'] ? fields['System.Tags'].split(';').map((t: string) => t.trim()) : [],
+                    isBlocked,
+                    isRemoved: false,
                     areaPath: fields['System.AreaPath'],
                     iterationPath: fields['System.IterationPath'],
                     url: azureWI.url,
@@ -480,10 +615,31 @@ export class SyncService {
                     }),
                 });
 
+                if (this.revisionPersistenceEnabled && revisionWorkItemBudget > 0 && typeof azureWI.id === 'number') {
+                    try {
+                        const revisions = await workItemsService.getWorkItemRevisions(azureWI.id);
+                        revisionPersistedCount += await this.persistWorkItemRevisions(azureWI.id, revisions);
+                        revisionWorkItemBudget--;
+                    } catch (error) {
+                        logger.warn(`Failed to persist revisions for work item ${azureWI.id}`, {
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                    }
+                }
+
                 count++;
             } catch (error) {
                 logger.error(`Failed to process work item ${azureWI.id}`, error);
             }
+        }
+
+        if (this.revisionPersistenceEnabled) {
+            logger.info('Revision persistence summary', {
+                workItemsProcessed: count,
+                revisionsPersisted: revisionPersistedCount,
+                revisionWorkItemBudgetUsed: this.revisionSyncMaxItemsPerRun - revisionWorkItemBudget,
+                revisionWorkItemBudgetLimit: this.revisionSyncMaxItemsPerRun,
+            });
         }
 
         return count;

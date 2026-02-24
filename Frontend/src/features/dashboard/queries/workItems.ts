@@ -14,6 +14,7 @@ export const useWorkItems = (params?: {
     projectId?: string;
     type?: string;
     state?: string;
+    includeRemoved?: boolean;
     limit?: number;
     offset?: number;
 }) => {

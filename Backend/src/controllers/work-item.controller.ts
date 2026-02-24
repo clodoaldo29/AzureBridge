@@ -2,7 +2,51 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
+import { getAzureDevOpsClient } from '@/integrations/azure/client';
 import { z } from 'zod';
+
+async function resolveBlockedIdsFromAzureTaskboard(): Promise<number[]> {
+    const client = getAzureDevOpsClient();
+    const [coreApi, workApi] = await Promise.all([
+        client.getCoreApi(),
+        client.getWorkApi()
+    ]);
+
+    const activeSprints = await prisma.sprint.findMany({
+        where: { state: { in: ['active', 'Active'] } },
+        include: { project: true },
+    });
+
+    const blockedIds = new Set<number>();
+
+    for (const sprint of activeSprints) {
+        const projectName = sprint.project.name;
+        const teams = await coreApi.getTeams(projectName);
+        const defaultTeam = teams.find((t) => t.name === `${projectName} Team`) || teams[0];
+        if (!defaultTeam) continue;
+
+        try {
+            const columns = await workApi.getWorkItemColumns(
+                { project: projectName, team: defaultTeam.id || defaultTeam.name },
+                String(sprint.azureId)
+            );
+
+            for (const col of columns || []) {
+                const columnName = String(col.column || '').toLowerCase();
+                if (!columnName.includes('block') && !columnName.includes('imped')) continue;
+                if (typeof col.workItemId === 'number') blockedIds.add(col.workItemId);
+            }
+        } catch (error) {
+            logger.warn('Failed to read taskboard columns for blocked items', {
+                project: projectName,
+                sprint: sprint.name,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    return [...blockedIds];
+}
 
 export class WorkItemController {
     /**
@@ -15,13 +59,15 @@ export class WorkItemController {
             type: z.string().optional(),
             state: z.string().optional(),
             assignedTo: z.string().optional(),
+            includeRemoved: z.coerce.boolean().optional().default(false),
             limit: z.coerce.number().optional().default(50),
             offset: z.coerce.number().optional().default(0)
         });
 
         try {
             const filters = querySchema.parse(req.query);
-            const where: any = { isRemoved: false };
+            const where: any = {};
+            if (!filters.includeRemoved) where.isRemoved = false;
 
             if (filters.sprintId) where.sprintId = filters.sprintId;
             if (filters.projectId) where.projectId = filters.projectId;
@@ -138,12 +184,16 @@ export class WorkItemController {
      */
     async getBlockedWorkItems(_req: FastifyRequest, reply: FastifyReply) {
         try {
+            const azureBlockedIds = await resolveBlockedIdsFromAzureTaskboard();
             const items = await prisma.workItem.findMany({
                 where: {
                     isRemoved: false,
-                    // Assumindo que boolean/tag 'isBlocked' existe
-                    // Usando verificacoes basicas de estado por enquanto
-                    isBlocked: true
+                    OR: [
+                        { isBlocked: true },
+                        ...(azureBlockedIds.length > 0 ? [{ id: { in: azureBlockedIds } }] : []),
+                        { state: { in: ['Blocked', 'blocked', 'Impedido', 'impedido'] } },
+                        { tags: { hasSome: ['Blocked', 'blocked', 'Blocker', 'blocker', 'Impedimento', 'impedimento'] } }
+                    ]
                 },
                 include: { assignedTo: true }
             });
@@ -155,6 +205,9 @@ export class WorkItemController {
                 return reply.send({ success: true, data: [] });
             }
 
+            logger.error('Failed to load blocked work items', {
+                error: error instanceof Error ? error.message : String(error),
+            });
             return reply.status(500).send({ success: false, error: 'Failed' });
         }
     }

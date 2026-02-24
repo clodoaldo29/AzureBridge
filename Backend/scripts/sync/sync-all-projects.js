@@ -10,6 +10,37 @@ function toDate(value) {
     return isNaN(dt.getTime()) ? null : dt;
 }
 
+function toUtcStartOfDay(date) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+}
+
+function toUtcEndOfDay(date) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+function mapStateFromTimeFrame(timeFrame) {
+    const tf = String(timeFrame || '').toLowerCase();
+    if (tf === 'current') return 'Active';
+    if (tf === 'future') return 'Future';
+    if (tf === 'past') return 'Past';
+    return null;
+}
+
+function mapTimeFrameByDateWindow(startDate, endDate, now = new Date()) {
+    const start = toUtcStartOfDay(startDate);
+    const end = toUtcEndOfDay(endDate);
+    if (now >= start && now <= end) return 'current';
+    if (now < start) return 'future';
+    return 'past';
+}
+
+function resolveSprintState(timeFrame, startDate, endDate) {
+    const byTimeFrame = mapStateFromTimeFrame(timeFrame);
+    const byWindow = mapTimeFrameByDateWindow(startDate, endDate);
+    if (byWindow === 'current') return 'Active';
+    return byTimeFrame || mapStateFromTimeFrame(byWindow);
+}
+
 async function main() {
     console.log('SYNC ALL PROJECTS + SPRINTS');
     console.log('='.repeat(60));
@@ -80,9 +111,8 @@ async function main() {
                 const startDate = toDate(node.attributes.startDate);
                 const endDate = toDate(node.attributes.finishDate);
                 if (startDate && endDate) {
-                    let timeFrame = 'future';
-                    if (now >= startDate && now <= endDate) timeFrame = 'current';
-                    else if (now > endDate) timeFrame = 'past';
+                    const timeFrame = mapTimeFrameByDateWindow(startDate, endDate, now);
+                    const state = resolveSprintState(timeFrame, startDate, endDate);
 
                     sprints.push({
                         id: node.identifier || node.id?.toString(),
@@ -90,7 +120,8 @@ async function main() {
                         path: nodePath,
                         startDate,
                         endDate,
-                        timeFrame
+                        timeFrame,
+                        state
                     });
                 }
             }
@@ -118,7 +149,7 @@ async function main() {
                     path: sprint.path,
                     startDate: sprint.startDate,
                     endDate: sprint.endDate,
-                    state: sprint.timeFrame === 'current' ? 'Active' : 'Past',
+                    state: sprint.state,
                     timeFrame: sprint.timeFrame,
                     projectId: dbProject.id
                 },
@@ -127,7 +158,7 @@ async function main() {
                     path: sprint.path,
                     startDate: sprint.startDate,
                     endDate: sprint.endDate,
-                    state: sprint.timeFrame === 'current' ? 'Active' : 'Past',
+                    state: sprint.state,
                     timeFrame: sprint.timeFrame
                 }
             });

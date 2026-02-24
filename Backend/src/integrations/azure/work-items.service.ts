@@ -3,6 +3,7 @@ import { logger } from '@/utils/logger';
 import type {
     AzureWorkItem,
     AzureWorkItemUpdate,
+    AzureWorkItemRevision,
     AzureComment,
     WorkItemQueryOptions,
 } from './types';
@@ -53,6 +54,9 @@ export class WorkItemsService {
                 'Microsoft.VSTS.Common.ResolvedDate',
                 'System.StateChangeDate',
                 'Microsoft.VSTS.Common.ActivatedDate',
+                'Microsoft.VSTS.Common.Blocked',
+                'System.BoardColumn',
+                'System.BoardColumnDone',
                 'System.CreatedBy',
                 'System.ChangedBy',
                 'System.ClosedBy',
@@ -289,6 +293,23 @@ export class WorkItemsService {
     extractIdFromUrl(url: string): number | null {
         const match = url.match(/workItems\/(\d+)/);
         return match ? parseInt(match[1], 10) : null;
+    }
+
+    /**
+     * Buscar revisoes completas de um work item
+     */
+    async getWorkItemRevisions(workItemId: number): Promise<AzureWorkItemRevision[]> {
+        try {
+            const client = getAzureDevOpsClient();
+            const witApi = await client.getWorkItemTrackingApi();
+            const revisions = await witApi.getRevisions(workItemId);
+
+            logger.info(`Fetched ${revisions.length} revisions for work item ${workItemId}`);
+            return revisions as unknown as AzureWorkItemRevision[];
+        } catch (error) {
+            logger.error('Failed to fetch work item revisions', { workItemId, error });
+            throw error;
+        }
     }
 
     private async filterSupportedFields(witApi: any, fields: string[]): Promise<string[]> {

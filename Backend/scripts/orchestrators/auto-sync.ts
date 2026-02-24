@@ -112,9 +112,10 @@ async function main() {
     const mode = rawMode === 'bootstrap' ? 'full' : rawMode;
     const runNewProjects = (process.env.AUTO_SYNC_NEW_PROJECTS || 'true').toLowerCase() === 'true';
     const runHierarchy = (process.env.AUTO_SYNC_HIERARCHY || 'false').toLowerCase() === 'true';
+    const runSprintReconciliation = (process.env.AUTO_SYNC_RECONCILE_ACTIVE_SPRINTS || 'true').toLowerCase() === 'true';
     const runSafeHistorySnapshots = (process.env.AUTO_SYNC_REBUILD_HISTORY_SNAPSHOTS || 'true').toLowerCase() === 'true';
-    const runBurndownRebuildHourly = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY || 'false').toLowerCase() === 'true';
-    const runBurndownRebuildDaily = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY || 'false').toLowerCase() === 'true';
+    const runBurndownRebuildHourly = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY || 'true').toLowerCase() === 'true';
+    const runBurndownRebuildDaily = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY || 'true').toLowerCase() === 'true';
     const runBurndownRebuildFull = (process.env.AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_FULL || 'true').toLowerCase() === 'true';
     const targetProjects = process.env.TARGET_PROJECTS || '';
     const maxAttempts = Math.max(1, Number(process.env.AUTO_SYNC_STEP_RETRIES || 3));
@@ -125,6 +126,7 @@ async function main() {
     console.log(`MODE: ${mode}`);
     console.log(`NEW_PROJECTS: ${runNewProjects ? 'enabled' : 'disabled'}`);
     console.log(`HIERARCHY: ${runHierarchy ? 'enabled' : 'disabled'}`);
+    console.log(`RECONCILE_ACTIVE_SPRINTS: ${runSprintReconciliation ? 'enabled' : 'disabled'}`);
     console.log(`REBUILD_HISTORY_SNAPSHOTS: ${runSafeHistorySnapshots ? 'enabled' : 'disabled'}`);
     console.log(`REBUILD_BURNDOWN_HOURLY: ${runBurndownRebuildHourly ? 'enabled' : 'disabled'}`);
     console.log(`REBUILD_BURNDOWN_DAILY: ${runBurndownRebuildDaily ? 'enabled' : 'disabled'}`);
@@ -139,6 +141,9 @@ async function main() {
     if (mode === 'hourly') {
         steps.push(tsxStep('WIKI SYNC (INCREMENTAL)', 'scripts/sync/wiki-sync.ts', { WIKI_SYNC_MODE: 'incremental' }));
         steps.push(tsxStep('SMART SYNC', 'scripts/sync/smart-sync.ts'));
+        if (runSprintReconciliation) {
+            steps.push(tsxStep('RECONCILE ACTIVE SPRINT WORKITEMS', 'scripts/maintenance/reconcile-active-sprint-workitems.ts'));
+        }
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
         if (runSafeHistorySnapshots) {
             steps.push(tsxStep('REBUILD ACTIVE HISTORY SNAPSHOTS (SAFE)', 'scripts/maintenance/rebuild-active-history-snapshots.ts'));
@@ -154,6 +159,9 @@ async function main() {
         steps.push(tsxStep('BACKFILL HISTORY (MISSING FIELDS)', 'scripts/backfill-project-history-batch.ts'));
         steps.push(tsxStep('BACKFILL CLOSED DATES', 'scripts/backfill/backfill-closed-dates.ts'));
         steps.push(nodeStep('SYNC CAPACITY', 'scripts/sync/sync-capacity.js'));
+        if (runSprintReconciliation) {
+            steps.push(tsxStep('RECONCILE ACTIVE SPRINT WORKITEMS', 'scripts/maintenance/reconcile-active-sprint-workitems.ts'));
+        }
         steps.push(tsxStep('RUN SNAPSHOT', 'scripts/run-snapshot.ts'));
         if (runSafeHistorySnapshots) {
             steps.push(tsxStep('REBUILD ACTIVE HISTORY SNAPSHOTS (SAFE)', 'scripts/maintenance/rebuild-active-history-snapshots.ts'));
@@ -184,6 +192,9 @@ async function main() {
         }
 
         steps.push(tsxStep('SMART SYNC', 'scripts/sync/smart-sync.ts'));
+        if (runSprintReconciliation) {
+            steps.push(tsxStep('RECONCILE ACTIVE SPRINT WORKITEMS', 'scripts/maintenance/reconcile-active-sprint-workitems.ts'));
+        }
         steps.push(tsxStep('BACKFILL HISTORY (MISSING FIELDS)', 'scripts/backfill-project-history-batch.ts'));
         steps.push(tsxStep('BACKFILL CLOSED DATES', 'scripts/backfill/backfill-closed-dates.ts'));
         steps.push(nodeStep('SYNC CAPACITY', 'scripts/sync/sync-capacity.js'));

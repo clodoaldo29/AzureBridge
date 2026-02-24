@@ -7,6 +7,9 @@ require('dotenv/config');
 const prisma = new PrismaClient();
 
 const DEFAULT_TARGETS = ['GIGA - Retrabalho', 'GIGA - Tempos e Movimentos'];
+const ENABLE_REVISION_PERSISTENCE = ['true', '1', 'yes', 'sim', 'on']
+    .includes(String(process.env.ENABLE_REVISION_PERSISTENCE || 'false').trim().toLowerCase());
+const REVISION_SYNC_MAX_ITEMS_PER_RUN = Math.max(1, Number(process.env.REVISION_SYNC_MAX_ITEMS_PER_RUN || 100));
 
 function getTargets() {
     const env = process.env.TARGET_PROJECTS;
@@ -21,6 +24,84 @@ function isDoneState(state) {
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function toUtcStartOfDay(date) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+}
+
+function toUtcEndOfDay(date) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+function mapStateFromTimeFrame(timeFrame) {
+    const tf = String(timeFrame || '').toLowerCase();
+    if (tf === 'current') return 'Active';
+    if (tf === 'future') return 'Future';
+    if (tf === 'past') return 'Past';
+    return null;
+}
+
+function mapTimeFrameByDateWindow(startDate, endDate, now = new Date()) {
+    const start = toUtcStartOfDay(startDate);
+    const end = toUtcEndOfDay(endDate);
+    if (now >= start && now <= end) return 'current';
+    if (now < start) return 'future';
+    return 'past';
+}
+
+function resolveSprintState(timeFrame, startDate, endDate) {
+    const byTimeFrame = mapStateFromTimeFrame(timeFrame);
+    const byWindow = mapTimeFrameByDateWindow(startDate, endDate);
+    if (byWindow === 'current') return 'Active';
+    return byTimeFrame || mapStateFromTimeFrame(byWindow);
+}
+
+function normalizeRevisionChanges(fields) {
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return {};
+    return fields;
+}
+
+async function persistWorkItemRevisions(workItemId, witApi) {
+    const revisions = await witApi.getRevisions(workItemId);
+    if (!Array.isArray(revisions) || revisions.length === 0) return 0;
+
+    let persisted = 0;
+    for (const rev of revisions) {
+        if (typeof rev?.rev !== 'number') continue;
+        const fields = normalizeRevisionChanges(rev.fields);
+        const changedFields = Object.keys(fields);
+        const revisedDateRaw = fields['System.ChangedDate'] || fields['System.RevisedDate'];
+        const revisedDate = revisedDateRaw ? new Date(revisedDateRaw) : new Date();
+        const revisedByObj = fields['System.ChangedBy'];
+        const revisedBy = revisedByObj?.displayName || revisedByObj?.uniqueName || rev.revisedBy?.displayName || 'Unknown';
+
+        await prisma.workItemRevision.upsert({
+            where: {
+                workItemId_rev: {
+                    workItemId,
+                    rev: rev.rev,
+                },
+            },
+            create: {
+                workItemId,
+                rev: rev.rev,
+                revisedDate,
+                revisedBy,
+                changes: fields,
+                changedFields,
+            },
+            update: {
+                revisedDate,
+                revisedBy,
+                changes: fields,
+                changedFields,
+            },
+        });
+        persisted++;
+    }
+
+    return persisted;
 }
 
 async function syncTargets() {
@@ -50,6 +131,8 @@ async function syncTargets() {
 
     const stats = {};
     let projectIndex = 0;
+    let revisionBudget = REVISION_SYNC_MAX_ITEMS_PER_RUN;
+    let revisionsPersisted = 0;
 
     for (const azProject of targetProjects) {
         projectIndex++;
@@ -134,9 +217,8 @@ async function syncTargets() {
                 const startDate = node.attributes.startDate ? new Date(node.attributes.startDate) : null;
                 const endDate = node.attributes.finishDate ? new Date(node.attributes.finishDate) : null;
                 if (startDate && endDate) {
-                    let timeFrame = 'future';
-                    if (now >= startDate && now <= endDate) timeFrame = 'current';
-                    else if (now > endDate) timeFrame = 'past';
+                    const timeFrame = mapTimeFrameByDateWindow(startDate, endDate, now);
+                    const state = resolveSprintState(timeFrame, startDate, endDate);
 
                     sprints.push({
                         id: node.identifier || node.id?.toString(),
@@ -144,7 +226,8 @@ async function syncTargets() {
                         path: nodePath,
                         startDate,
                         endDate,
-                        timeFrame
+                        timeFrame,
+                        state
                     });
                 }
             }
@@ -186,7 +269,7 @@ async function syncTargets() {
                     path: sprint.path,
                     startDate: sprint.startDate,
                     endDate: sprint.endDate,
-                    state: sprint.timeFrame === 'current' ? 'Active' : 'Past',
+                    state: sprint.state,
                     timeFrame: sprint.timeFrame,
                     projectId: dbProject.id,
                 },
@@ -195,7 +278,7 @@ async function syncTargets() {
                     path: sprint.path,
                     startDate: sprint.startDate,
                     endDate: sprint.endDate,
-                    state: sprint.timeFrame === 'current' ? 'Active' : 'Past',
+                    state: sprint.state,
                     timeFrame: sprint.timeFrame,
                 }
             });
@@ -321,6 +404,15 @@ async function syncTargets() {
                         }
                     });
 
+                    if (ENABLE_REVISION_PERSISTENCE && revisionBudget > 0) {
+                        try {
+                            revisionsPersisted += await persistWorkItemRevisions(wi.id, witApi);
+                            revisionBudget--;
+                        } catch (err) {
+                            console.log(`  WARN: Failed to persist revisions for WI ${wi.id}: ${err.message}`);
+                        }
+                    }
+
                     sprintCount++;
                 }
 
@@ -343,6 +435,9 @@ async function syncTargets() {
     Object.entries(stats).forEach(([projectName, data]) => {
         console.log(`  ${projectName}: ${data.sprints} sprints, ${data.workItems} work items`);
     });
+    if (ENABLE_REVISION_PERSISTENCE) {
+        console.log(`Revisions persisted: ${revisionsPersisted} (budget used: ${REVISION_SYNC_MAX_ITEMS_PER_RUN - revisionBudget}/${REVISION_SYNC_MAX_ITEMS_PER_RUN})`);
+    }
     console.log('='.repeat(60));
 }
 

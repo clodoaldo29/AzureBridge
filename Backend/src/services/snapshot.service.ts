@@ -2,6 +2,149 @@ import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 
 export class SnapshotService {
+    private readonly scopeAllowedTypes = new Set(['task', 'bug', 'test case']);
+    private readonly sprintTimezone = process.env.SPRINT_TIMEZONE || 'America/Sao_Paulo';
+
+    private extractFieldValue(raw: any): any {
+        if (!raw || typeof raw !== 'object') return raw;
+        if (Object.prototype.hasOwnProperty.call(raw, 'newValue')) return raw.newValue;
+        if (Object.prototype.hasOwnProperty.call(raw, 'value')) return raw.value;
+        return raw;
+    }
+
+    private parseRemaining(raw: any): number | null {
+        const value = this.extractFieldValue(raw);
+        if (value === null || value === undefined || value === '') return null;
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+    }
+
+    private parseState(raw: any): string | null {
+        const value = this.extractFieldValue(raw);
+        if (value === null || value === undefined) return null;
+        return String(value).trim().toLowerCase();
+    }
+
+    private parseIteration(raw: any): string | null {
+        const value = this.extractFieldValue(raw);
+        if (value === null || value === undefined) return null;
+        return String(value).trim().toLowerCase();
+    }
+
+    private isInSprintPath(iteration: string | null | undefined, sprintPath: string): boolean {
+        const it = String(iteration || '').trim().toLowerCase();
+        if (!it) return false;
+        const sp = String(sprintPath || '').trim().toLowerCase();
+        return it === sp || it.startsWith(`${sp}\\`);
+    }
+
+    private async computeDailyScopeCounters(params: {
+        projectId: string;
+        sprintPath: string;
+        day: Date;
+    }): Promise<{ addedCount: number; removedCount: number }> {
+        const { projectId, sprintPath, day } = params;
+        const dayStart = this.toUtcDay(day);
+        const dayKey = this.toBusinessDayKey(dayStart);
+        const queryStart = new Date(dayStart);
+        queryStart.setUTCDate(queryStart.getUTCDate() - 1);
+        const queryEnd = new Date(dayStart);
+        queryEnd.setUTCDate(queryEnd.getUTCDate() + 2);
+
+        const dayRevisionsRaw = await prisma.workItemRevision.findMany({
+            where: {
+                revisedDate: { gte: queryStart, lt: queryEnd },
+                workItem: { projectId }
+            },
+            include: {
+                workItem: {
+                    select: {
+                        id: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: [{ workItemId: 'asc' }, { rev: 'asc' }]
+        });
+
+        const dayRevisions = dayRevisionsRaw.filter((r) => this.toBusinessDayKey(r.revisedDate) === dayKey);
+
+        if (!dayRevisions.length) return { addedCount: 0, removedCount: 0 };
+
+        const workItemIds = Array.from(new Set(dayRevisions.map((r) => r.workItemId)));
+
+        const historyRows = await prisma.workItemRevision.findMany({
+            where: {
+                workItemId: { in: workItemIds },
+                revisedDate: { lt: queryEnd }
+            },
+            select: {
+                workItemId: true,
+                rev: true,
+                changes: true
+            },
+            orderBy: [{ workItemId: 'asc' }, { rev: 'asc' }]
+        });
+
+        const historyByItem = new Map<number, Array<{ rev: number; changes: any }>>();
+        for (const row of historyRows) {
+            const list = historyByItem.get(row.workItemId) || [];
+            list.push({ rev: row.rev, changes: row.changes as any });
+            historyByItem.set(row.workItemId, list);
+        }
+
+        let added = 0;
+        let removed = 0;
+
+        for (const rev of dayRevisions) {
+            const type = String(rev.workItem?.type || '').trim().toLowerCase();
+            if (!this.scopeAllowedTypes.has(type)) continue;
+
+            const itemHistory = historyByItem.get(rev.workItemId) || [];
+            const idx = itemHistory.findIndex((h) => h.rev === rev.rev);
+            if (idx < 0) continue;
+
+            const currentChanges: any = itemHistory[idx].changes || {};
+            const prevChanges: any = idx > 0 ? (itemHistory[idx - 1].changes || {}) : {};
+
+            const prevRemaining = this.parseRemaining(prevChanges['Microsoft.VSTS.Scheduling.RemainingWork']);
+            const currRemaining = this.parseRemaining(currentChanges['Microsoft.VSTS.Scheduling.RemainingWork']);
+            if (prevRemaining === null || currRemaining === null) continue;
+
+            const prevState = this.parseState(prevChanges['System.State']) || '';
+            const currState = this.parseState(currentChanges['System.State']) || prevState;
+
+            const prevIteration = this.parseIteration(prevChanges['System.IterationPath']);
+            const currIteration = this.parseIteration(currentChanges['System.IterationPath']) || prevIteration;
+
+            const prevInSprint = this.isInSprintPath(prevIteration, sprintPath);
+            const currInSprint = this.isInSprintPath(currIteration, sprintPath);
+
+            const completionEvent = prevRemaining > 0 && currRemaining === 0 && this.isDoneState(currState);
+
+            if (!prevInSprint && currInSprint) {
+                if (currRemaining > 0) added += currRemaining;
+                continue;
+            }
+
+            if (prevInSprint && !currInSprint) {
+                if (prevRemaining > 0) removed += prevRemaining;
+                continue;
+            }
+
+            if (prevInSprint && currInSprint) {
+                const delta = currRemaining - prevRemaining;
+                if (delta > 0) added += delta;
+                if (delta < 0 && !completionEvent) removed += Math.abs(delta);
+            }
+        }
+
+        return {
+            addedCount: Math.max(0, Math.round(added)),
+            removedCount: Math.max(0, Math.round(removed))
+        };
+    }
+
     private isPbiType(type?: string | null): boolean {
         const t = String(type || '').trim().toLowerCase();
         return t === 'product backlog item' || t === 'user story' || t === 'pbi';
@@ -26,6 +169,16 @@ export class SnapshotService {
         const d = new Date(date);
         d.setUTCHours(0, 0, 0, 0);
         return d;
+    }
+
+    private toBusinessDayKey(date: Date): string {
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: this.sprintTimezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        return fmt.format(date);
     }
 
     private isWeekend(date: Date): boolean {
@@ -212,6 +365,12 @@ export class SnapshotService {
             }
             completedWork = Math.max(0, totalWork - remainingWork);
 
+            const { addedCount, removedCount } = await this.computeDailyScopeCounters({
+                projectId: sprint.projectId,
+                sprintPath: sprint.path,
+                day: today
+            });
+
             // Save or refresh same-day snapshot to capture intra-day scope changes.
             await prisma.sprintSnapshot.upsert({
                 where: {
@@ -232,7 +391,9 @@ export class SnapshotService {
                     todoCount,
                     inProgressCount,
                     doneCount,
-                    blockedCount
+                    blockedCount,
+                    addedCount,
+                    removedCount
                 },
                 update: {
                     remainingWork,
@@ -244,7 +405,9 @@ export class SnapshotService {
                     todoCount,
                     inProgressCount,
                     doneCount,
-                    blockedCount
+                    blockedCount,
+                    addedCount,
+                    removedCount
                 }
             });
 

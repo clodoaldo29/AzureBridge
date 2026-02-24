@@ -27,7 +27,9 @@
     "sync:wiki": "tsx scripts/sync/wiki-sync.ts",
     "sync:hourly": "tsx scripts/hourly-sync.ts",
     "sync:daily": "tsx scripts/daily-sync.ts",
-    "sync:full": "tsx scripts/full-sync.ts"
+    "sync:full": "tsx scripts/full-sync.ts",
+    "sync:revisions:backfill": "tsx scripts/backfill/backfill-workitem-revisions.ts",
+    "audit:scope-reconcile": "tsx scripts/maintenance/reconcile-scope-delta.ts"
   },
   "keywords": [
     "azure-devops",

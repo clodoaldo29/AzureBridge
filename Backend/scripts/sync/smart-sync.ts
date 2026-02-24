@@ -15,10 +15,14 @@ interface SyncStats {
     updatedBasic: number;
     updatedHierarchy: number;
     updatedHistory: number;
+    revisionsPersisted: number;
     errors: number;
 }
 
 const DB_RETRY_DELAYS_MS = [5000, 15000, 30000];
+const ENABLE_REVISION_PERSISTENCE = ['true', '1', 'yes', 'sim', 'on']
+    .includes(String(process.env.ENABLE_REVISION_PERSISTENCE || 'false').trim().toLowerCase());
+const REVISION_SYNC_MAX_ITEMS_PER_RUN = Math.max(1, Number(process.env.REVISION_SYNC_MAX_ITEMS_PER_RUN || 100));
 
 function isTransientDbError(error: any): boolean {
     const msg = String(error?.message || error || '');
@@ -44,6 +48,7 @@ async function runSmartSyncAttempt() {
         updatedBasic: 0,
         updatedHierarchy: 0,
         updatedHistory: 0,
+        revisionsPersisted: 0,
         errors: 0
     };
 
@@ -114,6 +119,8 @@ async function runSmartSyncAttempt() {
 
         console.log(`🔍 Found ${changedIds.length} changed items to process.`);
 
+        let revisionBudget = REVISION_SYNC_MAX_ITEMS_PER_RUN;
+
         // 4. Process Items (Basic + Hierarchy)
         // We fetch details in batches
         for (let i = 0; i < changedIds.length; i += 50) { // Fetch batch 50 for details
@@ -146,6 +153,12 @@ async function runSmartSyncAttempt() {
                     const hierarchyUpdated = await syncHierarchy(azItem, prisma);
                     if (hierarchyUpdated) stats.updatedHierarchy++;
 
+                    if (ENABLE_REVISION_PERSISTENCE && revisionBudget > 0) {
+                        const persisted = await persistWorkItemRevisions(azItem.id, witApi, prisma);
+                        stats.revisionsPersisted += persisted;
+                        revisionBudget--;
+                    }
+
                     // Check History (if initialRemainingWork is 0/null and item is not new)
                     const needsHistory = await checkHistoryNeeded(azItem.id, prisma);
                     if (needsHistory) {
@@ -170,6 +183,7 @@ async function runSmartSyncAttempt() {
         console.log(`   Basic Updates: ${stats.updatedBasic}`);
         console.log(`   Hierarchy Updates: ${stats.updatedHierarchy}`);
         console.log(`   History Recovered: ${stats.updatedHistory}`);
+        console.log(`   Revisions Persisted: ${stats.revisionsPersisted}`);
         console.log(`   Errors: ${stats.errors}`);
 
         try {
@@ -242,13 +256,56 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
 
     // Helper date parser
     const d = (val: any) => val ? new Date(val) : null;
+    const state = (f['System.State'] || '').toString();
+    const tagsRaw = String(f['System.Tags'] || '').toLowerCase();
+    const blockedFieldRaw = f['Microsoft.VSTS.Common.Blocked'];
+    const blockedField = typeof blockedFieldRaw === 'boolean'
+        ? blockedFieldRaw
+        : ['true', 'yes', 'sim', '1'].includes(String(blockedFieldRaw || '').trim().toLowerCase());
+    const blockedByState = ['blocked', 'impeded', 'impedido'].includes(state.trim().toLowerCase());
+    const boardColumn = String(f['System.BoardColumn'] || '').trim().toLowerCase();
+    const blockedByBoardColumn = boardColumn === 'blocked' || boardColumn.includes('imped');
+    const blockedByTag = tagsRaw.includes('blocked') || tagsRaw.includes('blocker') || tagsRaw.includes('imped');
+    const isBlocked = blockedField || blockedByState || blockedByBoardColumn || blockedByTag;
+
+    const hasField = (fieldName: string) => Object.prototype.hasOwnProperty.call(f, fieldName);
+    const stateLower = state.trim().toLowerCase();
+    const isDoneState = stateLower === 'done' || stateLower === 'closed' || stateLower === 'completed';
 
     // Upsert
-    const existing = await prisma.workItem.findUnique({ where: { id } });
+    const existing = await prisma.workItem.findUnique({
+        where: { id },
+        // @ts-ignore - Campos historicos existem no banco
+        select: {
+            remainingWork: true,
+            completedWork: true,
+            lastRemainingWork: true,
+            doneRemainingWork: true
+        }
+    });
 
-    const remainingWork = f['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
-    const completedWork = f['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
-    const state = (f['System.State'] || '').toString();
+    const incomingRemaining = f['Microsoft.VSTS.Scheduling.RemainingWork'];
+    const incomingCompleted = f['Microsoft.VSTS.Scheduling.CompletedWork'];
+
+    // Ausencia de campo no payload nao deve virar reducao de escopo.
+    const remainingWork = hasField('Microsoft.VSTS.Scheduling.RemainingWork')
+        ? Number(incomingRemaining || 0)
+        : Number(existing?.remainingWork || 0);
+    const completedWork = hasField('Microsoft.VSTS.Scheduling.CompletedWork')
+        ? Number(incomingCompleted || 0)
+        : Number(existing?.completedWork || 0);
+
+    const previousLastRemaining = Number((existing as any)?.lastRemainingWork || 0);
+    const previousDoneRemaining = Number((existing as any)?.doneRemainingWork || 0);
+    const candidateRemainingForHistory = hasField('Microsoft.VSTS.Scheduling.RemainingWork')
+        ? Number(incomingRemaining || 0)
+        : null;
+    const lastRemainingWork = candidateRemainingForHistory !== null
+        ? (candidateRemainingForHistory > 0 ? candidateRemainingForHistory : previousLastRemaining)
+        : previousLastRemaining;
+    const doneRemainingWork = isDoneState
+        ? (lastRemainingWork > 0 ? lastRemainingWork : (previousDoneRemaining || null))
+        : (previousDoneRemaining || null);
 
     await prisma.workItem.upsert({
         where: { id },
@@ -266,7 +323,9 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             completedWork,
             remainingWork,
             // @ts-ignore - Field exists in DB but client might not be generated yet
-            lastRemainingWork: remainingWork,
+            lastRemainingWork,
+            // @ts-ignore - Field exists in DB but client might not be generated yet
+            doneRemainingWork,
             storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
             priority: f['Microsoft.VSTS.Common.Priority'] || 3,
             severity: f['Microsoft.VSTS.Common.Severity'] || null,
@@ -278,6 +337,7 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             activatedDate: d(f['Microsoft.VSTS.Common.ActivatedDate']),
             createdBy: f['System.CreatedBy']?.displayName || 'Unknown',
             changedBy: f['System.ChangedBy']?.displayName || 'Unknown',
+            isBlocked,
             tags: f['System.Tags'] ? f['System.Tags'].split(';').map((t: string) => t.trim()) : [],
             areaPath: f['System.AreaPath'],
             iterationPath: f['System.IterationPath'],
@@ -294,8 +354,11 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             changedBy: f['System.ChangedBy']?.displayName || 'Unknown',
             completedWork,
             remainingWork,
+            isBlocked,
             // @ts-ignore - Field exists in DB but client might not be generated yet
-            lastRemainingWork: remainingWork,
+            lastRemainingWork,
+            // @ts-ignore - Field exists in DB but client might not be generated yet
+            doneRemainingWork,
             storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
             sprintId: sprint?.id,
             rev: azItem.rev
@@ -348,6 +411,54 @@ async function checkHistoryNeeded(id: number, prisma: PrismaClient): Promise<boo
         last === null || last === 0 ||
         (isDone && (done === null || done === 0))
     );
+}
+
+function normalizeRevisionChanges(fields: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return {};
+    return fields;
+}
+
+async function persistWorkItemRevisions(id: number, witApi: any, prisma: PrismaClient): Promise<number> {
+    const revisions = await witApi.getRevisions(id);
+    if (!Array.isArray(revisions) || revisions.length === 0) return 0;
+
+    let persisted = 0;
+    for (const rev of revisions) {
+        if (typeof rev?.rev !== 'number') continue;
+        const fields = normalizeRevisionChanges(rev.fields);
+        const changedFields = Object.keys(fields);
+        const revisedDateRaw = (fields['System.ChangedDate'] || fields['System.RevisedDate']) as string | undefined;
+        const revisedDate = revisedDateRaw ? new Date(revisedDateRaw) : new Date();
+        const revisedByObj = fields['System.ChangedBy'] as { displayName?: string; uniqueName?: string } | undefined;
+        const revisedBy = revisedByObj?.displayName || revisedByObj?.uniqueName || rev.revisedBy?.displayName || 'Unknown';
+
+        await prisma.workItemRevision.upsert({
+            where: {
+                workItemId_rev: {
+                    workItemId: id,
+                    rev: rev.rev,
+                },
+            },
+            create: {
+                workItemId: id,
+                rev: rev.rev,
+                revisedDate,
+                revisedBy,
+                changes: fields as any,
+                changedFields,
+            },
+            update: {
+                revisedDate,
+                revisedBy,
+                changes: fields as any,
+                changedFields,
+            },
+        });
+
+        persisted++;
+    }
+
+    return persisted;
 }
 
 async function recoverHistory(id: number, witApi: any, prisma: PrismaClient): Promise<boolean> {

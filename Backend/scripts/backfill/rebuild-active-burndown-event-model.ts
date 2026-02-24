@@ -21,12 +21,15 @@ type ItemLike = {
     remainingWork: number | null;
     completedWork: number | null;
     initialRemainingWork: number | null;
+    lastRemainingWork: number | null;
+    doneRemainingWork: number | null;
     originalEstimate: number | null;
 };
 
 const ALLOWED_TYPES = new Set(['task', 'bug', 'test case', 'test suite', 'test plan']);
 const DONE_LIKE_STATES = new Set(['done', 'closed', 'completed', 'for test', 'in test', 'em teste']);
 const COUNTABLE_CHART_TYPES = new Set(['task', 'bug', 'test case']);
+const SPRINT_TIMEZONE = process.env.SPRINT_TIMEZONE || 'America/Sao_Paulo';
 
 function toUTCDateOnly(d: Date): Date {
     const dt = new Date(d);
@@ -36,6 +39,20 @@ function toUTCDateOnly(d: Date): Date {
 
 function toUTCDateOnlyFromDate(d: Date): Date {
     const [y, m, day] = d.toISOString().split('T')[0].split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, day));
+}
+
+function toBusinessDateOnlyFromDate(d: Date): Date {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: SPRINT_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    });
+    const parts = formatter.formatToParts(d);
+    const y = Number(parts.find(p => p.type === 'year')?.value || 0);
+    const m = Number(parts.find(p => p.type === 'month')?.value || 0);
+    const day = Number(parts.find(p => p.type === 'day')?.value || 0);
     return new Date(Date.UTC(y, m - 1, day));
 }
 
@@ -59,10 +76,12 @@ function indexForDay(dayMs: number, businessDays: Date[]): number {
     if (businessDays.length === 0) return 0;
     if (dayMs <= businessDays[0].getTime()) return 0;
     if (dayMs >= businessDays[businessDays.length - 1].getTime()) return businessDays.length - 1;
-    for (let i = 0; i < businessDays.length; i++) {
-        if (businessDays[i].getTime() >= dayMs) return i;
+    // Map non-business events (weekend/holiday) to the previous business day.
+    // Never push scope changes forward to a future day.
+    for (let i = businessDays.length - 1; i >= 0; i--) {
+        if (businessDays[i].getTime() <= dayMs) return i;
     }
-    return businessDays.length - 1;
+    return 0;
 }
 
 function parseRemaining(value: any): number | null {
@@ -164,6 +183,7 @@ async function main() {
             }
         }
 
+        // Sprint boundaries are stored as calendar dates; keep UTC date-only to avoid shifting D1/D10.
         const sprintStart = toUTCDateOnlyFromDate(new Date(sprint.startDate));
         const sprintEnd = toUTCDateOnlyFromDate(new Date(sprint.endDate));
         const today = toUTCDateOnlyFromDate(new Date());
@@ -181,7 +201,8 @@ async function main() {
         const firstDayMs = businessDays[0].getTime();
 
         const workItems = await prisma.workItem.findMany({
-            where: { sprintId: sprint.id, isRemoved: false },
+            // Include removed items to capture real scope reductions (items leaving sprint).
+            where: { sprintId: sprint.id },
             select: {
                 id: true,
                 azureId: true,
@@ -197,6 +218,8 @@ async function main() {
                 remainingWork: true,
                 completedWork: true,
                 initialRemainingWork: true,
+                lastRemainingWork: true,
+                doneRemainingWork: true,
                 originalEstimate: true,
             },
         }) as ItemLike[];
@@ -209,11 +232,47 @@ async function main() {
         let baselineContributors = 0;
 
         const scopeDeltaByDay = new Array<number>(businessDays.length).fill(0);
+        const scopeAddedByDay = new Array<number>(businessDays.length).fill(0);
+        const scopeRemovedByDay = new Array<number>(businessDays.length).fill(0);
         const completedByDay = new Array<number>(businessDays.length).fill(0);
 
         for (const item of scopedItems) {
             const revisions = (await witApi.getRevisions(item.azureId)) as RevisionLike[];
-            if (!revisions?.length) continue;
+            let revisionRemovedHours = 0;
+
+            const applyHeuristicScopeFallback = () => {
+                const initialPlanned = Math.max(0, Number(item.initialRemainingWork || 0));
+                const lastPlanned = Math.max(0, Number(item.lastRemainingWork || 0));
+                const donePlanned = Math.max(0, Number(item.doneRemainingWork || 0));
+                const currentRemaining = Math.max(0, Number(item.remainingWork || 0));
+                const currentCompleted = Math.max(0, Number(item.completedWork || 0));
+                const currentTotal = currentRemaining + currentCompleted;
+                const currentState = parseState(item.state) || '';
+                const isDoneStateNow = isDoneLike(currentState);
+
+                const plannedContributionNow = item.isRemoved
+                    ? (lastPlanned > 0 ? lastPlanned : (donePlanned > 0 ? donePlanned : currentTotal))
+                    : (isDoneStateNow
+                        ? (donePlanned > 0 ? donePlanned : (lastPlanned > 0 ? lastPlanned : currentTotal))
+                        : (lastPlanned > 0 ? lastPlanned : currentRemaining));
+
+                const heuristicRemoved = initialPlanned > 0 && plannedContributionNow < initialPlanned
+                    ? (initialPlanned - plannedContributionNow)
+                    : 0;
+                const residualRemoved = Math.max(0, Math.round(heuristicRemoved - revisionRemovedHours));
+
+                if (residualRemoved > 0) {
+                    const changedDayMs = toBusinessDateOnlyFromDate(new Date(item.changedDate)).getTime();
+                    const idx = indexForDay(changedDayMs, businessDays);
+                    scopeDeltaByDay[idx] -= residualRemoved;
+                    scopeRemovedByDay[idx] += residualRemoved;
+                }
+            };
+
+            if (!revisions?.length) {
+                applyHeuristicScopeFallback();
+                continue;
+            }
 
             const sorted = [...revisions].sort((a, b) => {
                 const ad = parseChangedDate(a.fields?.['System.ChangedDate'])?.getTime() || 0;
@@ -231,7 +290,7 @@ async function main() {
             for (const rev of sorted) {
                 const changed = parseChangedDate(rev.fields?.['System.ChangedDate']);
                 if (!changed) continue;
-                const dayMs = toUTCDateOnlyFromDate(changed).getTime();
+                const dayMs = toBusinessDateOnlyFromDate(changed).getTime();
                 if (dayMs >= firstDayMs) break;
                 const rem = parseRemaining(rev.fields?.['Microsoft.VSTS.Scheduling.RemainingWork']);
                 const st = parseState(rev.fields?.['System.State']);
@@ -274,7 +333,7 @@ async function main() {
             for (const rev of sorted) {
                 const changed = parseChangedDate(rev.fields?.['System.ChangedDate']);
                 if (!changed) continue;
-                const dayMs = toUTCDateOnlyFromDate(changed).getTime();
+                const dayMs = toBusinessDateOnlyFromDate(changed).getTime();
                 if (dayMs < firstDayMs) continue;
 
                 const idx = indexForDay(dayMs, businessDays);
@@ -295,11 +354,20 @@ async function main() {
                 const crossedOutOfSprint = prevInSprint && !currentInSprint;
 
                 if (crossedIntoSprint) {
+                    // If item was created before D1 but iteration history before D1 is missing,
+                    // treat it as already inside sprint at baseline (avoid false scope add).
+                    if (createdBeforeD1 && !hadIterationBeforeD1) {
+                        prevRemaining = currentRemaining;
+                        prevState = currentState;
+                        prevIteration = currentIteration;
+                        continue;
+                    }
                     // Item entered the sprint on this revision.
                     // Add its total contribution and restore completed share.
                     const enteringTotal = Math.max(0, currentRemaining + itemCompleted);
                     if (enteringTotal > 0) {
                         scopeDeltaByDay[idx] += enteringTotal;
+                        scopeAddedByDay[idx] += enteringTotal;
                     }
                     if (itemCompleted > 0) {
                         completedByDay[idx] += itemCompleted;
@@ -310,6 +378,8 @@ async function main() {
                     const leavingTotal = Math.max(0, currentRemaining + itemCompleted);
                     if (leavingTotal > 0) {
                         scopeDeltaByDay[idx] -= leavingTotal;
+                        scopeRemovedByDay[idx] += leavingTotal;
+                        revisionRemovedHours += leavingTotal;
                     }
                     if (itemCompleted > 0) {
                         completedByDay[idx] -= itemCompleted;
@@ -338,6 +408,12 @@ async function main() {
                         const delta = currentRemaining - previousRemaining;
                         if (!(completionEvent && delta < 0)) {
                             scopeDeltaByDay[idx] += delta;
+                            if (delta > 0) {
+                                scopeAddedByDay[idx] += delta;
+                            } else if (delta < 0) {
+                                scopeRemovedByDay[idx] += Math.abs(delta);
+                                revisionRemovedHours += Math.abs(delta);
+                            }
                         }
                     }
                 }
@@ -346,6 +422,10 @@ async function main() {
                 prevState = currentState;
                 prevIteration = currentIteration;
             }
+
+            // Fallback for scope reduction/addition when revisions are incomplete:
+            // use persisted historical fields per item and apply residual on changedDate day.
+            applyHeuristicScopeFallback();
         }
 
         // Safety fallback only when no historical D0 contribution was found.
@@ -426,7 +506,8 @@ async function main() {
             const totalWork = totalWorkByDay[i];
             const remaining = realRemainingByDay[i];
             const completed = Math.max(0, totalWork - remaining);
-            const scopeDelta = Math.round(scopeDeltaByDay[i]);
+            const scopeAdded = Math.max(0, Math.round(scopeAddedByDay[i]));
+            const scopeRemoved = Math.max(0, Math.round(scopeRemovedByDay[i]));
 
             rows.push({
                 sprintId: sprint.id,
@@ -441,8 +522,8 @@ async function main() {
                 inProgressCount,
                 doneCount,
                 blockedCount,
-                addedCount: Math.max(0, scopeDelta),
-                removedCount: Math.max(0, -scopeDelta),
+                addedCount: scopeAdded,
+                removedCount: scopeRemoved,
                 idealRemaining: idealByDay[i],
             });
         }

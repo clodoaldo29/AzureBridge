@@ -13,7 +13,16 @@ export class DashboardController {
                 prisma.sprint.count({ where: { state: 'active' } }),
                 prisma.workItem.count({ where: { isRemoved: false, state: { not: 'Removed' } } }),
                 // Exemplo de "Avisos" - Itens bloqueados
-                prisma.workItem.count({ where: { isRemoved: false, isBlocked: true } })
+                prisma.workItem.count({
+                    where: {
+                        isRemoved: false,
+                        OR: [
+                            { isBlocked: true },
+                            { state: { in: ['Blocked', 'blocked', 'Impedido', 'impedido'] } },
+                            { tags: { hasSome: ['Blocked', 'blocked', 'Blocker', 'blocker', 'Impedimento', 'impedimento'] } }
+                        ]
+                    }
+                })
             ]);
 
             // 2. Obter velocidade recente global (media das velocidades de todos os projetos)
@@ -66,7 +75,14 @@ export class DashboardController {
         try {
             // Buscar itens bloqueados
             const blockedItems = await prisma.workItem.findMany({
-                where: { isBlocked: true, isRemoved: false },
+                where: {
+                    isRemoved: false,
+                    OR: [
+                        { isBlocked: true },
+                        { state: { in: ['Blocked', 'blocked', 'Impedido', 'impedido'] } },
+                        { tags: { hasSome: ['Blocked', 'blocked', 'Blocker', 'blocker', 'Impedimento', 'impedimento'] } }
+                    ]
+                },
                 take: 10,
                 include: { assignedTo: true, project: true }
             });

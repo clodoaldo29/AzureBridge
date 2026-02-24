@@ -57,6 +57,7 @@ export interface WorkItem {
     originalEstimate?: number;
     initialRemainingWork?: number;
     lastRemainingWork?: number;
+    doneRemainingWork?: number;
     completedWork?: number;
     remainingWork?: number;
     storyPoints?: number;
@@ -70,6 +71,7 @@ export interface WorkItem {
     closedDate?: string;
     projectId: string;
     sprintId?: string;
+    isRemoved?: boolean;
 }
 
 export interface SprintSnapshot {

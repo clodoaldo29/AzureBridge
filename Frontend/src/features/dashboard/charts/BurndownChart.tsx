@@ -11,10 +11,11 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
-import type { SprintSnapshot } from '@/types';
+import type { SprintSnapshot, WorkItem } from '@/types';
 
 interface BurndownChartProps {
     data: SprintSnapshot[];
+    workItems?: WorkItem[];
     plannedInitial?: number;
     plannedCurrent?: number;
     plannedDelta?: number;
@@ -146,8 +147,8 @@ const CustomTooltip = ({ active, payload }: any) => {
                 <TooltipRow color="#63B3ED" label="Ideal" value={`${point.ideal}h`} />
                 {point.actual !== null && <TooltipRow color="#F6AD55" label="Remaining" value={`${point.actual}h`} />}
                 {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projeção" value={`${point.projected}h`} />}
-                {point.scopeAdded > 0 && <TooltipRow color="#FC8181" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
-                {point.scopeRemoved > 0 && <TooltipRow color="#EF4444" label="Escopo removido" value={`-${point.scopeRemoved}h`} />}
+                {point.scopeAdded > 0 && <TooltipRow color="#F59E0B" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
+                {point.scopeRemoved > 0 && <TooltipRow color="#DC2626" label="Escopo removido" value={`-${point.scopeRemoved}h`} />}
                 {point.completedInDay > 0 && <TooltipRow color="#34D399" label="Concluído no dia" value={`${point.completedInDay}h`} />}
             </div>
         </div>
@@ -168,11 +169,27 @@ const ScopeBarLabel = ({ x, y, width, value }: any) => {
             x={x + width / 2}
             y={y - 4}
             textAnchor="middle"
-            fill="#B91C1C"
+            fill="#B45309"
             fontSize={9}
             fontWeight={700}
         >
             {value}h
+        </text>
+    );
+};
+
+const ScopeRemovedBarLabel = ({ x, y, width, value }: any) => {
+    if (!value || value <= 0) return null;
+    return (
+        <text
+            x={x + width / 2}
+            y={y - 4}
+            textAnchor="middle"
+            fill="#991B1B"
+            fontSize={9}
+            fontWeight={700}
+        >
+            -{value}h
         </text>
     );
 };
@@ -253,6 +270,7 @@ const StatusBadge = ({ status, color, bgColor, deviation }: { status: string; co
 
 export function BurndownChart({
     data,
+    workItems = [],
     plannedInitial,
     plannedCurrent,
     plannedDelta,
@@ -264,7 +282,8 @@ export function BurndownChart({
     const [showIdeal, setShowIdeal] = useState(true);
     const [showActual, setShowActual] = useState(true);
     const [showProjected, setShowProjected] = useState(true);
-    const [showScope, setShowScope] = useState(true);
+    const [showScopeAdded, setShowScopeAdded] = useState(true);
+    const [showScopeRemoved, setShowScopeRemoved] = useState(true);
     const [showCompletedDaily, setShowCompletedDaily] = useState(true);
 
     const model = useMemo(() => {
@@ -339,6 +358,48 @@ export function BurndownChart({
                 points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
             }
 
+            // Fallback: if backend still has removedCount = 0, infer removed scope from
+            // real item history on changedDate (initial -> planned current).
+            const hasExplicitRemoved = points.some((p) => p.scopeRemoved > 0);
+            if (!hasExplicitRemoved) {
+                for (const item of workItems) {
+                    const initial = Math.max(0, Math.round(Number(item.initialRemainingWork || 0)));
+                    if (initial <= 0) continue;
+
+                    const last = Math.max(0, Math.round(Number(item.lastRemainingWork || 0)));
+                    const done = Math.max(0, Math.round(Number(item.doneRemainingWork || 0)));
+                    const remaining = Math.max(0, Math.round(Number(item.remainingWork || 0)));
+                    const completed = Math.max(0, Math.round(Number(item.completedWork || 0)));
+                    const currentTotal = remaining + completed;
+                    const state = String(item.state || '').toLowerCase();
+                    const isDone = state === 'done' || state === 'closed' || state === 'completed';
+
+                    const plannedCurrent = item.isRemoved
+                        ? (last > 0 ? last : (done > 0 ? done : currentTotal))
+                        : (isDone
+                            ? (done > 0 ? done : (last > 0 ? last : currentTotal))
+                            : (last > 0 ? last : remaining));
+
+                    const removedHours = Math.max(0, initial - plannedCurrent);
+                    if (removedHours <= 0) continue;
+
+                    const changedMs = toUtcDayMs(item.changedDate);
+                    let idx = points.findIndex((p) => p.dateMs === changedMs);
+                    if (idx < 0) {
+                        idx = 0;
+                        for (let i = points.length - 1; i >= 0; i--) {
+                            if (points[i].dateMs <= changedMs) {
+                                idx = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (idx >= 0 && idx < points.length) {
+                        points[idx].scopeRemoved += removedHours;
+                    }
+                }
+            }
+
             // Ideal piecewise: cada aumento de escopo recalcula o burn ideal para os dias restantes.
             let idealCursor = baseInitial;
             for (let i = 1; i < points.length; i++) {
@@ -386,6 +447,7 @@ export function BurndownChart({
                 : (points[points.length - 1]?.totalWork ?? snapshotInitial)
         );
         const snapshotDelta = snapshotFinal - snapshotInitial;
+        const headerDelta = typeof plannedDelta === 'number' ? Math.round(plannedDelta) : snapshotDelta;
         const effectiveTotalHours = snapshotFinal || totalHours;
         const remNow = Math.max(
             0,
@@ -395,6 +457,10 @@ export function BurndownChart({
             ? Math.max(0, Math.round(completedAccum[lastActualIdx]))
             : Math.max(0, effectiveTotalHours - remNow);
         const workedDays = lastActualIdx >= 0 ? lastActualIdx + 1 : 0;
+        const isAfterSprint = todayMs > endMs;
+        const remainingDaysIncludingToday = isAfterSprint
+            ? 0
+            : points.filter((p) => p.dateMs >= todayMs).length;
         const avgBurnValue = workedDays > 0 ? burnedTotal / workedDays : 0;
         if (lastActualIdx >= 0) {
             const anchorIdx = lastActualIdx;
@@ -415,9 +481,8 @@ export function BurndownChart({
 
         const deviationAbs = remNow - (todayIdx >= 0 ? points[todayIdx].ideal : effectiveTotalHours);
         const deviationPct = effectiveTotalHours > 0 ? (deviationAbs / effectiveTotalHours) * 100 : 0;
-        const idealNow = lastActualIdx >= 0 ? Math.max(0, Math.round(points[lastActualIdx].ideal)) : effectiveTotalHours;
-        const remainingDays = Math.max(0, points.length - workedDays);
-        const neededIdealVelocity = remainingDays > 0 ? idealNow / remainingDays : 0;
+        const remainingDays = Math.max(0, remainingDaysIncludingToday);
+        const neededIdealVelocity = points.length > 0 ? effectiveTotalHours / points.length : 0;
 
         let status = 'No Prazo';
         let statusColor = '#63B3ED';
@@ -441,7 +506,7 @@ export function BurndownChart({
             totalHours: effectiveTotalHours,
             headerInitial: snapshotInitial,
             headerFinal: snapshotFinal,
-            headerDelta: snapshotDelta,
+            headerDelta,
             remNow,
             burnedTotal,
             status,
@@ -457,7 +522,7 @@ export function BurndownChart({
             neededIdealVelocity,
             workedDays,
         };
-    }, [data, plannedInitial, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
+    }, [data, workItems, plannedInitial, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
 
     if (!model) return null;
 
@@ -485,7 +550,13 @@ export function BurndownChart({
             <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
                 <MetricCard label="Restante" value={model.remNow} unit="h" accent="#F6AD55" sublabel={`de ${model.totalHours}h planejadas`} />
                 <MetricCard label="Concluído" value={model.burnedTotal} unit="h" accent="#48BB78" sublabel={`${model.completionPct}% da sprint`} />
-                <MetricCard label="Vel. Média" value={model.avgBurn.toFixed(1)} unit="h/dia" accent="#63B3ED" sublabel={`necessário: ${model.neededIdealVelocity.toFixed(1)}h/dia`} />
+                <MetricCard
+                    label="Vel. Real"
+                    value={model.avgBurn.toFixed(1)}
+                    unit="h/dia"
+                    accent="#63B3ED"
+                    sublabel={`necessária: ${model.neededIdealVelocity.toFixed(1)}h/dia`}
+                />
                 <MetricCard label="Dias Restantes" value={model.remainingDays} unit="dias" accent="#9F7AEA" sublabel={`trabalhados: ${model.workedDays} de ${model.daysTotal}`} />
             </div>
 
@@ -493,7 +564,8 @@ export function BurndownChart({
                 <LegendToggle label="Ideal" color="#63B3ED" checked={showIdeal} onToggle={() => setShowIdeal(!showIdeal)} />
                 <LegendToggle label="Remaining" color="#F6AD55" checked={showActual} onToggle={() => setShowActual(!showActual)} />
                 <LegendToggle label="Projeção" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
-                <LegendToggle label="Mudanças de Escopo" color="#FC8181" checked={showScope} onToggle={() => setShowScope(!showScope)} />
+                <LegendToggle label="Escopo Adicionado" color="#F59E0B" checked={showScopeAdded} onToggle={() => setShowScopeAdded(!showScopeAdded)} />
+                <LegendToggle label="Escopo Removido" color="#DC2626" checked={showScopeRemoved} onToggle={() => setShowScopeRemoved(!showScopeRemoved)} />
                 <LegendToggle label="Concluído no dia" color="#34D399" checked={showCompletedDaily} onToggle={() => setShowCompletedDaily(!showCompletedDaily)} />
             </div>
 
@@ -525,9 +597,14 @@ export function BurndownChart({
                         {showIdeal && <Area type="monotone" dataKey="ideal" stroke="#63B3ED" strokeWidth={2} fill="url(#idealGrad)" dot={false} activeDot={<ActiveDot />} strokeOpacity={0.7} name="Ideal" />}
                         {showActual && <Line type="monotone" dataKey="actual" stroke="#F6AD55" strokeWidth={2} dot={false} activeDot={<ActiveDot />} connectNulls={false} name="Remaining" />}
                         {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projeção" />}
-                        {showScope && (
-                            <Bar dataKey="scopeAdded" fill="rgba(252,129,129,0.6)" barSize={12}>
+                        {showScopeAdded && (
+                            <Bar dataKey="scopeAdded" fill="rgba(245,158,11,0.75)" barSize={10}>
                                 <LabelList dataKey="scopeAdded" content={<ScopeBarLabel />} />
+                            </Bar>
+                        )}
+                        {showScopeRemoved && (
+                            <Bar dataKey="scopeRemoved" fill="rgba(220,38,38,0.75)" barSize={10}>
+                                <LabelList dataKey="scopeRemoved" content={<ScopeRemovedBarLabel />} />
                             </Bar>
                         )}
                         {showCompletedDaily && (
@@ -541,5 +618,3 @@ export function BurndownChart({
         </div>
     );
 }
-
-
