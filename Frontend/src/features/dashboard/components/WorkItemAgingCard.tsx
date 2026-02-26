@@ -2,6 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { toAzureEditUrl } from '@/features/dashboard/utils/azure-url';
 import type { CapacityComparison, WorkItem } from '@/types';
 
 interface WorkItemAgingCardProps {
@@ -185,27 +186,6 @@ function getPlannedEffortHours(item: WorkItem): number {
     return 1;
 }
 
-function toAzureEditUrl(rawUrl: string | undefined, id: number, fallbackOrgUrl?: string, projectName?: string): string | null {
-    if (rawUrl) {
-        if (rawUrl.includes('/_workitems/edit/')) return rawUrl;
-
-        const apiMatch = rawUrl.match(/^(https:\/\/dev\.azure\.com\/[^/]+\/[^/]+)\/_apis\/wit\/workItems\/(\d+)/i);
-        if (apiMatch) {
-            const base = apiMatch[1].replace(/\/+$/, '');
-            const workItemId = apiMatch[2] || String(id);
-            return `${base}/_workitems/edit/${workItemId}`;
-        }
-    }
-
-    if (fallbackOrgUrl) {
-        const base = fallbackOrgUrl.replace(/\/+$/, '');
-        if (projectName) return `${base}/${encodeURIComponent(projectName)}/_workitems/edit/${id}`;
-        return `${base}/_workitems/edit/${id}`;
-    }
-
-    return null;
-}
-
 export function WorkItemAgingCard({
     workItems,
     capacityData,
@@ -293,7 +273,10 @@ export function WorkItemAgingCard({
                 capacityPerDay: Number(dailyCapacity.toFixed(1)),
                 inProgressAt: activated.toISOString(),
                 dueAt: dueAt.toISOString(),
-                azureUrl: toAzureEditUrl(wi.url, wi.id, azureOrgUrl, projectName) || getAzureWorkItemUrl(wi.id),
+                azureUrl: toAzureEditUrl(wi.azureUrl ?? wi.url ?? null, wi.id, {
+                    fallbackOrgUrl: azureOrgUrl,
+                    projectName
+                }) || getAzureWorkItemUrl(wi.id),
                 ratio,
                 status,
             };
@@ -480,7 +463,7 @@ export function WorkItemAgingCard({
                                                     )}
                                                     {!azureUrl && (
                                                         <div className="text-xs text-muted-foreground">
-                                                            Link Azure indisponivel (configure `VITE_AZURE_DEVOPS_ORG_URL`).
+                                                            Link Azure indisponivel para este item.
                                                         </div>
                                                     )}
                                                 </div>

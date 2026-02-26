@@ -3,6 +3,7 @@ import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
 import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
 import { getAzureDevOpsClient } from '@/integrations/azure/client';
+import { buildAzureWorkItemUrl } from '@/utils/azure-url';
 import { z } from 'zod';
 
 async function resolveBlockedIdsFromAzureTaskboard(): Promise<number[]> {
@@ -85,14 +86,27 @@ export class WorkItemController {
                     skip: filters.offset,
                     orderBy: { changedDate: 'desc' },
                     include: {
-                        assignedTo: { select: { displayName: true, imageUrl: true } }
+                        assignedTo: { select: { displayName: true, imageUrl: true } },
+                        project: { select: { name: true } }
                     }
                 })
             ]);
+            const normalizedItems = items.map((item: any) => {
+                const azureUrl = buildAzureWorkItemUrl({
+                    id: item.id,
+                    rawUrl: item.url,
+                    projectName: item.project?.name || null
+                });
+                const { project, ...rest } = item;
+                return {
+                    ...rest,
+                    azureUrl
+                };
+            });
 
             return reply.send({
                 success: true,
-                data: items,
+                data: normalizedItems,
                 meta: {
                     total,
                     limit: filters.limit,

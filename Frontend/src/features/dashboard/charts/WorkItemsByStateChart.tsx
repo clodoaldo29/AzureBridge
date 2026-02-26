@@ -7,7 +7,7 @@ interface WorkItemsByStateChartProps {
     workItems: WorkItem[];
 }
 
-const ALLOWED_TYPES = ['task', 'bug', 'test case'];
+const ALLOWED_TYPES = ['task', 'bug'];
 
 const STATE_COLORS: Record<string, string> = {
     'New': '#94A3B8',

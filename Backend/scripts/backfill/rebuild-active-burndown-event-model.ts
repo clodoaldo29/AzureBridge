@@ -26,9 +26,9 @@ type ItemLike = {
     originalEstimate: number | null;
 };
 
-const ALLOWED_TYPES = new Set(['task', 'bug', 'test case', 'test suite', 'test plan']);
-const DONE_LIKE_STATES = new Set(['done', 'closed', 'completed', 'for test', 'in test', 'em teste']);
-const COUNTABLE_CHART_TYPES = new Set(['task', 'bug', 'test case']);
+const ALLOWED_TYPES = new Set(['task', 'bug', 'test case']);
+const DONE_LIKE_STATES = new Set(['done', 'closed', 'completed']);
+const COUNTABLE_CHART_TYPES = new Set(['task', 'bug']);
 const SPRINT_TIMEZONE = process.env.SPRINT_TIMEZONE || 'America/Sao_Paulo';
 
 function toUTCDateOnly(d: Date): Date {
@@ -124,25 +124,68 @@ async function main() {
         throw new Error('AZURE_DEVOPS_ORG_URL / AZURE_DEVOPS_PAT ausentes');
     }
 
-    const targetProjectsEnv = (process.env.TARGET_PROJECTS || 'GIGA - Retrabalho,GIGA - Tempos e Movimentos')
+    const configuredTargets = String(process.env.TARGET_PROJECTS || '')
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
+    const discoveredTargets = configuredTargets.length > 0
+        ? configuredTargets
+        : (await prisma.project.findMany({
+            where: {
+                sprints: {
+                    some: {
+                        state: { in: ['Active', 'active'] }
+                    }
+                }
+            },
+            select: { name: true },
+            orderBy: { name: 'asc' }
+        })).map((p) => p.name);
+    const targetProjectsEnv = Array.from(new Set(discoveredTargets));
+    if (!targetProjectsEnv.length) {
+        console.log('Nenhum projeto com sprint ativa encontrado para rebuild de burndown.');
+        await prisma.$disconnect();
+        return;
+    }
     const targetSet = new Set(targetProjectsEnv.map(p => p.toLowerCase()));
+    const sprintStatesEnv = (process.env.REBUILD_SPRINT_STATES || 'Active,active')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    const sprintIdsEnv = (process.env.SPRINT_IDS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    const sprintIdsSet = new Set(sprintIdsEnv);
+    const sprintNameRegexRaw = String(process.env.SPRINT_NAME_REGEX || '').trim();
+    const sprintNameRegex = sprintNameRegexRaw ? new RegExp(sprintNameRegexRaw, 'i') : null;
 
-    console.log('REBUILD ACTIVE BURNDOWN (EVENT MODEL)');
+    console.log('REBUILD BURNDOWN (EVENT MODEL)');
     console.log('='.repeat(72));
     console.log(`Targets: ${targetProjectsEnv.join(', ')}`);
+    console.log(`State filter: ${sprintStatesEnv.join(', ')}`);
+    if (sprintIdsSet.size > 0) {
+        console.log(`Sprint IDs filter enabled: ${sprintIdsSet.size} id(s)`);
+    }
+    if (sprintNameRegexRaw) {
+        console.log(`Sprint name regex: ${sprintNameRegexRaw}`);
+    }
 
     const authHandler = azdev.getPersonalAccessTokenHandler(pat);
     const connection = new azdev.WebApi(orgUrl, authHandler);
     const witApi = await connection.getWorkItemTrackingApi();
 
-    const activeSprints = await prisma.sprint.findMany({
-        where: {
-            state: { in: ['Active', 'active'] },
-            project: { name: { in: targetProjectsEnv } },
-        },
+    const where: any = {
+        project: { name: { in: targetProjectsEnv } },
+    };
+    if (sprintIdsSet.size > 0) {
+        where.id = { in: Array.from(sprintIdsSet) };
+    } else {
+        where.state = { in: sprintStatesEnv };
+    }
+
+    const selectedSprints = await prisma.sprint.findMany({
+        where,
         include: {
             project: true,
             capacities: { select: { daysOff: true } },
@@ -150,16 +193,22 @@ async function main() {
         orderBy: [{ project: { name: 'asc' } }, { startDate: 'asc' }],
     });
 
-    if (!activeSprints.length) {
-        console.log('Nenhuma sprint ativa encontrada para os projetos-alvo.');
+    const sprints = selectedSprints.filter((sprint) => {
+        if (!targetSet.has(sprint.project.name.toLowerCase())) return false;
+        if (sprintIdsSet.size > 0 && !sprintIdsSet.has(sprint.id)) return false;
+        if (sprintNameRegex && !sprintNameRegex.test(sprint.name)) return false;
+        return true;
+    });
+
+    if (!sprints.length) {
+        console.log('Nenhuma sprint encontrada para os filtros informados.');
         await prisma.$disconnect();
         return;
     }
 
-    console.log(`Sprints ativas alvo: ${activeSprints.length}\n`);
+    console.log(`Sprints alvo: ${sprints.length}\n`);
 
-    for (const sprint of activeSprints) {
-        if (!targetSet.has(sprint.project.name.toLowerCase())) continue;
+    for (const sprint of sprints) {
         if (!sprint.startDate || !sprint.endDate) continue;
 
         console.log(`Sprint: ${sprint.project.name} / ${sprint.name}`);
@@ -167,8 +216,10 @@ async function main() {
         await prisma.sprintSnapshot.deleteMany({ where: { sprintId: sprint.id } });
         console.log('  snapshots antigos removidos');
 
-        const excludeDates = new Set<number>();
-        for (const cap of sprint.capacities) {
+        // Sprint-level day off must represent team day off only.
+        // Derive from intersection across members (each member has merged team+individual days off).
+        const memberDaySets: Array<Set<number>> = sprint.capacities.map((cap) => {
+            const memberSet = new Set<number>();
             const ranges = (cap.daysOff as any[]) || [];
             for (const d of ranges) {
                 if (!d?.start || !d?.end) continue;
@@ -177,9 +228,20 @@ async function main() {
                 for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
                     const day = dt.getUTCDay();
                     if (day !== 0 && day !== 6) {
-                        excludeDates.add(dt.getTime());
+                        memberSet.add(dt.getTime());
                     }
                 }
+            }
+            return memberSet;
+        });
+
+        let excludeDates = new Set<number>();
+        if (memberDaySets.length > 0) {
+            excludeDates = new Set<number>(memberDaySets[0]);
+            for (let i = 1; i < memberDaySets.length; i++) {
+                excludeDates = new Set(
+                    Array.from(excludeDates).filter((dayMs) => memberDaySets[i].has(dayMs))
+                );
             }
         }
 
@@ -238,39 +300,8 @@ async function main() {
 
         for (const item of scopedItems) {
             const revisions = (await witApi.getRevisions(item.azureId)) as RevisionLike[];
-            let revisionRemovedHours = 0;
-
-            const applyHeuristicScopeFallback = () => {
-                const initialPlanned = Math.max(0, Number(item.initialRemainingWork || 0));
-                const lastPlanned = Math.max(0, Number(item.lastRemainingWork || 0));
-                const donePlanned = Math.max(0, Number(item.doneRemainingWork || 0));
-                const currentRemaining = Math.max(0, Number(item.remainingWork || 0));
-                const currentCompleted = Math.max(0, Number(item.completedWork || 0));
-                const currentTotal = currentRemaining + currentCompleted;
-                const currentState = parseState(item.state) || '';
-                const isDoneStateNow = isDoneLike(currentState);
-
-                const plannedContributionNow = item.isRemoved
-                    ? (lastPlanned > 0 ? lastPlanned : (donePlanned > 0 ? donePlanned : currentTotal))
-                    : (isDoneStateNow
-                        ? (donePlanned > 0 ? donePlanned : (lastPlanned > 0 ? lastPlanned : currentTotal))
-                        : (lastPlanned > 0 ? lastPlanned : currentRemaining));
-
-                const heuristicRemoved = initialPlanned > 0 && plannedContributionNow < initialPlanned
-                    ? (initialPlanned - plannedContributionNow)
-                    : 0;
-                const residualRemoved = Math.max(0, Math.round(heuristicRemoved - revisionRemovedHours));
-
-                if (residualRemoved > 0) {
-                    const changedDayMs = toBusinessDateOnlyFromDate(new Date(item.changedDate)).getTime();
-                    const idx = indexForDay(changedDayMs, businessDays);
-                    scopeDeltaByDay[idx] -= residualRemoved;
-                    scopeRemovedByDay[idx] += residualRemoved;
-                }
-            };
 
             if (!revisions?.length) {
-                applyHeuristicScopeFallback();
                 continue;
             }
 
@@ -306,15 +337,11 @@ async function main() {
                 }
             }
 
-            // Fallback baseline when revisions before D1 are missing.
+            // Canonical rule:
+            // if there is no explicit RemainingWork before D1, D0 baseline for this item is zero.
+            // Hours first assigned on D1..Dn must be counted as scope added.
             if (prevRemaining === null) {
-                const init = Number(item.initialRemainingWork || 0);
-                const original = Number(item.originalEstimate || 0);
-                if (item.createdDate && toUTCDateOnlyFromDate(item.createdDate).getTime() < firstDayMs) {
-                    prevRemaining = init > 0 ? init : (original > 0 ? original : 0);
-                } else {
-                    prevRemaining = 0;
-                }
+                prevRemaining = 0;
             }
             if (!prevState) prevState = parseState(item.state) || '';
             if (!prevIteration) prevIteration = parseIteration(item.iterationPath) || sprint.path.toLowerCase();
@@ -379,7 +406,6 @@ async function main() {
                     if (leavingTotal > 0) {
                         scopeDeltaByDay[idx] -= leavingTotal;
                         scopeRemovedByDay[idx] += leavingTotal;
-                        revisionRemovedHours += leavingTotal;
                     }
                     if (itemCompleted > 0) {
                         completedByDay[idx] -= itemCompleted;
@@ -412,7 +438,6 @@ async function main() {
                                 scopeAddedByDay[idx] += delta;
                             } else if (delta < 0) {
                                 scopeRemovedByDay[idx] += Math.abs(delta);
-                                revisionRemovedHours += Math.abs(delta);
                             }
                         }
                     }
@@ -422,10 +447,6 @@ async function main() {
                 prevState = currentState;
                 prevIteration = currentIteration;
             }
-
-            // Fallback for scope reduction/addition when revisions are incomplete:
-            // use persisted historical fields per item and apply residual on changedDate day.
-            applyHeuristicScopeFallback();
         }
 
         // Safety fallback only when no historical D0 contribution was found.

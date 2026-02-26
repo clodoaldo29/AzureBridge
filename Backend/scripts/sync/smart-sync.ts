@@ -241,6 +241,81 @@ async function logSync(startTime: number, stats: SyncStats, type: string, status
     });
 }
 
+async function resolveAssignedToMemberId(
+    assignedRaw: any,
+    projectId: string,
+    prisma: PrismaClient
+): Promise<string | null> {
+    if (!assignedRaw) return null;
+
+    if (typeof assignedRaw === 'object') {
+        const uniqueName = assignedRaw.uniqueName ? String(assignedRaw.uniqueName) : null;
+        const displayName = assignedRaw.displayName
+            ? String(assignedRaw.displayName)
+            : (uniqueName || 'Unknown');
+        const azureIdentityId = assignedRaw.id
+            ? String(assignedRaw.id)
+            : (uniqueName ? String(uniqueName) : null);
+
+        if (azureIdentityId) {
+            const member = await prisma.teamMember.upsert({
+                where: {
+                    azureId_projectId: {
+                        azureId: azureIdentityId,
+                        projectId
+                    }
+                },
+                create: {
+                    azureId: azureIdentityId,
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    projectId,
+                    isActive: true
+                },
+                update: {
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    isActive: true
+                }
+            });
+            return member.id;
+        }
+
+        if (uniqueName || displayName) {
+            const byIdentity = await prisma.teamMember.findFirst({
+                where: {
+                    projectId,
+                    OR: [
+                        ...(uniqueName ? [{ uniqueName }] : []),
+                        ...(displayName ? [{ displayName }] : [])
+                    ]
+                },
+                select: { id: true }
+            });
+            return byIdentity?.id || null;
+        }
+
+        return null;
+    }
+
+    const assignedText = String(assignedRaw).trim();
+    if (!assignedText) return null;
+
+    const byText = await prisma.teamMember.findFirst({
+        where: {
+            projectId,
+            OR: [
+                { uniqueName: assignedText },
+                { displayName: assignedText }
+            ]
+        },
+        select: { id: true }
+    });
+    return byText?.id || null;
+}
+
 async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean> {
     const f = azItem.fields;
     const id = azItem.id;
@@ -306,6 +381,7 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
     const doneRemainingWork = isDoneState
         ? (lastRemainingWork > 0 ? lastRemainingWork : (previousDoneRemaining || null))
         : (previousDoneRemaining || null);
+    const assignedToId = await resolveAssignedToMemberId(f['System.AssignedTo'], project.id, prisma);
 
     await prisma.workItem.upsert({
         where: { id },
@@ -344,7 +420,8 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             url: azItem.url,
             rev: azItem.rev,
             projectId: project.id,
-            sprintId: sprint?.id
+            sprintId: sprint?.id,
+            assignedToId
         },
         update: {
             state,
@@ -361,6 +438,7 @@ async function syncBasicData(azItem: any, prisma: PrismaClient): Promise<boolean
             doneRemainingWork,
             storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || null,
             sprintId: sprint?.id,
+            assignedToId,
             rev: azItem.rev
         }
     });

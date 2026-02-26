@@ -86,6 +86,77 @@ async function persistWorkItemRevisions(workItemId, witApi) {
     return persisted;
 }
 
+async function resolveAssignedToMemberId(assignedRaw, projectId) {
+    if (!assignedRaw) return null;
+
+    if (typeof assignedRaw === 'object') {
+        const uniqueName = assignedRaw.uniqueName ? String(assignedRaw.uniqueName) : null;
+        const displayName = assignedRaw.displayName
+            ? String(assignedRaw.displayName)
+            : (uniqueName || 'Unknown');
+        const azureIdentityId = assignedRaw.id
+            ? String(assignedRaw.id)
+            : (uniqueName ? String(uniqueName) : null);
+
+        if (azureIdentityId) {
+            const member = await prisma.teamMember.upsert({
+                where: {
+                    azureId_projectId: {
+                        azureId: azureIdentityId,
+                        projectId
+                    }
+                },
+                create: {
+                    azureId: azureIdentityId,
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    projectId,
+                    isActive: true
+                },
+                update: {
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    isActive: true
+                }
+            });
+            return member.id;
+        }
+
+        if (uniqueName || displayName) {
+            const byIdentity = await prisma.teamMember.findFirst({
+                where: {
+                    projectId,
+                    OR: [
+                        ...(uniqueName ? [{ uniqueName }] : []),
+                        ...(displayName ? [{ displayName }] : [])
+                    ]
+                },
+                select: { id: true }
+            });
+            return byIdentity?.id || null;
+        }
+
+        return null;
+    }
+
+    const assignedText = String(assignedRaw).trim();
+    if (!assignedText) return null;
+
+    const byText = await prisma.teamMember.findFirst({
+        where: {
+            projectId,
+            OR: [
+                { uniqueName: assignedText },
+                { displayName: assignedText }
+            ]
+        },
+        select: { id: true }
+    });
+    return byText?.id || null;
+}
+
 async function completeMassiveSync() {
     console.log('🚀 COMPLETE MASSIVE SYNC - All Projects, All Sprints, All Work Items\n');
     console.log('═══════════════════════════════════════════════════════════\n');
@@ -227,6 +298,7 @@ async function completeMassiveSync() {
                             endDate: sprint.endDate,
                             state: sprint.state,
                             timeFrame: sprint.timeFrame,
+                            projectId: dbProject.id,
                         }
                     });
 
@@ -301,6 +373,7 @@ async function completeMassiveSync() {
                                 const remainingWork = f['Microsoft.VSTS.Scheduling.RemainingWork'] || null;
                                 const completedWork = f['Microsoft.VSTS.Scheduling.CompletedWork'] || null;
                                 const originalEstimate = f['Microsoft.VSTS.Scheduling.OriginalEstimate'] || null;
+                                const assignedToId = await resolveAssignedToMemberId(f['System.AssignedTo'], dbProject.id);
                                 const dataCommon = {
                                     type: f['System.WorkItemType'],
                                     state: state,
@@ -336,6 +409,7 @@ async function completeMassiveSync() {
                                     commentCount: wi.commentCount || 0,
                                     projectId: dbProject.id,
                                     sprintId: dbSprint.id,
+                                    assignedToId,
                                     isRemoved: false,
                                     lastSyncAt: new Date(),
                                 };

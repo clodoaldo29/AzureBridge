@@ -159,7 +159,8 @@ async function main() {
                     startDate: sprint.startDate,
                     endDate: sprint.endDate,
                     state: sprint.state,
-                    timeFrame: sprint.timeFrame
+                    timeFrame: sprint.timeFrame,
+                    projectId: dbProject.id
                 }
             });
         }

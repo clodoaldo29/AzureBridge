@@ -65,6 +65,17 @@ export class SyncService {
         return byTimeFrame ?? byDateWindow;
     }
 
+    private resolveProjectForSprintPath(pathRaw: string | undefined, projects: Array<{ id: string; name: string }>) {
+        const normalizedPath = String(pathRaw || '').trim().toLowerCase();
+        const matchedProject = projects.find((project) => {
+            const normalizedName = project.name.trim().toLowerCase();
+            return normalizedPath === normalizedName || normalizedPath.startsWith(`${normalizedName}\\`);
+        });
+
+        if (matchedProject) return matchedProject;
+        return projects[0];
+    }
+
     private isBlockedState(state?: string | null): boolean {
         const s = String(state || '').trim().toLowerCase();
         return s === 'blocked' || s === 'impeded' || s === 'impedido';
@@ -358,8 +369,6 @@ export class SyncService {
                 return 0;
             }
 
-            const project = projects[0];
-
             for (const azureSprint of azureSprints) {
                 if (!azureSprint.attributes.startDate || !azureSprint.attributes.finishDate) {
                     continue;
@@ -369,6 +378,7 @@ export class SyncService {
                 const endDate = new Date(azureSprint.attributes.finishDate);
                 const normalizedTimeFrame = String(azureSprint.attributes.timeFrame || '').trim().toLowerCase() || 'future';
                 const sprintState = this.resolveSprintState(azureSprint.attributes.timeFrame, startDate, endDate);
+                const project = this.resolveProjectForSprintPath(azureSprint.path, projects);
 
                 await sprintRepository.upsert({
                     azureId: azureSprint.id,
@@ -529,30 +539,66 @@ export class SyncService {
                 // Buscar membro do time atribuido
                 let assignedTo = null;
                 const assignedIdentity = fields['System.AssignedTo'];
-                if (assignedIdentity?.uniqueName) {
-                    const azureIdentityId = (assignedIdentity.id || assignedIdentity.uniqueName).toString();
-                    assignedTo = await prisma.teamMember.upsert({
-                        where: {
-                            azureId_projectId: {
-                                azureId: azureIdentityId,
-                                projectId: projectForItem.id,
-                            }
-                        },
-                        create: {
-                            azureId: azureIdentityId,
-                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
-                            uniqueName: assignedIdentity.uniqueName,
-                            imageUrl: assignedIdentity.imageUrl,
-                            projectId: projectForItem.id,
-                            isActive: true,
-                        },
-                        update: {
-                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
-                            uniqueName: assignedIdentity.uniqueName,
-                            imageUrl: assignedIdentity.imageUrl,
-                            isActive: true,
+                if (assignedIdentity) {
+                    if (typeof assignedIdentity === 'object') {
+                        const uniqueName = assignedIdentity.uniqueName
+                            ? String(assignedIdentity.uniqueName)
+                            : null;
+                        const displayName = assignedIdentity.displayName
+                            ? String(assignedIdentity.displayName)
+                            : (uniqueName || 'Unknown');
+                        const azureIdentityId = assignedIdentity.id
+                            ? String(assignedIdentity.id)
+                            : (uniqueName ? String(uniqueName) : null);
+
+                        if (azureIdentityId) {
+                            assignedTo = await prisma.teamMember.upsert({
+                                where: {
+                                    azureId_projectId: {
+                                        azureId: azureIdentityId,
+                                        projectId: projectForItem.id,
+                                    }
+                                },
+                                create: {
+                                    azureId: azureIdentityId,
+                                    displayName,
+                                    uniqueName: uniqueName || displayName,
+                                    imageUrl: assignedIdentity.imageUrl || null,
+                                    projectId: projectForItem.id,
+                                    isActive: true,
+                                },
+                                update: {
+                                    displayName,
+                                    uniqueName: uniqueName || displayName,
+                                    imageUrl: assignedIdentity.imageUrl || null,
+                                    isActive: true,
+                                }
+                            });
+                        } else if (uniqueName || displayName) {
+                            assignedTo = await prisma.teamMember.findFirst({
+                                where: {
+                                    projectId: projectForItem.id,
+                                    OR: [
+                                        ...(uniqueName ? [{ uniqueName }] : []),
+                                        ...(displayName ? [{ displayName }] : []),
+                                    ]
+                                }
+                            });
                         }
-                    });
+                    } else {
+                        const assignedText = String(assignedIdentity).trim();
+                        if (assignedText) {
+                            assignedTo = await prisma.teamMember.findFirst({
+                                where: {
+                                    projectId: projectForItem.id,
+                                    OR: [
+                                        { uniqueName: assignedText },
+                                        { displayName: assignedText }
+                                    ]
+                                }
+                            });
+                        }
+                    }
                 }
 
                 await workItemRepository.upsert({

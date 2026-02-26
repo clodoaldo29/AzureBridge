@@ -31,6 +31,11 @@ function isPbiType(type?: string | null): boolean {
     return t === 'product backlog item' || t === 'user story' || t === 'pbi';
 }
 
+function isCfdCountableType(type?: string | null): boolean {
+    const t = String(type || '').trim().toLowerCase();
+    return t === 'task' || t === 'bug';
+}
+
 function toUTCMidnight(d: Date): number {
     const dt = new Date(d);
     dt.setUTCHours(0, 0, 0, 0);
@@ -131,6 +136,7 @@ async function main() {
 
             for (const item of workItems) {
                 if (isPbiType(item.type)) continue; // Regra do CFD: desconsiderar PBI/User Story
+                if (!isCfdCountableType(item.type)) continue; // CFD agora considera apenas Task e Bug
 
                 const closedTs = item.closedDate ? toUTCMidnight(item.closedDate) : null;
                 const activatedTs = item.activatedDate ? toUTCMidnight(item.activatedDate) : null;

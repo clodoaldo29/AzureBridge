@@ -12,17 +12,21 @@ import {
     YAxis,
 } from 'recharts';
 import type { SprintSnapshot, WorkItem } from '@/types';
+import { useScopeChanges } from '@/features/dashboard/queries/sprints';
+import { toAzureEditUrl } from '@/features/dashboard/utils/azure-url';
 
 interface BurndownChartProps {
     data: SprintSnapshot[];
     workItems?: WorkItem[];
     plannedInitial?: number;
+    plannedInitialD1Date?: string | null;
     plannedCurrent?: number;
     plannedDelta?: number;
     currentRemaining?: number;
     sprintStartDate?: string;
     sprintEndDate?: string;
     dayOffDates?: string[];
+    sprintId?: string;
 }
 
 type ChartPoint = {
@@ -147,10 +151,15 @@ const CustomTooltip = ({ active, payload }: any) => {
                 <TooltipRow color="#63B3ED" label="Ideal" value={`${point.ideal}h`} />
                 {point.actual !== null && <TooltipRow color="#F6AD55" label="Remaining" value={`${point.actual}h`} />}
                 {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projeção" value={`${point.projected}h`} />}
-                {point.scopeAdded > 0 && <TooltipRow color="#F59E0B" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
-                {point.scopeRemoved > 0 && <TooltipRow color="#DC2626" label="Escopo removido" value={`-${point.scopeRemoved}h`} />}
+                {point.scopeAdded > 0 && <TooltipRow color="#DC2626" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
+                {point.scopeRemoved > 0 && <TooltipRow color="#1E3A8A" label="Escopo removido" value={`${point.scopeRemoved}h`} />}
                 {point.completedInDay > 0 && <TooltipRow color="#34D399" label="Concluído no dia" value={`${point.completedInDay}h`} />}
             </div>
+            {(point.scopeAdded > 0 || point.scopeRemoved > 0) && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${UI_COLORS.border}`, fontSize: 10, color: UI_COLORS.mutedSoft, textAlign: 'center' }}>
+                    Clique na barra para ver os itens
+                </div>
+            )}
         </div>
     );
 };
@@ -162,34 +171,48 @@ const ActiveDot = ({ cx, cy, stroke }: any) => (
     </g>
 );
 
-const ScopeBarLabel = ({ x, y, width, value }: any) => {
+const ScopeBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
             x={x + width / 2}
             y={y - 4}
             textAnchor="middle"
-            fill="#B45309"
+            fill="#B91C1C"
             fontSize={9}
             fontWeight={700}
+            pointerEvents="all"
+            style={{ cursor: onOpen ? 'pointer' : 'default' }}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!onOpen || !payload) return;
+                onOpen(payload);
+            }}
         >
             {value}h
         </text>
     );
 };
 
-const ScopeRemovedBarLabel = ({ x, y, width, value }: any) => {
+const ScopeRemovedBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
             x={x + width / 2}
             y={y - 4}
             textAnchor="middle"
-            fill="#991B1B"
+            fill="#1E3A8A"
             fontSize={9}
             fontWeight={700}
+            pointerEvents="all"
+            style={{ cursor: onOpen ? 'pointer' : 'default' }}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!onOpen || !payload) return;
+                onOpen(payload);
+            }}
         >
-            -{value}h
+            {value}h
         </text>
     );
 };
@@ -272,12 +295,14 @@ export function BurndownChart({
     data,
     workItems = [],
     plannedInitial,
+    plannedInitialD1Date,
     plannedCurrent,
     plannedDelta,
     currentRemaining,
     sprintStartDate,
     sprintEndDate,
     dayOffDates = [],
+    sprintId,
 }: BurndownChartProps) {
     const [showIdeal, setShowIdeal] = useState(true);
     const [showActual, setShowActual] = useState(true);
@@ -285,6 +310,19 @@ export function BurndownChart({
     const [showScopeAdded, setShowScopeAdded] = useState(true);
     const [showScopeRemoved, setShowScopeRemoved] = useState(true);
     const [showCompletedDaily, setShowCompletedDaily] = useState(true);
+
+    const [scopeModal, setScopeModal] = useState<{
+        date: string;
+        label: string;
+        initialTab: 'added' | 'removed';
+    } | null>(null);
+    const [scopeTab, setScopeTab] = useState<'added' | 'removed'>('added');
+    const azureOrgUrl = (import.meta as any)?.env?.VITE_AZURE_DEVOPS_ORG_URL as string | undefined;
+
+    const { data: scopeChanges, isLoading: scopeLoading } = useScopeChanges(
+        sprintId || '',
+        scopeModal?.date || null
+    );
 
     const model = useMemo(() => {
         if (!data.length || !sprintStartDate || !sprintEndDate) return null;
@@ -330,7 +368,7 @@ export function BurndownChart({
                 dayKey: `D${idx + 1}`,
                 axisLabel: `D${idx + 1}|${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
                 tooltipLabel: `D${idx + 1} - ${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
-                dateLabel: shortDatePtBr(ms),
+                dateLabel: toIsoDate(ms),
                 dateMs: ms,
                 ideal,
                 actual,
@@ -350,9 +388,32 @@ export function BurndownChart({
             Math.round(plannedInitial ?? snapshots[0]?.totalWork ?? points[0]?.totalWork ?? 0)
         );
         if (points.length > 0) {
-            points[0].ideal = baseInitial;
+            const firstBusinessMs = businessDays[0];
+            const d1Ms = plannedInitialD1Date ? toUtcDayMs(plannedInitialD1Date) : firstBusinessMs;
+            const d0Ms = d1Ms - (24 * 60 * 60 * 1000);
+            const isD0Future = d0Ms > todayMs;
+
+            points.unshift({
+                dayKey: 'D0',
+                axisLabel: `D0|${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                tooltipLabel: `D0 - ${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                dateLabel: toIsoDate(d0Ms),
+                dateMs: d0Ms,
+                ideal: baseInitial,
+                actual: isD0Future ? null : baseInitial,
+                projected: null,
+                scopeAdded: 0,
+                scopeRemoved: 0,
+                completedInDay: 0,
+                completedAccum: 0,
+                isToday: d0Ms === todayMs,
+                isFuture: isD0Future,
+                totalWork: baseInitial,
+            });
+
+            points[1].ideal = baseInitial;
             // Mudanças de escopo vêm dos campos do snapshot (histórico real), não derivadas da diferença de totalWork.
-            for (let i = 0; i < points.length; i++) {
+            for (let i = 1; i < points.length; i++) {
                 const snap = snapshotByDay.get(points[i].dateMs);
                 points[i].scopeAdded = Math.max(0, Math.round(snap?.addedCount || 0));
                 points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
@@ -402,7 +463,7 @@ export function BurndownChart({
 
             // Ideal piecewise: cada aumento de escopo recalcula o burn ideal para os dias restantes.
             let idealCursor = baseInitial;
-            for (let i = 1; i < points.length; i++) {
+            for (let i = 2; i < points.length; i++) {
                 idealCursor += points[i].scopeAdded - points[i].scopeRemoved;
                 idealCursor = Math.max(0, idealCursor);
                 const stepsRemaining = points.length - i;
@@ -436,11 +497,7 @@ export function BurndownChart({
         }
 
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
-        const snapshotInitialD1 = Math.round(points[0]?.totalWork ?? 0);
-        const dayOneNetScope = Math.round((points[0]?.scopeAdded || 0) - (points[0]?.scopeRemoved || 0));
-        // Baseline do cabeçalho (D0) = total do primeiro dia visível menos o escopo líquido do D1.
-        // Isso mantém todas as barras de escopo D1..Dn visíveis e faz o Delta bater com o somatório líquido.
-        const snapshotInitial = Math.max(0, snapshotInitialD1 - dayOneNetScope);
+        const snapshotInitial = baseInitial;
         const snapshotFinal = Math.round(
             lastActualIdx >= 0
                 ? (points[lastActualIdx]?.totalWork ?? snapshotInitial)
@@ -456,11 +513,11 @@ export function BurndownChart({
         const burnedTotal = lastActualIdx >= 0
             ? Math.max(0, Math.round(completedAccum[lastActualIdx]))
             : Math.max(0, effectiveTotalHours - remNow);
-        const workedDays = lastActualIdx >= 0 ? lastActualIdx + 1 : 0;
+        const workedDays = businessDays.filter((ms) => ms <= todayMs).length;
         const isAfterSprint = todayMs > endMs;
         const remainingDaysIncludingToday = isAfterSprint
             ? 0
-            : points.filter((p) => p.dateMs >= todayMs).length;
+            : businessDays.filter((ms) => ms >= todayMs).length;
         const avgBurnValue = workedDays > 0 ? burnedTotal / workedDays : 0;
         if (lastActualIdx >= 0) {
             const anchorIdx = lastActualIdx;
@@ -482,7 +539,7 @@ export function BurndownChart({
         const deviationAbs = remNow - (todayIdx >= 0 ? points[todayIdx].ideal : effectiveTotalHours);
         const deviationPct = effectiveTotalHours > 0 ? (deviationAbs / effectiveTotalHours) * 100 : 0;
         const remainingDays = Math.max(0, remainingDaysIncludingToday);
-        const neededIdealVelocity = points.length > 0 ? effectiveTotalHours / points.length : 0;
+        const neededIdealVelocity = businessDays.length > 0 ? effectiveTotalHours / businessDays.length : 0;
 
         let status = 'No Prazo';
         let statusColor = '#63B3ED';
@@ -514,7 +571,7 @@ export function BurndownChart({
             statusBg,
             deviationPct,
             completionPct: effectiveTotalHours > 0 ? Math.round((burnedTotal / effectiveTotalHours) * 100) : 0,
-            daysTotal: points.length,
+            daysTotal: businessDays.length,
             todayIdx,
             lastActualIdx,
             avgBurn: avgBurnValue,
@@ -522,11 +579,12 @@ export function BurndownChart({
             neededIdealVelocity,
             workedDays,
         };
-    }, [data, workItems, plannedInitial, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
+    }, [data, workItems, plannedInitial, plannedInitialD1Date, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
 
     if (!model) return null;
 
     return (
+        <>
         <div style={{ background: UI_COLORS.bg, borderRadius: 12, padding: 24, color: UI_COLORS.text, maxWidth: '100%', margin: '0 auto', border: `1px solid ${UI_COLORS.border}`, boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <div>
@@ -564,8 +622,8 @@ export function BurndownChart({
                 <LegendToggle label="Ideal" color="#63B3ED" checked={showIdeal} onToggle={() => setShowIdeal(!showIdeal)} />
                 <LegendToggle label="Remaining" color="#F6AD55" checked={showActual} onToggle={() => setShowActual(!showActual)} />
                 <LegendToggle label="Projeção" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
-                <LegendToggle label="Escopo Adicionado" color="#F59E0B" checked={showScopeAdded} onToggle={() => setShowScopeAdded(!showScopeAdded)} />
-                <LegendToggle label="Escopo Removido" color="#DC2626" checked={showScopeRemoved} onToggle={() => setShowScopeRemoved(!showScopeRemoved)} />
+                <LegendToggle label="Escopo Adicionado" color="#DC2626" checked={showScopeAdded} onToggle={() => setShowScopeAdded(!showScopeAdded)} />
+                <LegendToggle label="Escopo Removido" color="#1E3A8A" checked={showScopeRemoved} onToggle={() => setShowScopeRemoved(!showScopeRemoved)} />
                 <LegendToggle label="Concluído no dia" color="#34D399" checked={showCompletedDaily} onToggle={() => setShowCompletedDaily(!showCompletedDaily)} />
             </div>
 
@@ -598,17 +656,61 @@ export function BurndownChart({
                         {showActual && <Line type="monotone" dataKey="actual" stroke="#F6AD55" strokeWidth={2} dot={false} activeDot={<ActiveDot />} connectNulls={false} name="Remaining" />}
                         {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projeção" />}
                         {showScopeAdded && (
-                            <Bar dataKey="scopeAdded" fill="rgba(245,158,11,0.75)" barSize={10}>
-                                <LabelList dataKey="scopeAdded" content={<ScopeBarLabel />} />
+                            <Bar
+                                dataKey="scopeAdded"
+                                fill="rgba(220,38,38,0.78)"
+                                barSize={20}
+                                style={sprintId ? { cursor: 'pointer' } : undefined}
+                                onClick={(point: ChartPoint) => {
+                                    if (!sprintId || !point.scopeAdded) return;
+                                    setScopeTab('added');
+                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
+                                }}
+                            >
+                                <LabelList
+                                    dataKey="scopeAdded"
+                                    content={(labelProps: any) => (
+                                        <ScopeBarLabel
+                                            {...labelProps}
+                                            onOpen={(point: ChartPoint) => {
+                                                if (!sprintId || !point?.scopeAdded) return;
+                                                setScopeTab('added');
+                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
+                                            }}
+                                        />
+                                    )}
+                                />
                             </Bar>
                         )}
                         {showScopeRemoved && (
-                            <Bar dataKey="scopeRemoved" fill="rgba(220,38,38,0.75)" barSize={10}>
-                                <LabelList dataKey="scopeRemoved" content={<ScopeRemovedBarLabel />} />
+                            <Bar
+                                dataKey="scopeRemoved"
+                                fill="rgba(30,58,138,0.78)"
+                                barSize={20}
+                                style={sprintId ? { cursor: 'pointer' } : undefined}
+                                onClick={(point: ChartPoint) => {
+                                    if (!sprintId || !point.scopeRemoved) return;
+                                    setScopeTab('removed');
+                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
+                                }}
+                            >
+                                <LabelList
+                                    dataKey="scopeRemoved"
+                                    content={(labelProps: any) => (
+                                        <ScopeRemovedBarLabel
+                                            {...labelProps}
+                                            onOpen={(point: ChartPoint) => {
+                                                if (!sprintId || !point?.scopeRemoved) return;
+                                                setScopeTab('removed');
+                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
+                                            }}
+                                        />
+                                    )}
+                                />
                             </Bar>
                         )}
                         {showCompletedDaily && (
-                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={12}>
+                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={20}>
                                 <LabelList dataKey="completedInDay" content={<CompletedBarLabel />} />
                             </Bar>
                         )}
@@ -616,5 +718,118 @@ export function BurndownChart({
                 </ResponsiveContainer>
             </div>
         </div>
+
+        {scopeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="w-full max-w-2xl rounded-lg border border-border bg-background shadow-xl">
+                    <div className="flex items-center justify-between border-b border-border p-4">
+                        <div>
+                            <h3 className="text-base font-semibold text-foreground">Alterações de Escopo</h3>
+                            <p className="text-sm text-muted-foreground">{scopeModal.label}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${scopeTab === 'added' ? 'bg-amber-100 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}
+                                onClick={() => setScopeTab('added')}
+                            >
+                                Adicionados
+                                {scopeChanges && (
+                                    <span className="ml-1.5 rounded-full bg-amber-200 px-1.5 py-0.5 text-xs text-amber-800">
+                                        {scopeChanges.added.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${scopeTab === 'removed' ? 'bg-red-100 text-red-800' : 'text-muted-foreground hover:bg-muted'}`}
+                                onClick={() => setScopeTab('removed')}
+                            >
+                                Removidos
+                                {scopeChanges && (
+                                    <span className="ml-1.5 rounded-full bg-red-200 px-1.5 py-0.5 text-xs text-red-800">
+                                        {scopeChanges.removed.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                className="ml-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+                                onClick={() => setScopeModal(null)}
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
+                        {scopeLoading && (
+                            <div className="py-10 text-center text-sm text-muted-foreground">Carregando...</div>
+                        )}
+                        {!scopeLoading && scopeChanges && (() => {
+                            const items = scopeTab === 'added' ? scopeChanges.added : scopeChanges.removed;
+                            if (items.length === 0) {
+                                return (
+                                    <div className="py-10 text-center text-sm text-muted-foreground">
+                                        Nenhum item {scopeTab === 'added' ? 'adicionado' : 'removido'} neste dia.
+                                    </div>
+                                );
+                            }
+                            const reasonLabel: Record<string, string> = {
+                                added_to_sprint: 'Entrou na sprint',
+                                removed_from_sprint: 'Saiu da sprint',
+                                hours_increased: 'Horas aumentadas',
+                                hours_decreased: 'Horas reduzidas',
+                            };
+                            const reasonColor: Record<string, string> = {
+                                added_to_sprint: 'bg-green-100 text-green-800',
+                                removed_from_sprint: 'bg-red-100 text-red-800',
+                                hours_increased: 'bg-amber-100 text-amber-800',
+                                hours_decreased: 'bg-orange-100 text-orange-800',
+                            };
+                            return items.map((item) => (
+                                <div key={item.id} className="rounded-lg border border-border bg-card p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="font-medium text-sm text-foreground">
+                                            #{item.id} — {item.title}
+                                        </div>
+                                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${reasonColor[item.reason] || 'bg-muted text-muted-foreground'}`}>
+                                            {reasonLabel[item.reason] || item.reason}
+                                        </span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                        {item.type}
+                                        {' · '}
+                                        <span className={scopeTab === 'added' ? 'text-amber-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                            {scopeTab === 'added' ? '+' : ''}{item.hoursChange}h
+                                        </span>
+                                        {' · '}
+                                        por {item.changedBy}
+                                    </div>
+                                    {(() => {
+                                        const azureUrl = toAzureEditUrl(item.azureUrl, item.id, { fallbackOrgUrl: azureOrgUrl });
+                                        if (!azureUrl) {
+                                            return (
+                                                <div className="mt-2 text-xs text-muted-foreground">
+                                                    Link Azure indisponivel para este item.
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <a
+                                                href={azureUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-2 inline-block text-blue-600 hover:underline text-sm font-medium"
+                                            >
+                                                Abrir no Azure DevOps
+                                            </a>
+                                        );
+                                    })()}
+                                </div>
+                            ));
+                        })()}
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

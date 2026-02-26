@@ -10,7 +10,7 @@ export class DashboardController {
             // 1. Obter contagens de nivel superior
             const [activeProjects, activeSprints, totalWorkItems, warnings] = await Promise.all([
                 prisma.project.count({ where: { state: { not: 'deleting' } } }),
-                prisma.sprint.count({ where: { state: 'active' } }),
+                prisma.sprint.count({ where: { state: { in: ['active', 'Active'] } } }),
                 prisma.workItem.count({ where: { isRemoved: false, state: { not: 'Removed' } } }),
                 // Exemplo de "Avisos" - Itens bloqueados
                 prisma.workItem.count({
@@ -34,7 +34,7 @@ export class DashboardController {
 
             // 3. Buscar Sprints ativas com info basica de saude
             const currentSprints = await prisma.sprint.findMany({
-                where: { state: 'active' },
+                where: { state: { in: ['active', 'Active'] } },
                 take: 5,
                 include: {
                     project: { select: { name: true } }
@@ -93,7 +93,7 @@ export class DashboardController {
 
             const expiringSprints = await prisma.sprint.findMany({
                 where: {
-                    state: 'active',
+                    state: { in: ['active', 'Active'] },
                     endDate: { lte: twoDaysFromNow }
                 },
                 include: { project: true }
@@ -117,7 +117,7 @@ export class DashboardController {
     async getCurrentSprints(_req: FastifyRequest, reply: FastifyReply) {
         try {
             const sprints = await prisma.sprint.findMany({
-                where: { state: 'active' },
+                where: { state: { in: ['active', 'Active'] } },
                 include: {
                     project: { select: { name: true } },
                     capacities: true

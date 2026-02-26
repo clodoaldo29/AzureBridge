@@ -17,6 +17,81 @@ async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function resolveAssignedToMemberId(
+    assignedRaw: unknown,
+    projectId: string
+): Promise<string | null> {
+    if (!assignedRaw) return null;
+
+    if (typeof assignedRaw === 'object') {
+        const assigned = assignedRaw as Record<string, unknown>;
+        const uniqueName = assigned.uniqueName ? String(assigned.uniqueName) : null;
+        const displayName = assigned.displayName
+            ? String(assigned.displayName)
+            : (uniqueName || 'Unknown');
+        const azureIdentityId = assigned.id
+            ? String(assigned.id)
+            : (uniqueName ? String(uniqueName) : null);
+
+        if (azureIdentityId) {
+            const member = await prisma.teamMember.upsert({
+                where: {
+                    azureId_projectId: {
+                        azureId: azureIdentityId,
+                        projectId
+                    }
+                },
+                create: {
+                    azureId: azureIdentityId,
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assigned.imageUrl ? String(assigned.imageUrl) : null,
+                    projectId,
+                    isActive: true
+                },
+                update: {
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assigned.imageUrl ? String(assigned.imageUrl) : null,
+                    isActive: true
+                }
+            });
+            return member.id;
+        }
+
+        if (uniqueName || displayName) {
+            const byIdentity = await prisma.teamMember.findFirst({
+                where: {
+                    projectId,
+                    OR: [
+                        ...(uniqueName ? [{ uniqueName }] : []),
+                        ...(displayName ? [{ displayName }] : [])
+                    ]
+                },
+                select: { id: true }
+            });
+            return byIdentity?.id || null;
+        }
+
+        return null;
+    }
+
+    const assignedText = String(assignedRaw).trim();
+    if (!assignedText) return null;
+
+    const byText = await prisma.teamMember.findFirst({
+        where: {
+            projectId,
+            OR: [
+                { uniqueName: assignedText },
+                { displayName: assignedText }
+            ]
+        },
+        select: { id: true }
+    });
+    return byText?.id || null;
+}
+
 async function reconcileActiveSprints() {
     const activeSprints = await prisma.sprint.findMany({
         where: { state: { in: ['active', 'Active'] } },
@@ -30,6 +105,7 @@ async function reconcileActiveSprints() {
 
     let totalMarkedRemoved = 0;
     let totalReactivated = 0;
+    let totalReassigned = 0;
 
     for (const sprint of activeSprints) {
         console.log(`Reconciling: ${sprint.project.name} / ${sprint.name}`);
@@ -43,8 +119,9 @@ async function reconcileActiveSprints() {
 
         const localItems = await prisma.workItem.findMany({
             where: { sprintId: sprint.id },
-            select: { id: true, azureId: true, isRemoved: true },
+            select: { id: true, azureId: true, isRemoved: true, assignedToId: true },
         });
+        const localByAzureId = new Map(localItems.map((item) => [item.azureId, item]));
 
         const toMarkRemoved = localItems
             .filter((w) => !w.isRemoved && !azureIdSet.has(w.azureId))
@@ -76,12 +153,36 @@ async function reconcileActiveSprints() {
             totalReactivated += res.count;
         }
 
+        let reassigned = 0;
+        for (const azureItem of azureItems) {
+            if (!azureItem?.id) continue;
+            const local = localByAzureId.get(azureItem.id);
+            if (!local) continue;
+
+            const assignedToId = await resolveAssignedToMemberId(
+                azureItem.fields?.['System.AssignedTo'],
+                sprint.projectId
+            );
+
+            if (local.assignedToId !== assignedToId) {
+                await prisma.workItem.update({
+                    where: { id: local.id },
+                    data: {
+                        assignedToId,
+                        lastSyncAt: new Date()
+                    }
+                });
+                reassigned++;
+            }
+        }
+        totalReassigned += reassigned;
+
         console.log(
-            `  Azure=${azureIdSet.size} | Local=${localItems.length} | markedRemoved=${toMarkRemoved.length} | reactivated=${toReactivate.length}`
+            `  Azure=${azureIdSet.size} | Local=${localItems.length} | markedRemoved=${toMarkRemoved.length} | reactivated=${toReactivate.length} | reassigned=${reassigned}`
         );
     }
 
-    console.log(`Done. markedRemoved=${totalMarkedRemoved}, reactivated=${totalReactivated}`);
+    console.log(`Done. markedRemoved=${totalMarkedRemoved}, reactivated=${totalReactivated}, reassigned=${totalReassigned}`);
 }
 
 async function main() {

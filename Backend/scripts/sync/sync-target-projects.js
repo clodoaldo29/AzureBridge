@@ -104,6 +104,77 @@ async function persistWorkItemRevisions(workItemId, witApi) {
     return persisted;
 }
 
+async function resolveAssignedToMemberId(assignedRaw, projectId) {
+    if (!assignedRaw) return null;
+
+    if (typeof assignedRaw === 'object') {
+        const uniqueName = assignedRaw.uniqueName ? String(assignedRaw.uniqueName) : null;
+        const displayName = assignedRaw.displayName
+            ? String(assignedRaw.displayName)
+            : (uniqueName || 'Unknown');
+        const azureIdentityId = assignedRaw.id
+            ? String(assignedRaw.id)
+            : (uniqueName ? String(uniqueName) : null);
+
+        if (azureIdentityId) {
+            const member = await prisma.teamMember.upsert({
+                where: {
+                    azureId_projectId: {
+                        azureId: azureIdentityId,
+                        projectId
+                    }
+                },
+                create: {
+                    azureId: azureIdentityId,
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    projectId,
+                    isActive: true
+                },
+                update: {
+                    displayName,
+                    uniqueName: uniqueName || displayName,
+                    imageUrl: assignedRaw.imageUrl || null,
+                    isActive: true
+                }
+            });
+            return member.id;
+        }
+
+        if (uniqueName || displayName) {
+            const byIdentity = await prisma.teamMember.findFirst({
+                where: {
+                    projectId,
+                    OR: [
+                        ...(uniqueName ? [{ uniqueName }] : []),
+                        ...(displayName ? [{ displayName }] : []),
+                    ]
+                },
+                select: { id: true }
+            });
+            return byIdentity?.id || null;
+        }
+
+        return null;
+    }
+
+    const assignedText = String(assignedRaw).trim();
+    if (!assignedText) return null;
+
+    const byText = await prisma.teamMember.findFirst({
+        where: {
+            projectId,
+            OR: [
+                { uniqueName: assignedText },
+                { displayName: assignedText }
+            ]
+        },
+        select: { id: true }
+    });
+    return byText?.id || null;
+}
+
 async function syncTargets() {
     console.log('SYNC TARGET PROJECTS');
     console.log('='.repeat(60));
@@ -280,6 +351,7 @@ async function syncTargets() {
                     endDate: sprint.endDate,
                     state: sprint.state,
                     timeFrame: sprint.timeFrame,
+                    projectId: dbProject.id,
                 }
             });
 
@@ -338,17 +410,10 @@ async function syncTargets() {
                         ? (remainingWork > 0 ? remainingWork : completedWork)
                         : null;
 
-                    let assignedToId = null;
-                    const assignedTo = f['System.AssignedTo'];
-                    if (assignedTo && assignedTo.uniqueName) {
-                        const member = await prisma.teamMember.findFirst({
-                            where: {
-                                projectId: dbProject.id,
-                                uniqueName: assignedTo.uniqueName
-                            }
-                        });
-                        assignedToId = member?.id || null;
-                    }
+                    const assignedToId = await resolveAssignedToMemberId(
+                        f['System.AssignedTo'],
+                        dbProject.id
+                    );
 
                     await prisma.workItem.upsert({
                         where: { id: wi.id },
