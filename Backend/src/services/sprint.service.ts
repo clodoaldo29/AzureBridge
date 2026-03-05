@@ -11,9 +11,21 @@ export class SprintService {
             orderBy: { startDate: 'desc' },
             take: filter.limit || 20,
             include: {
+                capacities: {
+                    select: {
+                        availableHours: true
+                    }
+                },
                 snapshots: {
-                    orderBy: { snapshotDate: 'desc' },
-                    take: 1
+                    orderBy: { snapshotDate: 'asc' },
+                    select: {
+                        snapshotDate: true,
+                        totalWork: true,
+                        remainingWork: true,
+                        completedWork: true,
+                        addedCount: true,
+                        removedCount: true
+                    }
                 }
             }
         });

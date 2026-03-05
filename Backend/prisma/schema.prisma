@@ -150,6 +150,7 @@ model Sprint {
   workItems  WorkItem[]
   capacities TeamCapacity[]
   snapshots  SprintSnapshot[]
+  outcomes   SprintItemOutcome[]
   alerts     Alert[]
 
   createdAt        DateTime  @default(now())
@@ -203,6 +204,45 @@ model SprintSnapshot {
   @@index([sprintId])
   @@index([snapshotDate])
   @@map("sprint_snapshots")
+}
+
+// Congelamento de resultado por item dentro da sprint.
+// Preserva baseline, escopo e conclusão (na sprint e após a sprint).
+model SprintItemOutcome {
+  id String @id @default(cuid())
+
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  workItemId Int
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  plannedInitialHours       Float @default(0)
+  scopeAddedHours           Float @default(0)
+  scopeRemovedHours         Float @default(0)
+  scopeAddedAfterSprintHours   Float @default(0)
+  scopeRemovedAfterSprintHours Float @default(0)
+  completedInSprintHours    Float @default(0)
+  completedAfterSprintHours Float @default(0)
+  remainingAtSprintEndHours Float @default(0)
+
+  wasInSprintAtD0  Boolean @default(false)
+  enteredAfterD0   Boolean @default(false)
+  leftDuringSprint Boolean @default(false)
+  inSprintAtEnd    Boolean @default(false)
+  doneAfterSprint  Boolean @default(false)
+
+  doneAfterSprintDate DateTime?
+  lastScopeEventDate  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sprintId, workItemId])
+  @@index([sprintId])
+  @@index([workItemId])
+  @@index([doneAfterSprint, sprintId])
+  @@map("sprint_item_outcomes")
 }
 
 // ============================================
@@ -295,6 +335,7 @@ model WorkItem {
   // Relações
   revisions WorkItemRevision[]
   comments  WorkItemComment[]
+  outcomes  SprintItemOutcome[]
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

@@ -28,6 +28,8 @@
     "sync:hourly": "tsx scripts/hourly-sync.ts",
     "sync:daily": "tsx scripts/daily-sync.ts",
     "sync:full": "tsx scripts/full-sync.ts",
+    "sync:new:hourly": "tsx scripts/sync-hourly.ts",
+    "sync:new:daily": "tsx scripts/sync-daily.ts",
     "sync:revisions:backfill": "tsx scripts/backfill/backfill-workitem-revisions.ts",
     "audit:scope-reconcile": "tsx scripts/maintenance/reconcile-scope-delta.ts"
   },

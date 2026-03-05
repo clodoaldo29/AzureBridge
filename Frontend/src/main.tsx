@@ -10,6 +10,8 @@ import './styles/globals.css';
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
+            staleTime: 55 * 60 * 1000,
+            gcTime: 60 * 60 * 1000,
             retry: (failureCount, error) => {
                 if (axios.isAxiosError(error)) {
                     const status = error.response?.status;

@@ -69,6 +69,10 @@ export const useSprintBurndown = (id: string) => {
                 plannedInitialBeforeD1?: number | null;
                 plannedInitialD1Date?: string | null;
                 plannedInitialContributingItems?: number;
+                lateCompletionHours?: number;
+                lateCompletionItems?: number;
+                lateScopeAddedHours?: number;
+                lateScopeRemovedHours?: number;
             }>>(`/sprints/${id}/burndown`);
             return data.data;
         },

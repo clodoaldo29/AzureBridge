@@ -37,6 +37,17 @@ export interface Sprint {
     completedStoryPoints?: number;
     teamCapacityHours?: number;
     commitmentHours?: number;
+    capacities?: Array<{
+        availableHours?: number | null;
+    }>;
+    snapshots?: Array<{
+        snapshotDate?: string;
+        totalWork?: number | null;
+        completedWork?: number | null;
+        remainingWork?: number | null;
+        addedCount?: number | null;
+        removedCount?: number | null;
+    }>;
     isOnTrack: boolean;
     riskLevel?: 'low' | 'medium' | 'high' | 'critical';
     createdAt: string;

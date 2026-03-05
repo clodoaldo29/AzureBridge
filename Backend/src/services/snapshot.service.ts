@@ -1074,6 +1074,86 @@ export class SnapshotService {
             }
         }
 
+        // Regra de pós-sprint:
+        // quando o usuário abre o último dia da sprint (D10), incluir no modal
+        // o escopo pós-fim consolidado nesse dia para manter coerência com as barras.
+        try {
+            const lastSnapshot = await prisma.sprintSnapshot.findFirst({
+                where: { sprintId },
+                orderBy: { snapshotDate: 'desc' },
+                select: { snapshotDate: true }
+            });
+            const isLastSprintDay = lastSnapshot
+                ? lastSnapshot.snapshotDate.toISOString().slice(0, 10) === dateStr
+                : false;
+
+            if (isLastSprintDay) {
+                const lateOutcomes = await prisma.sprintItemOutcome.findMany({
+                    where: {
+                        sprintId,
+                        OR: [
+                            { scopeAddedAfterSprintHours: { gt: 0 } },
+                            { scopeRemovedAfterSprintHours: { gt: 0 } }
+                        ]
+                    },
+                    select: {
+                        workItemId: true,
+                        scopeAddedAfterSprintHours: true,
+                        scopeRemovedAfterSprintHours: true
+                    }
+                });
+
+                if (lateOutcomes.length > 0) {
+                    const outcomeIds = Array.from(new Set(lateOutcomes.map((o) => o.workItemId)));
+                    const outcomeItems = await prisma.workItem.findMany({
+                        where: { id: { in: outcomeIds } },
+                        select: { id: true, title: true, type: true, url: true }
+                    });
+                    const byId = new Map(outcomeItems.map((wi) => [wi.id, wi]));
+
+                    for (const outcome of lateOutcomes) {
+                        const wi = byId.get(outcome.workItemId);
+                        const title = wi?.title || `#${outcome.workItemId}`;
+                        const type = wi?.type || '';
+                        const azureUrl = buildAzureWorkItemUrl({
+                            id: outcome.workItemId,
+                            rawUrl: wi?.url || null,
+                            projectName
+                        });
+                        const changedBy = 'Pós-sprint (consolidado em D10)';
+
+                        const lateAdded = Math.max(0, Number(outcome.scopeAddedAfterSprintHours || 0));
+                        if (lateAdded > 0) {
+                            added.push({
+                                id: outcome.workItemId,
+                                title,
+                                type,
+                                hoursChange: Math.round(lateAdded * 10) / 10,
+                                changedBy,
+                                azureUrl,
+                                reason: 'hours_increased'
+                            });
+                        }
+
+                        const lateRemoved = Math.max(0, Number(outcome.scopeRemovedAfterSprintHours || 0));
+                        if (lateRemoved > 0) {
+                            removed.push({
+                                id: outcome.workItemId,
+                                title,
+                                type,
+                                hoursChange: Math.round(lateRemoved * 10) / 10,
+                                changedBy,
+                                azureUrl,
+                                reason: 'hours_decreased'
+                            });
+                        }
+                    }
+                }
+            }
+        } catch {
+            // Se a tabela nova ainda não existe (migracao pendente), mantem comportamento legado.
+        }
+
         added.sort((a, b) => b.hoursChange - a.hoursChange);
         removed.sort((a, b) => b.hoursChange - a.hoursChange);
 

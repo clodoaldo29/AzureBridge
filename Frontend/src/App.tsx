@@ -1,6 +1,7 @@
 ﻿import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/pages/Dashboard';
+import { SprintHistory } from '@/pages/SprintHistory';
 import { Sprints } from '@/pages/Sprints';
 import { RDAGenerator } from '@/features/rda/pages/RDAGenerator';
 import { Toaster } from '@/components/ui/toaster';
@@ -28,6 +29,7 @@ export default function App() {
             <Routes>
                 <Route element={<AppLayout />}>
                     <Route index element={<Dashboard />} />
+                    <Route path="historico" element={<SprintHistory />} />
                     <Route path="sprints" element={<Sprints />} />
                     <Route
                         path="work-items"

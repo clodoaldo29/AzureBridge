@@ -11,18 +11,21 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
-import type { SprintSnapshot, WorkItem } from '@/types';
+import type { SprintSnapshot } from '@/types';
 import { useScopeChanges } from '@/features/dashboard/queries/sprints';
 import { toAzureEditUrl } from '@/features/dashboard/utils/azure-url';
 
 interface BurndownChartProps {
     data: SprintSnapshot[];
-    workItems?: WorkItem[];
     plannedInitial?: number;
     plannedInitialD1Date?: string | null;
     plannedCurrent?: number;
     plannedDelta?: number;
     currentRemaining?: number;
+    lateCompletionHours?: number;
+    lateCompletionItems?: number;
+    lateScopeAddedHours?: number;
+    lateScopeRemovedHours?: number;
     sprintStartDate?: string;
     sprintEndDate?: string;
     dayOffDates?: string[];
@@ -222,7 +225,7 @@ const CompletedBarLabel = ({ x, y, width, value }: any) => {
     return (
         <text
             x={x + width / 2}
-            y={y - 12}
+            y={y - 4}
             textAnchor="middle"
             fill="#047857"
             fontSize={9}
@@ -293,12 +296,15 @@ const StatusBadge = ({ status, color, bgColor, deviation }: { status: string; co
 
 export function BurndownChart({
     data,
-    workItems = [],
     plannedInitial,
     plannedInitialD1Date,
     plannedCurrent,
     plannedDelta,
     currentRemaining,
+    lateCompletionHours = 0,
+    lateCompletionItems = 0,
+    lateScopeAddedHours = 0,
+    lateScopeRemovedHours = 0,
     sprintStartDate,
     sprintEndDate,
     dayOffDates = [],
@@ -394,9 +400,9 @@ export function BurndownChart({
             const isD0Future = d0Ms > todayMs;
 
             points.unshift({
-                dayKey: 'D0',
-                axisLabel: `D0|${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
-                tooltipLabel: `D0 - ${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                dayKey: 'Planning',
+                axisLabel: `Planning|${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                tooltipLabel: `Planning - ${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
                 dateLabel: toIsoDate(d0Ms),
                 dateMs: d0Ms,
                 ideal: baseInitial,
@@ -419,50 +425,10 @@ export function BurndownChart({
                 points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
             }
 
-            // Fallback: if backend still has removedCount = 0, infer removed scope from
-            // real item history on changedDate (initial -> planned current).
-            const hasExplicitRemoved = points.some((p) => p.scopeRemoved > 0);
-            if (!hasExplicitRemoved) {
-                for (const item of workItems) {
-                    const initial = Math.max(0, Math.round(Number(item.initialRemainingWork || 0)));
-                    if (initial <= 0) continue;
-
-                    const last = Math.max(0, Math.round(Number(item.lastRemainingWork || 0)));
-                    const done = Math.max(0, Math.round(Number(item.doneRemainingWork || 0)));
-                    const remaining = Math.max(0, Math.round(Number(item.remainingWork || 0)));
-                    const completed = Math.max(0, Math.round(Number(item.completedWork || 0)));
-                    const currentTotal = remaining + completed;
-                    const state = String(item.state || '').toLowerCase();
-                    const isDone = state === 'done' || state === 'closed' || state === 'completed';
-
-                    const plannedCurrent = item.isRemoved
-                        ? (last > 0 ? last : (done > 0 ? done : currentTotal))
-                        : (isDone
-                            ? (done > 0 ? done : (last > 0 ? last : currentTotal))
-                            : (last > 0 ? last : remaining));
-
-                    const removedHours = Math.max(0, initial - plannedCurrent);
-                    if (removedHours <= 0) continue;
-
-                    const changedMs = toUtcDayMs(item.changedDate);
-                    let idx = points.findIndex((p) => p.dateMs === changedMs);
-                    if (idx < 0) {
-                        idx = 0;
-                        for (let i = points.length - 1; i >= 0; i--) {
-                            if (points[i].dateMs <= changedMs) {
-                                idx = i;
-                                break;
-                            }
-                        }
-                    }
-                    if (idx >= 0 && idx < points.length) {
-                        points[idx].scopeRemoved += removedHours;
-                    }
-                }
-            }
-
-            // Ideal piecewise: cada aumento de escopo recalcula o burn ideal para os dias restantes.
-            let idealCursor = baseInitial;
+            // Ideal piecewise: D1 scope creep must affect ideal path starting on D1.
+            const d1NetScope = (points[1]?.scopeAdded || 0) - (points[1]?.scopeRemoved || 0);
+            points[1].ideal = Math.max(0, Math.round(baseInitial + d1NetScope));
+            let idealCursor = points[1].ideal;
             for (let i = 2; i < points.length; i++) {
                 idealCursor += points[i].scopeAdded - points[i].scopeRemoved;
                 idealCursor = Math.max(0, idealCursor);
@@ -579,7 +545,7 @@ export function BurndownChart({
             neededIdealVelocity,
             workedDays,
         };
-    }, [data, workItems, plannedInitial, plannedInitialD1Date, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
+    }, [data, plannedInitial, plannedInitialD1Date, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
 
     if (!model) return null;
 
@@ -626,6 +592,21 @@ export function BurndownChart({
                 <LegendToggle label="Escopo Removido" color="#1E3A8A" checked={showScopeRemoved} onToggle={() => setShowScopeRemoved(!showScopeRemoved)} />
                 <LegendToggle label="Concluído no dia" color="#34D399" checked={showCompletedDaily} onToggle={() => setShowCompletedDaily(!showCompletedDaily)} />
             </div>
+            {(lateCompletionHours > 0 || lateScopeAddedHours > 0 || lateScopeRemovedHours > 0) && (
+                <div style={{
+                    marginBottom: 12,
+                    borderRadius: 10,
+                    border: `1px solid ${UI_COLORS.border}`,
+                    background: '#F8FAFC',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    color: UI_COLORS.muted
+                }}>
+                    Obs: {lateCompletionHours > 0 ? `${Math.round(lateCompletionHours)}h concluídas após o fim da sprint` : '0h concluídas após o fim da sprint'}
+                    {lateCompletionItems > 0 ? ` (${lateCompletionItems} item(ns))` : ''}
+                    {(lateScopeAddedHours > 0 || lateScopeRemovedHours > 0) ? ` · escopo pós-sprint consolidado no D10: +${Math.round(lateScopeAddedHours)}h / -${Math.round(lateScopeRemovedHours)}h` : ''}
+                </div>
+            )}
 
             <div style={{ background: UI_COLORS.bgSoft, borderRadius: 12, padding: '18px 12px 12px 0', border: `1px solid ${UI_COLORS.border}` }}>
                 <ResponsiveContainer width="100%" height={400}>

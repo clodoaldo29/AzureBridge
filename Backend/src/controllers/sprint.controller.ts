@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { sprintService } from '@/services/sprint.service';
 import { snapshotService } from '@/services/snapshot.service';
+import { prisma } from '@/database/client';
 import { sprintQuerySchema, sprintParamsSchema } from '@/schemas/sprint.schema';
 import { logger } from '@/utils/logger';
 import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
@@ -44,51 +45,48 @@ export class SprintController {
      */
     async getSprintBurndown(req: FastifyRequest, reply: FastifyReply) {
         const { id } = sprintParamsSchema.parse(req.params);
-        const baselineMode = String(process.env.BURNDOWN_BASELINE_MODE || 'historical').trim().toLowerCase();
-        const shouldUseHistoricalBaseline = baselineMode !== 'legacy';
-        const [snapshots, baseline] = await Promise.all([
-            sprintService.getBurndown(id),
-            shouldUseHistoricalBaseline
-                ? snapshotService.getPlannedInitialBeforeD1(id)
-                : Promise.resolve({ plannedInitialBeforeD1: null, d1Date: null, contributingItems: 0 })
-        ]);
-
-        const snapshotsWithLiveScope = await Promise.all(
-            snapshots.map(async (snapshot) => {
-                const day = new Date(snapshot.snapshotDate).toISOString().slice(0, 10);
-                const totals = await snapshotService.getScopeTotalsForDay(id, day);
-                return {
-                    ...snapshot,
-                    addedCount: totals.addedCount,
-                    removedCount: totals.removedCount
-                };
-            })
-        );
-
-        const sortedByDate = [...snapshotsWithLiveScope].sort(
+        const snapshots = await sprintService.getBurndown(id);
+        let lateCompletionHours = 0;
+        let lateCompletionItems = 0;
+        let lateScopeAddedHours = 0;
+        let lateScopeRemovedHours = 0;
+        try {
+            const lateSummary = await prisma.sprintItemOutcome.aggregate({
+                where: { sprintId: id },
+                _sum: {
+                    completedAfterSprintHours: true,
+                    scopeAddedAfterSprintHours: true,
+                    scopeRemovedAfterSprintHours: true
+                }
+            });
+            lateCompletionItems = await prisma.sprintItemOutcome.count({
+                where: {
+                    sprintId: id,
+                    completedAfterSprintHours: { gt: 0 }
+                }
+            });
+            lateCompletionHours = Math.max(0, Math.round(Number(lateSummary._sum.completedAfterSprintHours || 0)));
+            lateScopeAddedHours = Math.max(0, Math.round(Number(lateSummary._sum.scopeAddedAfterSprintHours || 0)));
+            lateScopeRemovedHours = Math.max(0, Math.round(Number(lateSummary._sum.scopeRemovedAfterSprintHours || 0)));
+        } catch (error) {
+            if (!isMissingDatabaseTableError(error)) {
+                throw error;
+            }
+        }
+        const sortedByDate = [...snapshots].sort(
             (a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime()
         );
 
-        const fallbackBaseline = sortedByDate.length > 0
-            ? Math.max(
-                0,
-                Math.round(
-                    Number(sortedByDate[0].totalWork || 0) -
-                    Math.round(Number(sortedByDate[0].addedCount || 0) - Number(sortedByDate[0].removedCount || 0))
-                )
-            )
-            : 0;
-
-        const plannedInitialBeforeD1 = Math.max(
-            0,
-            Math.round(
-                Number(
-                    (baseline.plannedInitialBeforeD1 !== null && baseline.plannedInitialBeforeD1 !== undefined)
-                        ? baseline.plannedInitialBeforeD1
-                        : fallbackBaseline
-                )
-            )
+        const firstSnapshot = sortedByDate[0];
+        const firstDayNetScope = Math.round(
+            Number(firstSnapshot?.addedCount || 0) - Number(firstSnapshot?.removedCount || 0)
         );
+        const plannedInitialBeforeD1 = sortedByDate.length > 0
+            ? Math.max(0, Math.round(Number(firstSnapshot?.totalWork || 0) - firstDayNetScope))
+            : 0;
+        const plannedInitialD1Date = firstSnapshot
+            ? new Date(firstSnapshot.snapshotDate).toISOString().slice(0, 10)
+            : null;
 
         const raw = sortedByDate.map((snapshot) => ({
             ...snapshot,
@@ -109,8 +107,12 @@ export class SprintController {
                 ],
                 raw,
                 plannedInitialBeforeD1,
-                plannedInitialD1Date: baseline.d1Date,
-                plannedInitialContributingItems: baseline.contributingItems
+                plannedInitialD1Date,
+                plannedInitialContributingItems: null,
+                lateCompletionHours,
+                lateCompletionItems,
+                lateScopeAddedHours,
+                lateScopeRemovedHours
             }
         });
     }

@@ -1,4 +1,5 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -312,6 +313,97 @@ export function WorkItemAgingCard({
         });
     };
 
+    const exportAlertItemsPdf = () => {
+        const rowsToExport = [...criticalRows, ...warningRows];
+        if (rowsToExport.length === 0) return;
+
+        const now = new Date();
+        const generatedAt = now.toLocaleString('pt-BR');
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 40;
+        const maxWidth = pageWidth - margin * 2;
+        const lineHeight = 14;
+        let y = margin;
+
+        const ensureSpace = (requiredHeight = lineHeight) => {
+            if (y + requiredHeight > pageHeight - margin) {
+                doc.addPage();
+                y = margin;
+            }
+        };
+
+        const writeLine = (
+            text: string,
+            options: { size?: number; bold?: boolean; indent?: number } = {}
+        ) => {
+            const { size = 10, bold = false, indent = 0 } = options;
+            const x = margin + indent;
+            doc.setFont('helvetica', bold ? 'bold' : 'normal');
+            doc.setFontSize(size);
+
+            const lines = doc.splitTextToSize(text, maxWidth - indent) as string[];
+            for (const line of lines) {
+                ensureSpace(lineHeight);
+                doc.text(line, x, y);
+                y += lineHeight;
+            }
+        };
+
+        const writeSection = (title: string, sectionRows: AgingRow[]) => {
+            writeLine(`${title} (${sectionRows.length})`, { size: 12, bold: true });
+            y += 4;
+
+            if (sectionRows.length === 0) {
+                writeLine('Nenhum item nesta secao.');
+                y += 8;
+                return;
+            }
+
+            sectionRows.forEach((row, index) => {
+                const dueDate = new Date(row.dueAt);
+                const delayDays = Math.max(0, row.actualDays - row.expectedDays);
+                const delayHours = Math.max(0, row.actualHours - row.expectedHours);
+                const overdueHours = Math.max(0, businessHoursBetween(dueDate, now, dayOffSet));
+                const remainingToDueHours = Math.max(0, businessHoursBetween(now, dueDate, dayOffSet));
+                const prazoLabel = overdueHours > 0
+                    ? `vencido ha ${overdueHours.toFixed(1)}h uteis`
+                    : `faltam ${remainingToDueHours.toFixed(1)}h uteis`;
+
+                ensureSpace(lineHeight * 8);
+                writeLine(`${index + 1}. #${row.id} - ${row.title}`, { bold: true });
+                writeLine(`Responsavel: ${row.assignee}`);
+                writeLine(`Status: ${row.status === 'critical' ? 'Critico' : 'Atencao'}`);
+                writeLine(`Horas previstas: ${row.effortHours}h | Capacidade: ${row.capacityPerDay}h/dia`);
+                writeLine(`Inicio em progresso: ${new Date(row.inProgressAt).toLocaleString('pt-BR')}`);
+                writeLine(`Previsao de conclusao: ${dueDate.toLocaleString('pt-BR')}`);
+                writeLine(`Dias em atraso: ${delayDays} | Horas uteis em atraso: ${delayHours.toFixed(1)}h`);
+                writeLine(`Status do prazo: ${prazoLabel}`);
+                writeLine(`Link Azure DevOps: ${row.azureUrl ?? 'indisponivel'}`);
+
+                y += 4;
+                ensureSpace(8);
+                doc.setDrawColor(220);
+                doc.line(margin, y, pageWidth - margin, y);
+                y += 8;
+            });
+        };
+
+        writeLine('Relatorio de Work Item Aging', { size: 16, bold: true });
+        writeLine(`Gerado em: ${generatedAt}`);
+        writeLine(`Projeto: ${projectName || 'Nao informado'}`);
+        writeLine(`Total Criticos: ${criticalRows.length}`);
+        writeLine(`Total Atencao: ${warningRows.length}`);
+        writeLine(`Total em risco: ${rowsToExport.length}`);
+        y += 8;
+
+        writeSection('Itens Criticos', criticalRows);
+        writeSection('Itens Atencao', warningRows);
+
+        doc.save(`aging-alertas-${now.toISOString().slice(0, 10)}.pdf`);
+    };
+
     return (
         <>
             <Card>
@@ -367,14 +459,14 @@ export function WorkItemAgingCard({
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-4xl rounded-lg border border-border bg-background shadow-xl">
-                        <div className="flex items-center justify-between border-b border-border p-4">
-                            <div>
+                        <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0">
                                 <h3 className="text-lg font-semibold">Detalhamento de Aging</h3>
                                 <p className="text-sm text-muted-foreground">
                                     {modalRows.length} itens
                                 </p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                                 <Button variant={modalFilter === 'all' ? 'default' : 'outline'} onClick={() => setModalFilter('all')}>
                                     Todos
                                 </Button>
@@ -386,6 +478,9 @@ export function WorkItemAgingCard({
                                 </Button>
                                 <Button variant={modalFilter === 'ok' ? 'default' : 'outline'} onClick={() => setModalFilter('ok')}>
                                     No prazo
+                                </Button>
+                                <Button variant="outline" onClick={exportAlertItemsPdf} disabled={alertRows.length === 0}>
+                                    Exportar PDF
                                 </Button>
                                 <Button variant="outline" onClick={() => setIsModalOpen(false)}>Fechar</Button>
                             </div>

@@ -7,6 +7,7 @@ import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
 import { CapacityTable } from '@/components/dashboard/CapacityTable';
 import { MemberCapacityProgress } from '@/components/dashboard/MemberCapacityProgress';
 import { WorkItemAgingCard } from '../components/WorkItemAgingCard';
+import { BlockedItemsCard } from '../components/BlockedItemsCard';
 import { BurndownChart } from '@/components/charts/BurndownChart';
 import { CumulativeFlowChart } from '../charts/CumulativeFlowChart';
 import { WorkItemsByStateChart } from '../charts/WorkItemsByStateChart';
@@ -14,7 +15,7 @@ import { WorkItemsByTypeChart } from '../charts/WorkItemsByTypeChart';
 import { WorkItemsByMemberChart } from '../charts/WorkItemsByMemberChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Target, Users, CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
+import { Target, Users, CheckCircle2, Clock } from 'lucide-react';
 import { calculateSprintHealthDetails } from '@/utils/calculations';
 import { useAppStore } from '@/stores/appStore';
 import { useQuery } from '@tanstack/react-query';
@@ -32,19 +33,32 @@ function toIsoDate(ms: number): string {
 }
 
 function getIdealRemainingToday(params: {
-    snapshots: Array<{ snapshotDate: string; totalWork: number; idealRemaining?: number | null }>;
+    snapshots: Array<{
+        snapshotDate: string;
+        totalWork: number;
+        idealRemaining?: number | null;
+        addedCount?: number;
+        removedCount?: number;
+    }>;
     sprintStartDate?: string;
     sprintEndDate?: string;
+    plannedInitialD1Date?: string | null;
     plannedInitial: number;
     plannedCurrent: number;
     dayOffDates: string[];
 }): number {
-    const { snapshots, sprintStartDate, sprintEndDate, plannedInitial, plannedCurrent, dayOffDates } = params;
+    const { snapshots, sprintStartDate, sprintEndDate, plannedInitialD1Date, plannedInitial, plannedCurrent, dayOffDates } = params;
     if (!snapshots.length || !sprintStartDate || !sprintEndDate) return plannedCurrent;
 
     const sorted = [...snapshots].sort((a, b) => toUtcDayMs(a.snapshotDate) - toUtcDayMs(b.snapshotDate));
-    const snapshotByDay = new Map<number, { totalWork: number }>();
-    sorted.forEach((s) => snapshotByDay.set(toUtcDayMs(s.snapshotDate), { totalWork: Number(s.totalWork || 0) }));
+    const snapshotByDay = new Map<number, { totalWork: number; addedCount: number; removedCount: number }>();
+    sorted.forEach((s) =>
+        snapshotByDay.set(toUtcDayMs(s.snapshotDate), {
+            totalWork: Number(s.totalWork || 0),
+            addedCount: Number(s.addedCount || 0),
+            removedCount: Number(s.removedCount || 0),
+        })
+    );
 
     const offSet = new Set(dayOffDates);
     const startMs = toUtcDayMs(sprintStartDate);
@@ -77,10 +91,21 @@ function getIdealRemainingToday(params: {
     );
 
     const idealSeries: number[] = new Array(businessDays.length).fill(0);
-    idealSeries[0] = baseInitial;
-    let idealCursor = baseInitial;
+    const d1Ms = plannedInitialD1Date ? toUtcDayMs(plannedInitialD1Date) : businessDays[0];
+    let d1Idx = businessDays.findIndex((ms) => ms === d1Ms);
+    if (d1Idx < 0) {
+        d1Idx = businessDays.findIndex((ms) => ms >= d1Ms);
+    }
+    if (d1Idx < 0) d1Idx = 0;
 
-    for (let i = 1; i < businessDays.length; i++) {
+    for (let i = 0; i <= d1Idx && i < businessDays.length; i++) {
+        idealSeries[i] = baseInitial;
+    }
+    const d1Scope = snapshotByDay.get(businessDays[d1Idx]);
+    const d1NetScope = Math.round(Number(d1Scope?.addedCount || 0) - Number(d1Scope?.removedCount || 0));
+    let idealCursor = Math.max(0, baseInitial + d1NetScope);
+
+    for (let i = d1Idx + 1; i < businessDays.length; i++) {
         const scopeAdded = Math.max(0, Math.round(totalWorkSeries[i] - totalWorkSeries[i - 1]));
         idealCursor += scopeAdded;
         const stepsRemaining = businessDays.length - i;
@@ -159,8 +184,17 @@ export function Dashboard() {
     // Busca dados de burndown
     const { data: burndownData } = useSprintBurndown(currentSprint?.id || '');
 
-    // Busca work items bloqueados
+    // Busca work items bloqueados (fonte original do card de impedimentos)
     const { data: blockedItems } = useBlockedWorkItems();
+    const scopedBlockedItems = useMemo(() => {
+        const items = blockedItems || [];
+
+        return items.filter((item) => {
+            if (selectedProject && item.projectId !== selectedProject.id) return false;
+            if (currentSprint?.id && item.sprintId !== currentSprint.id) return false;
+            return true;
+        });
+    }, [blockedItems, selectedProject, currentSprint?.id]);
 
     // Busca todos os work items da sprint atual (para os gráficos donut)
     const { data: workItemsResponse } = useWorkItems(
@@ -241,6 +275,7 @@ export function Dashboard() {
         snapshots: burndownData?.raw || [],
         sprintStartDate: currentSprint?.startDate,
         sprintEndDate: currentSprint?.endDate,
+        plannedInitialD1Date: burndownData?.plannedInitialD1Date,
         plannedInitial,
         plannedCurrent,
         dayOffDates: capacityData?.summary.dayOffDates || [],
@@ -325,10 +360,10 @@ export function Dashboard() {
                             value={`${completedHours}h`}
                             icon={CheckCircle2}
                         />
-                        <StatCard
-                            title="Impedimentos"
-                            value={`${blockedItems?.length || 0}`}
-                            icon={AlertTriangle}
+                        <BlockedItemsCard
+                            workItems={scopedBlockedItems}
+                            projectName={selectedProject?.name}
+                            itemsArePreFiltered
                         />
                     </div>
 
@@ -434,12 +469,15 @@ export function Dashboard() {
                                 <BurndownChart
                                     sprintId={currentSprint.id}
                                     data={burndownData.raw}
-                                    workItems={sprintWorkItems}
                                     plannedInitial={plannedInitial}
                                     plannedInitialD1Date={burndownData.plannedInitialD1Date}
                                     plannedCurrent={plannedCurrent}
                                     plannedDelta={plannedDelta}
                                     currentRemaining={remainingHours}
+                                    lateCompletionHours={burndownData.lateCompletionHours}
+                                    lateCompletionItems={burndownData.lateCompletionItems}
+                                    lateScopeAddedHours={burndownData.lateScopeAddedHours}
+                                    lateScopeRemovedHours={burndownData.lateScopeRemovedHours}
                                     sprintStartDate={currentSprint.startDate}
                                     sprintEndDate={currentSprint.endDate}
                                     dayOffDates={capacityData?.summary.dayOffDates || []}
