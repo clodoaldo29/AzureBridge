@@ -134,7 +134,7 @@ cp .env.example .env
 | `AZURE_DEVOPS_ORG_URL` | ✅ | — | URL da organização: `https://dev.azure.com/org` |
 | `AZURE_DEVOPS_PAT` | ✅ | — | Personal Access Token do Azure DevOps |
 | `DATABASE_URL` | ✅ | — | Connection string PostgreSQL (pooler, para runtime) |
-| `DIRECT_DATABASE_URL` | ✅ | — | Connection string PostgreSQL (direta, para migrations) |
+| `DIRECT_DATABASE_URL` | ✅ | — | Connection string PostgreSQL (direta, para migrations Prisma) |
 | `REDIS_HOST` | ✅ | — | Host do Redis (ex: `localhost` ou `redis`) |
 | `REDIS_PORT` | — | `6379` | Porta Redis |
 | `REDIS_PASSWORD` | — | — | Senha Redis (se aplicável) |
@@ -167,10 +167,10 @@ npm run worker:prod  # inicia worker compilado
 ### Sync manual
 
 ```bash
-npm run sync:smart    # sync incremental (smart-sync)
-npm run sync:hourly   # pipeline hourly (smart-sync + snapshot + rebuild)
-npm run sync:daily    # pipeline daily (completo)
-npm run sync:full     # pipeline full/bootstrap
+# Executado no container auto-sync
+docker exec -it azurebridge-auto-sync sh -c "AUTO_SYNC_MODE=hourly npx tsx scripts/orchestrators/auto-sync.ts"
+docker exec -it azurebridge-auto-sync sh -c "AUTO_SYNC_MODE=daily npx tsx scripts/orchestrators/auto-sync.ts"
+docker exec -it azurebridge-auto-sync sh -c "AUTO_SYNC_MODE=full npx tsx scripts/orchestrators/auto-sync.ts"
 ```
 
 ### Banco de dados

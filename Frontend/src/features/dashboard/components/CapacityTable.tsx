@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatHours, formatPercentage } from '@/utils/formatters';
 import { cn } from '@/utils/cn';
+import { toAzureEditUrl } from '@/features/dashboard/utils/azure-url';
 import type { CapacityComparison } from '@/types';
 
 interface CapacityTableProps {
@@ -12,27 +13,6 @@ interface CapacityTableProps {
 }
 
 type UnassignedScope = 'open' | 'done';
-
-function toAzureEditUrl(rawUrl: string | null | undefined, id: number, fallbackOrgUrl?: string, projectName?: string): string | null {
-    if (rawUrl) {
-        if (rawUrl.includes('/_workitems/edit/')) return rawUrl;
-
-        const apiMatch = rawUrl.match(/^(https:\/\/dev\.azure\.com\/[^/]+\/[^/]+)\/_apis\/wit\/workItems\/(\d+)/i);
-        if (apiMatch) {
-            const base = apiMatch[1].replace(/\/+$/, '');
-            const workItemId = apiMatch[2] || String(id);
-            return `${base}/_workitems/edit/${workItemId}`;
-        }
-    }
-
-    if (fallbackOrgUrl) {
-        const base = fallbackOrgUrl.replace(/\/+$/, '');
-        if (projectName) return `${base}/${encodeURIComponent(projectName)}/_workitems/edit/${id}`;
-        return `${base}/_workitems/edit/${id}`;
-    }
-
-    return null;
-}
 
 export function CapacityTable({ data, plannedCurrent, projectName }: CapacityTableProps) {
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -206,7 +186,10 @@ export function CapacityTable({ data, plannedCurrent, projectName }: CapacityTab
                                 </div>
                             ) : (
                                 modalTasks.map((task) => {
-                                    const azureUrl = toAzureEditUrl(task.url, task.id, azureOrgUrl, projectName);
+                                    const azureUrl = toAzureEditUrl(task.azureUrl ?? task.url, task.id, {
+                                        fallbackOrgUrl: azureOrgUrl,
+                                        projectName
+                                    });
                                     return (
                                         <div key={`${modalScope}-${task.id}`} className="rounded-lg border border-border bg-card p-3">
                                             <div className="font-medium text-sm text-foreground">#{task.id} - {task.title}</div>
@@ -224,7 +207,7 @@ export function CapacityTable({ data, plannedCurrent, projectName }: CapacityTab
                                                 </a>
                                             ) : (
                                                 <div className="mt-2 text-xs text-muted-foreground">
-                                                    Link Azure indisponivel (configure `VITE_AZURE_DEVOPS_ORG_URL`).
+                                                    Link Azure indisponivel para este item.
                                                 </div>
                                             )}
                                         </div>

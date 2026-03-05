@@ -5,6 +5,7 @@ export type {
     TeamCapacity,
     Sprint,
     SprintSnapshot,
+    SprintItemOutcome,
     WorkItem,
     WorkItemRevision,
     WorkItemComment,

@@ -12,6 +12,9 @@ export class SprintRepository {
      */
     async upsert(data: Prisma.SprintCreateInput): Promise<Sprint> {
         try {
+            const projectConnectId =
+                (data as Prisma.SprintCreateInput & { project?: { connect?: { id: string } } }).project?.connect?.id;
+
             const sprint = await prisma.sprint.upsert({
                 where: { azureId: data.azureId },
                 create: data,
@@ -22,6 +25,7 @@ export class SprintRepository {
                     endDate: data.endDate,
                     state: data.state,
                     timeFrame: data.timeFrame,
+                    ...(projectConnectId ? { project: { connect: { id: projectConnectId } } } : {}),
                     updatedAt: new Date(),
                 },
             });

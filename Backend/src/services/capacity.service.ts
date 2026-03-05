@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { getAzureDevOpsClient } from '@/integrations/azure/client';
 import { logger } from '@/utils/logger';
+import { buildAzureWorkItemUrl } from '@/utils/azure-url';
 
 const prisma = new PrismaClient();
 const UNASSIGNED_ALLOWED_TYPES = new Set(['task', 'bug', 'test case']);
@@ -13,9 +14,35 @@ type UnassignedTaskItem = {
     plannedHours: number;
     remainingHours: number;
     url: string | null;
+    azureUrl: string | null;
 };
 
 export class CapacityService {
+    private extractFieldValue(raw: any): any {
+        if (!raw || typeof raw !== 'object') return raw;
+        if (Object.prototype.hasOwnProperty.call(raw, 'newValue')) return raw.newValue;
+        if (Object.prototype.hasOwnProperty.call(raw, 'value')) return raw.value;
+        return raw;
+    }
+
+    private parseRemaining(raw: any): number | null {
+        const value = this.extractFieldValue(raw);
+        if (value === null || value === undefined || value === '') return null;
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+    }
+
+    private parseState(raw: any): string | null {
+        const value = this.extractFieldValue(raw);
+        if (value === null || value === undefined) return null;
+        return String(value).trim().toLowerCase();
+    }
+
+    private isDoneState(state?: string | null): boolean {
+        const s = String(state || '').trim().toLowerCase();
+        return s === 'done' || s === 'closed' || s === 'completed';
+    }
+
     private toSortedTypeBreakdown(acc: UnassignedByTypeAccumulator): Array<{ type: string; items: number; totalHours: number }> {
         return Object.entries(acc)
             .map(([type, value]) => ({
@@ -255,7 +282,11 @@ export class CapacityService {
         sprintStart: Date,
         sprintEnd: Date
     ): string[] {
-        const dayOffSet = new Set<string>();
+        // Sprint-level day off must represent team day off.
+        // Individual member day off impacts only member capacity and must not
+        // remove sprint business days from burndown/ideal lines.
+        if (!capacities.length) return [];
+
         const startMs = Date.UTC(
             sprintStart.getUTCFullYear(),
             sprintStart.getUTCMonth(),
@@ -267,8 +298,10 @@ export class CapacityService {
             sprintEnd.getUTCDate()
         );
 
-        for (const cap of capacities) {
+        const memberDaySets: Array<Set<string>> = capacities.map((cap) => {
+            const memberSet = new Set<string>();
             const ranges = (cap.daysOff as any[]) || [];
+
             for (const r of ranges) {
                 if (!r?.start || !r?.end) continue;
                 const rangeStart = new Date(r.start);
@@ -288,14 +321,23 @@ export class CapacityService {
                     const curMs = cur.getTime();
                     const day = cur.getUTCDay();
                     if (curMs >= startMs && curMs <= endMs && day !== 0 && day !== 6) {
-                        dayOffSet.add(cur.toISOString().slice(0, 10));
+                        memberSet.add(cur.toISOString().slice(0, 10));
                     }
                     cur.setUTCDate(cur.getUTCDate() + 1);
                 }
             }
+
+            return memberSet;
+        });
+
+        let intersection = new Set<string>(memberDaySets[0]);
+        for (let i = 1; i < memberDaySets.length; i++) {
+            intersection = new Set(
+                Array.from(intersection).filter((dayKey) => memberDaySets[i].has(dayKey))
+            );
         }
 
-        return Array.from(dayOffSet).sort();
+        return Array.from(intersection).sort();
     }
 
     /**
@@ -307,6 +349,9 @@ export class CapacityService {
         const sprint = await prisma.sprint.findUnique({
             where: { id: sprintId },
             include: {
+                project: {
+                    select: { name: true }
+                },
                 capacities: {
                     include: { member: true }
                 },
@@ -345,6 +390,61 @@ export class CapacityService {
         });
 
         const workItems = workItemsReceived as any[]; // Cast to any to access new field
+
+        const doneRemainingByItem = new Map<number, number>();
+        const doneItemIds = workItems
+            .filter((item) => this.isDoneState(String(item.state || '')))
+            .map((item) => Number(item.id))
+            .filter((id) => Number.isFinite(id));
+
+        if (doneItemIds.length > 0) {
+            const doneHistoryRows = await prisma.workItemRevision.findMany({
+                where: {
+                    workItemId: { in: doneItemIds },
+                },
+                select: {
+                    workItemId: true,
+                    rev: true,
+                    changes: true,
+                },
+                orderBy: [{ workItemId: 'asc' }, { rev: 'asc' }]
+            });
+
+            const remainingField = 'Microsoft.VSTS.Scheduling.RemainingWork';
+            const stateField = 'System.State';
+
+            const doneAccumulator = new Map<number, {
+                lastRemaining: number | null;
+                currentState: string | null;
+                doneRemaining: number | null;
+            }>();
+
+            for (const row of doneHistoryRows) {
+                const info = doneAccumulator.get(row.workItemId) || {
+                    lastRemaining: null,
+                    currentState: null,
+                    doneRemaining: null
+                };
+                const changes = (row.changes as any) || {};
+                const rem = this.parseRemaining(changes[remainingField]);
+                if (rem !== null) info.lastRemaining = rem;
+
+                const state = this.parseState(changes[stateField]);
+                if (state !== null) info.currentState = state;
+
+                if (info.doneRemaining === null && this.isDoneState(info.currentState)) {
+                    info.doneRemaining = Math.max(0, Number(info.lastRemaining || 0));
+                }
+
+                doneAccumulator.set(row.workItemId, info);
+            }
+
+            for (const [workItemId, info] of doneAccumulator) {
+                if (info.doneRemaining !== null) {
+                    doneRemainingByItem.set(workItemId, Math.max(0, Number(info.doneRemaining || 0)));
+                }
+            }
+        }
 
 
         // Agrupar trabalho planejado por membro
@@ -387,6 +487,7 @@ export class CapacityService {
             const initialFromHistory = (item as any).initialRemainingWork || 0;
             const lastFromHistory = (item as any).lastRemainingWork || 0;
             const doneFromHistory = (item as any).doneRemainingWork || 0;
+            const doneFromRevision = doneRemainingByItem.get(Number(item.id)) || 0;
 
             const state = (item.state || '').toLowerCase();
             const isDone = state === 'done' || state === 'closed' || state === 'completed';
@@ -396,9 +497,11 @@ export class CapacityService {
                 : (lastFromHistory > 0 ? lastFromHistory : currentTotal);
 
             const plannedFinal = isDone
-                ? (doneFromHistory > 0
+                ? (doneFromRevision > 0
+                    ? doneFromRevision
+                    : (doneFromHistory > 0
                     ? doneFromHistory
-                    : (lastFromHistory > 0 ? lastFromHistory : currentTotal))
+                    : (lastFromHistory > 0 ? lastFromHistory : currentTotal)))
                 : (lastFromHistory > 0 ? lastFromHistory : currentRemaining);
 
             totalPlannedInitialFromItems += plannedInitial;
@@ -406,7 +509,9 @@ export class CapacityService {
             totalRemainingFromItems += currentRemaining;
 
             const completedForItem = isDone
-                ? (doneFromHistory > 0 ? doneFromHistory : (lastFromHistory > 0 ? lastFromHistory : currentCompleted))
+                ? (doneFromRevision > 0
+                    ? doneFromRevision
+                    : (doneFromHistory > 0 ? doneFromHistory : (lastFromHistory > 0 ? lastFromHistory : currentCompleted)))
                 : 0;
 
             totalCompletedFromItems += completedForItem;
@@ -436,7 +541,12 @@ export class CapacityService {
                             state: String(item.state || ''),
                             plannedHours: Math.round(plannedFinal * 10) / 10,
                             remainingHours: Math.round(currentRemaining * 10) / 10,
-                            url: item.url || null
+                            url: item.url || null,
+                            azureUrl: buildAzureWorkItemUrl({
+                                id: item.id,
+                                rawUrl: item.url || null,
+                                projectName: sprint.project?.name || null
+                            })
                         });
                     }
                 } else {
@@ -455,7 +565,12 @@ export class CapacityService {
                             state: String(item.state || ''),
                             plannedHours: Math.round(plannedFinal * 10) / 10,
                             remainingHours: Math.round(currentRemaining * 10) / 10,
-                            url: item.url || null
+                            url: item.url || null,
+                            azureUrl: buildAzureWorkItemUrl({
+                                id: item.id,
+                                rawUrl: item.url || null,
+                                projectName: sprint.project?.name || null
+                            })
                         });
                     }
                 }

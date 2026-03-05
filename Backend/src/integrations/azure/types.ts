@@ -37,6 +37,9 @@ export interface AzureWorkItem {
         'Microsoft.VSTS.Common.ResolvedDate'?: string;
         'System.StateChangeDate'?: string;
         'Microsoft.VSTS.Common.ActivatedDate'?: string;
+        'Microsoft.VSTS.Common.Blocked'?: string | boolean;
+        'System.BoardColumn'?: string;
+        'System.BoardColumnDone'?: boolean;
         'System.CreatedBy': AzureIdentity;
         'System.ChangedBy': AzureIdentity;
         'System.ClosedBy'?: AzureIdentity;
@@ -115,6 +118,13 @@ export interface AzureWorkItemUpdate {
             newValue?: any;
         };
     };
+}
+
+export interface AzureWorkItemRevision {
+    id: number;
+    rev: number;
+    fields?: Record<string, unknown>;
+    revisedBy?: AzureIdentity;
 }
 
 export interface AzureComment {

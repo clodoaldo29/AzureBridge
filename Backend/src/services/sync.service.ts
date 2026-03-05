@@ -6,7 +6,7 @@ import {
 } from '@/repositories';
 import { prisma } from '@/database/client';
 import { logger } from '@/utils/logger';
-import type { AzureWorkItem } from '@/integrations/azure/types';
+import type { AzureWorkItem, AzureWorkItemRevision } from '@/integrations/azure/types';
 import { snapshotService } from '@/services/snapshot.service';
 
 /**
@@ -14,6 +14,139 @@ import { snapshotService } from '@/services/snapshot.service';
  * Sincroniza dados do Azure DevOps para o banco de dados
  */
 export class SyncService {
+    private readonly revisionPersistenceEnabled = this.parseBooleanEnv(process.env.ENABLE_REVISION_PERSISTENCE, false);
+    private readonly revisionSyncMaxItemsPerRun = this.parsePositiveIntEnv(process.env.REVISION_SYNC_MAX_ITEMS_PER_RUN, 100);
+
+    private parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
+        if (value == null) return fallback;
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'sim', 'on'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'nao', 'off'].includes(normalized)) return false;
+        return fallback;
+    }
+
+    private parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+        return Math.floor(parsed);
+    }
+
+    private normalizeToStartOfUtcDay(date: Date): Date {
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+    }
+
+    private normalizeToEndOfUtcDay(date: Date): Date {
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+    }
+
+    private mapSprintStateFromTimeFrame(timeFrameRaw?: string | null): 'Active' | 'Past' | 'Future' | null {
+        const timeFrame = String(timeFrameRaw || '').trim().toLowerCase();
+        if (timeFrame === 'current') return 'Active';
+        if (timeFrame === 'past') return 'Past';
+        if (timeFrame === 'future') return 'Future';
+        return null;
+    }
+
+    private mapSprintStateByDateWindow(startDate: Date, endDate: Date, now: Date = new Date()): 'Active' | 'Past' | 'Future' {
+        const windowStart = this.normalizeToStartOfUtcDay(startDate);
+        const windowEnd = this.normalizeToEndOfUtcDay(endDate);
+
+        if (now >= windowStart && now <= windowEnd) return 'Active';
+        if (now < windowStart) return 'Future';
+        return 'Past';
+    }
+
+    private resolveSprintState(timeFrameRaw: string | null | undefined, startDate: Date, endDate: Date): 'Active' | 'Past' | 'Future' {
+        const byTimeFrame = this.mapSprintStateFromTimeFrame(timeFrameRaw);
+        const byDateWindow = this.mapSprintStateByDateWindow(startDate, endDate);
+
+        // Regra de seguranca: se a sprint ainda esta dentro da janela de datas, manter como Active.
+        if (byDateWindow === 'Active') return 'Active';
+        return byTimeFrame ?? byDateWindow;
+    }
+
+    private resolveProjectForSprintPath(pathRaw: string | undefined, projects: Array<{ id: string; name: string }>) {
+        const normalizedPath = String(pathRaw || '').trim().toLowerCase();
+        const matchedProject = projects.find((project) => {
+            const normalizedName = project.name.trim().toLowerCase();
+            return normalizedPath === normalizedName || normalizedPath.startsWith(`${normalizedName}\\`);
+        });
+
+        if (matchedProject) return matchedProject;
+        return projects[0];
+    }
+
+    private isBlockedState(state?: string | null): boolean {
+        const s = String(state || '').trim().toLowerCase();
+        return s === 'blocked' || s === 'impeded' || s === 'impedido';
+    }
+
+    private hasBlockedTag(tagsRaw: unknown): boolean {
+        const tags = String(tagsRaw || '').toLowerCase();
+        return tags.includes('blocked') || tags.includes('blocker') || tags.includes('imped');
+    }
+
+    private isBlockedBoardColumn(boardColumnRaw: unknown): boolean {
+        const col = String(boardColumnRaw || '').trim().toLowerCase();
+        return col === 'blocked' || col.includes('imped');
+    }
+
+    private parseBlockedField(value: unknown): boolean {
+        if (typeof value === 'boolean') return value;
+        const s = String(value || '').trim().toLowerCase();
+        return s === 'true' || s === 'yes' || s === 'sim' || s === '1';
+    }
+
+    private extractRevisionChanges(value: unknown): Record<string, unknown> {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+        return value as Record<string, unknown>;
+    }
+
+    private extractChangedFieldsFromRevisionChanges(changes: Record<string, unknown>): string[] {
+        return Object.keys(changes).filter((key) => typeof key === 'string' && key.length > 0);
+    }
+
+    private async persistWorkItemRevisions(workItemId: number, revisions: AzureWorkItemRevision[]): Promise<number> {
+        if (!Array.isArray(revisions) || revisions.length === 0) return 0;
+
+        let persisted = 0;
+        for (const revision of revisions) {
+            if (typeof revision?.rev !== 'number') continue;
+
+            const fields = this.extractRevisionChanges(revision.fields);
+            const changedFields = this.extractChangedFieldsFromRevisionChanges(fields);
+            const revisedDateRaw = (fields['System.ChangedDate'] || fields['System.RevisedDate']) as string | undefined;
+            const revisedDate = revisedDateRaw ? new Date(revisedDateRaw) : new Date();
+            const revisedByRaw = fields['System.ChangedBy'] as { displayName?: string; uniqueName?: string } | undefined;
+            const revisedBy = revisedByRaw?.displayName || revisedByRaw?.uniqueName || revision.revisedBy?.displayName || 'Unknown';
+
+            await prisma.workItemRevision.upsert({
+                where: {
+                    workItemId_rev: {
+                        workItemId,
+                        rev: revision.rev,
+                    },
+                },
+                create: {
+                    workItemId,
+                    rev: revision.rev,
+                    revisedDate,
+                    revisedBy,
+                    changes: fields as any,
+                    changedFields,
+                },
+                update: {
+                    revisedDate,
+                    revisedBy,
+                    changes: fields as any,
+                    changedFields,
+                },
+            });
+            persisted++;
+        }
+
+        return persisted;
+    }
     /**
      * Sincronizacao completa - sincroniza tudo
      */
@@ -236,21 +369,25 @@ export class SyncService {
                 return 0;
             }
 
-            const project = projects[0];
-
             for (const azureSprint of azureSprints) {
                 if (!azureSprint.attributes.startDate || !azureSprint.attributes.finishDate) {
                     continue;
                 }
 
+                const startDate = new Date(azureSprint.attributes.startDate);
+                const endDate = new Date(azureSprint.attributes.finishDate);
+                const normalizedTimeFrame = String(azureSprint.attributes.timeFrame || '').trim().toLowerCase() || 'future';
+                const sprintState = this.resolveSprintState(azureSprint.attributes.timeFrame, startDate, endDate);
+                const project = this.resolveProjectForSprintPath(azureSprint.path, projects);
+
                 await sprintRepository.upsert({
                     azureId: azureSprint.id,
                     name: azureSprint.name,
                     path: azureSprint.path,
-                    startDate: new Date(azureSprint.attributes.startDate),
-                    endDate: new Date(azureSprint.attributes.finishDate),
-                    state: azureSprint.attributes.timeFrame === 'current' ? 'Active' : 'Past',
-                    timeFrame: azureSprint.attributes.timeFrame || 'future',
+                    startDate,
+                    endDate,
+                    state: sprintState,
+                    timeFrame: normalizedTimeFrame,
                     project: {
                         connect: { id: project.id },
                     },
@@ -294,6 +431,8 @@ export class SyncService {
      */
     private async processWorkItems(azureWorkItems: AzureWorkItem[]): Promise<number> {
         let count = 0;
+        let revisionPersistedCount = 0;
+        let revisionWorkItemBudget = this.revisionSyncMaxItemsPerRun;
 
         // Obter projeto
         const projects = await projectRepository.findAll();
@@ -316,7 +455,11 @@ export class SyncService {
                 doneRemainingWork: true,
                 initialRemainingWork: true,
                 originalEstimate: true,
-                completedWork: true
+                completedWork: true,
+                closedDate: true,
+                resolvedDate: true,
+                stateChangeDate: true,
+                activatedDate: true
             }
         });
         const existingById = new Map(existingItems.map((item) => [item.id, item]));
@@ -330,8 +473,33 @@ export class SyncService {
                 const remainingWork = fields['Microsoft.VSTS.Scheduling.RemainingWork'] || 0;
                 const completedWorkIncoming = fields['Microsoft.VSTS.Scheduling.CompletedWork'] || 0;
                 const existing = existingById.get(azureWI.id!);
+                const hasField = (key: string) => Object.prototype.hasOwnProperty.call(fields, key);
+                const closedRaw = fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate'];
+                const resolvedRaw = fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'];
+                const stateChangeRaw = fields['System.StateChangeDate'];
+                const activatedRaw = fields['Microsoft.VSTS.Common.ActivatedDate'];
+                const hasClosedField = hasField('System.ClosedDate') || hasField('Microsoft.VSTS.Common.ClosedDate');
+                const hasResolvedField = hasField('System.ResolvedDate') || hasField('Microsoft.VSTS.Common.ResolvedDate');
+                const hasStateChangeField = hasField('System.StateChangeDate');
+                const hasActivatedField = hasField('Microsoft.VSTS.Common.ActivatedDate');
+                const closedDate = hasClosedField
+                    ? (closedRaw ? new Date(closedRaw as string) : null)
+                    : (existing?.closedDate ?? null);
+                const resolvedDate = hasResolvedField
+                    ? (resolvedRaw ? new Date(resolvedRaw as string) : null)
+                    : (existing?.resolvedDate ?? null);
+                const stateChangeDate = hasStateChangeField
+                    ? (stateChangeRaw ? new Date(stateChangeRaw as string) : null)
+                    : (existing?.stateChangeDate ?? null);
+                const activatedDate = hasActivatedField
+                    ? (activatedRaw ? new Date(activatedRaw as string) : null)
+                    : (existing?.activatedDate ?? null);
                 const state = (fields['System.State'] || '').toString();
                 const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
+                const isBlocked = this.isBlockedState(state)
+                    || this.isBlockedBoardColumn(fields['System.BoardColumn'])
+                    || this.parseBlockedField(fields['Microsoft.VSTS.Common.Blocked'])
+                    || this.hasBlockedTag(fields['System.Tags']);
                 const fallbackHistoricalEffort = Math.max(
                     Number(existing?.doneRemainingWork || 0),
                     Number(existing?.lastRemainingWork || 0),
@@ -371,30 +539,66 @@ export class SyncService {
                 // Buscar membro do time atribuido
                 let assignedTo = null;
                 const assignedIdentity = fields['System.AssignedTo'];
-                if (assignedIdentity?.uniqueName) {
-                    const azureIdentityId = (assignedIdentity.id || assignedIdentity.uniqueName).toString();
-                    assignedTo = await prisma.teamMember.upsert({
-                        where: {
-                            azureId_projectId: {
-                                azureId: azureIdentityId,
-                                projectId: projectForItem.id,
-                            }
-                        },
-                        create: {
-                            azureId: azureIdentityId,
-                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
-                            uniqueName: assignedIdentity.uniqueName,
-                            imageUrl: assignedIdentity.imageUrl,
-                            projectId: projectForItem.id,
-                            isActive: true,
-                        },
-                        update: {
-                            displayName: assignedIdentity.displayName || assignedIdentity.uniqueName,
-                            uniqueName: assignedIdentity.uniqueName,
-                            imageUrl: assignedIdentity.imageUrl,
-                            isActive: true,
+                if (assignedIdentity) {
+                    if (typeof assignedIdentity === 'object') {
+                        const uniqueName = assignedIdentity.uniqueName
+                            ? String(assignedIdentity.uniqueName)
+                            : null;
+                        const displayName = assignedIdentity.displayName
+                            ? String(assignedIdentity.displayName)
+                            : (uniqueName || 'Unknown');
+                        const azureIdentityId = assignedIdentity.id
+                            ? String(assignedIdentity.id)
+                            : (uniqueName ? String(uniqueName) : null);
+
+                        if (azureIdentityId) {
+                            assignedTo = await prisma.teamMember.upsert({
+                                where: {
+                                    azureId_projectId: {
+                                        azureId: azureIdentityId,
+                                        projectId: projectForItem.id,
+                                    }
+                                },
+                                create: {
+                                    azureId: azureIdentityId,
+                                    displayName,
+                                    uniqueName: uniqueName || displayName,
+                                    imageUrl: assignedIdentity.imageUrl || null,
+                                    projectId: projectForItem.id,
+                                    isActive: true,
+                                },
+                                update: {
+                                    displayName,
+                                    uniqueName: uniqueName || displayName,
+                                    imageUrl: assignedIdentity.imageUrl || null,
+                                    isActive: true,
+                                }
+                            });
+                        } else if (uniqueName || displayName) {
+                            assignedTo = await prisma.teamMember.findFirst({
+                                where: {
+                                    projectId: projectForItem.id,
+                                    OR: [
+                                        ...(uniqueName ? [{ uniqueName }] : []),
+                                        ...(displayName ? [{ displayName }] : []),
+                                    ]
+                                }
+                            });
                         }
-                    });
+                    } else {
+                        const assignedText = String(assignedIdentity).trim();
+                        if (assignedText) {
+                            assignedTo = await prisma.teamMember.findFirst({
+                                where: {
+                                    projectId: projectForItem.id,
+                                    OR: [
+                                        { uniqueName: assignedText },
+                                        { displayName: assignedText }
+                                    ]
+                                }
+                            });
+                        }
+                    }
                 }
 
                 await workItemRepository.upsert({
@@ -419,19 +623,17 @@ export class SyncService {
                     severity: fields['Microsoft.VSTS.Common.Severity'],
                     createdDate: new Date(fields['System.CreatedDate']),
                     changedDate: new Date(fields['System.ChangedDate']),
-                    closedDate: (fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate'])
-                        ? new Date((fields['System.ClosedDate'] || fields['Microsoft.VSTS.Common.ClosedDate']) as string)
-                        : null,
-                    resolvedDate: (fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'])
-                        ? new Date((fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate']) as string)
-                        : null,
-                    stateChangeDate: fields['System.StateChangeDate'] ? new Date(fields['System.StateChangeDate']) : null,
-                    activatedDate: fields['Microsoft.VSTS.Common.ActivatedDate'] ? new Date(fields['Microsoft.VSTS.Common.ActivatedDate']) : null,
+                    closedDate,
+                    resolvedDate,
+                    stateChangeDate,
+                    activatedDate,
                     createdBy: fields['System.CreatedBy'].displayName,
                     changedBy: fields['System.ChangedBy'].displayName,
                     closedBy: fields['System.ClosedBy']?.displayName,
                     resolvedBy: fields['System.ResolvedBy']?.displayName,
                     tags: fields['System.Tags'] ? fields['System.Tags'].split(';').map((t: string) => t.trim()) : [],
+                    isBlocked,
+                    isRemoved: false,
                     areaPath: fields['System.AreaPath'],
                     iterationPath: fields['System.IterationPath'],
                     url: azureWI.url,
@@ -459,10 +661,31 @@ export class SyncService {
                     }),
                 });
 
+                if (this.revisionPersistenceEnabled && revisionWorkItemBudget > 0 && typeof azureWI.id === 'number') {
+                    try {
+                        const revisions = await workItemsService.getWorkItemRevisions(azureWI.id);
+                        revisionPersistedCount += await this.persistWorkItemRevisions(azureWI.id, revisions);
+                        revisionWorkItemBudget--;
+                    } catch (error) {
+                        logger.warn(`Failed to persist revisions for work item ${azureWI.id}`, {
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                    }
+                }
+
                 count++;
             } catch (error) {
                 logger.error(`Failed to process work item ${azureWI.id}`, error);
             }
+        }
+
+        if (this.revisionPersistenceEnabled) {
+            logger.info('Revision persistence summary', {
+                workItemsProcessed: count,
+                revisionsPersisted: revisionPersistedCount,
+                revisionWorkItemBudgetUsed: this.revisionSyncMaxItemsPerRun - revisionWorkItemBudget,
+                revisionWorkItemBudgetLimit: this.revisionSyncMaxItemsPerRun,
+            });
         }
 
         return count;

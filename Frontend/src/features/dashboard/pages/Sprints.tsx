@@ -1,6 +1,6 @@
-﻿import { useSprints } from '@/services/queries/sprints';
+import { useSprints } from '@/services/queries/sprints';
 import { useCapacityComparison } from '@/services/queries/capacity';
-import { useBlockedWorkItems, useWorkItems } from '@/services/queries/workItems';
+import { useWorkItems } from '@/services/queries/workItems';
 import { useSprintBurndown } from '@/services/queries/sprints';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
@@ -22,6 +22,13 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Project, Sprint } from '@/types';
 import { useEffect, useMemo } from 'react';
+
+const ALLOWED_PROJECT_NAMES = new Set([
+    'GIGA - Retrabalho',
+    'GIGA - Tempos e Movimentos',
+    'Projeto Plataforma de Melhorias na Engenharia',
+]);
+const TM_PROJECT_NAME = 'GIGA - Tempos e Movimentos';
 
 function toUtcDayMs(value: string | Date): number {
     const d = new Date(value);
@@ -127,10 +134,14 @@ function getIdealRemainingToday(params: {
     return Math.max(0, idealSeries[todayIdx] ?? baseInitial);
 }
 
-export function Dashboard() {
-    const { selectedProjectId, setSelectedProjectId } = useAppStore();
+export function Sprints() {
+    const {
+        selectedProjectId,
+        selectedSprintId,
+        setSelectedProjectId,
+        setSelectedSprintId,
+    } = useAppStore();
 
-    // Busca todos os projetos para obter o nome do projeto selecionado
     const { data: projectsResponse } = useQuery<{ data: Project[] }>({
         queryKey: ['projects'],
         queryFn: async () => {
@@ -139,76 +150,84 @@ export function Dashboard() {
         },
     });
     const projects = projectsResponse?.data || [];
+    const filteredProjects = useMemo(
+        () => projects.filter((project) => ALLOWED_PROJECT_NAMES.has(project.name)),
+        [projects]
+    );
 
-    // Busca as sprints ativas
+    const sprintFilters = useMemo(
+        () => ({
+            state: 'Past',
+            limit: 100,
+            ...(selectedProjectId ? { projectId: selectedProjectId } : {}),
+        }),
+        [selectedProjectId]
+    );
+
     const {
         data: sprints,
         isLoading: sprintsLoading,
         isError: sprintsError,
-    } = useSprints({ state: 'Active' });
+    } = useSprints(sprintFilters);
 
-    const activeProjectIds = useMemo(
-        () => new Set((sprints || []).map((sprint: Sprint) => sprint.projectId)),
-        [sprints]
-    );
-    const activeProjects = useMemo(
-        () => projects.filter((project) => activeProjectIds.has(project.id)),
-        [projects, activeProjectIds]
-    );
-    const selectedProject = activeProjects.find((p) => p.id === selectedProjectId);
+    const selectedProject = filteredProjects.find((p) => p.id === selectedProjectId);
+    const filteredSprints = useMemo(() => {
+        const allSprints = sprints || [];
+        if (selectedProject?.name === TM_PROJECT_NAME) {
+            return allSprints.filter((sprint: Sprint) =>
+                String(sprint.name || '').toUpperCase().includes('AV-NAV')
+            );
+        }
+        return allSprints;
+    }, [sprints, selectedProject?.name]);
+
+    const currentSprint = selectedSprintId
+        ? filteredSprints.find((sprint: Sprint) => sprint.id === selectedSprintId)
+        : filteredSprints[0];
 
     useEffect(() => {
-        if (!activeProjects.length) {
-            if (selectedProjectId) setSelectedProjectId('');
+        if (!filteredProjects.length) {
+            if (selectedProjectId) setSelectedProjectId(null);
             return;
         }
 
-        const hasValidSelection = activeProjects.some((p) => p.id === selectedProjectId);
+        const hasValidSelection = selectedProjectId && filteredProjects.some((project) => project.id === selectedProjectId);
         if (!hasValidSelection) {
-            setSelectedProjectId(activeProjects[0].id);
+            setSelectedProjectId(filteredProjects[0].id);
         }
-    }, [activeProjects, selectedProjectId, setSelectedProjectId]);
+    }, [filteredProjects, selectedProjectId, setSelectedProjectId]);
 
-    // Filtra sprints pelo projeto selecionado (mais confiável que comparar por path)
-    const currentSprint = selectedProject
-        ? sprints?.find((sprint: Sprint) => sprint.projectId === selectedProject.id)
-        : sprints?.[0];
+    useEffect(() => {
+        if (!filteredSprints.length) {
+            if (selectedSprintId) setSelectedSprintId(null);
+            return;
+        }
 
-    // Busca dados de capacidade para a sprint atual
+        const hasValidSprint = selectedSprintId && filteredSprints.some((sprint: Sprint) => sprint.id === selectedSprintId);
+        if (!hasValidSprint) {
+            setSelectedSprintId(filteredSprints[0].id);
+        }
+    }, [filteredSprints, selectedSprintId, setSelectedSprintId]);
+
     const {
         data: capacityData,
         isLoading: capacityLoading,
         isError: capacityError,
     } = useCapacityComparison(currentSprint?.id || '');
 
-    // Busca dados de burndown
     const { data: burndownData } = useSprintBurndown(currentSprint?.id || '');
 
-    // Busca work items bloqueados (fonte original do card de impedimentos)
-    const { data: blockedItems } = useBlockedWorkItems();
-    const scopedBlockedItems = useMemo(() => {
-        const items = blockedItems || [];
-
-        return items.filter((item) => {
-            if (selectedProject && item.projectId !== selectedProject.id) return false;
-            if (currentSprint?.id && item.sprintId !== currentSprint.id) return false;
-            return true;
-        });
-    }, [blockedItems, selectedProject, currentSprint?.id]);
-
-    // Busca todos os work items da sprint atual (para os gráficos donut)
     const { data: workItemsResponse } = useWorkItems(
         currentSprint ? { sprintId: currentSprint.id, includeRemoved: true, limit: 1000 } : undefined
     );
     const sprintWorkItems = workItemsResponse?.data || [];
 
-    // Calcula o score de saúde da sprint
     const healthDetails = currentSprint
         ? calculateSprintHealthDetails(currentSprint, capacityData, burndownData?.raw)
         : null;
     const healthScore = healthDetails ? healthDetails.score : null;
 
-    if (sprintsLoading || capacityLoading) {
+    if (sprintsLoading || (currentSprint && capacityLoading)) {
         return (
             <div className="flex items-center justify-center h-screen">
                 <div className="text-muted-foreground">Carregando...</div>
@@ -216,7 +235,7 @@ export function Dashboard() {
         );
     }
 
-    if ((sprintsError || capacityError) && !sprints?.length && !capacityData) {
+    if ((sprintsError || capacityError) && !filteredSprints.length && !capacityData) {
         return (
             <div className="flex items-center justify-center h-screen">
                 <div className="text-center text-muted-foreground">
@@ -303,11 +322,10 @@ export function Dashboard() {
 
     return (
         <div className="space-y-6 p-6">
-            {/* Cabeçalho */}
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">
-                        {currentSprint ? currentSprint.name : 'Dashboard'}
+                        {currentSprint ? currentSprint.name : 'Sprints'}
                     </h1>
                     {currentSprint ? (
                         <p className="text-muted-foreground text-sm mt-1">
@@ -315,29 +333,54 @@ export function Dashboard() {
                         </p>
                     ) : (
                         <p className="text-muted-foreground text-sm mt-1">
-                            Selecione um projeto com sprint ativa para visualizar os indicadores.
+                            Selecione um projeto e uma sprint passada para visualizar os indicadores.
                         </p>
                     )}
                 </div>
-                <Select
-                    value={selectedProjectId || ''}
-                    onValueChange={(value: string) => setSelectedProjectId(value)}
-                >
-                    <SelectTrigger className="w-[280px]">
-                        <SelectValue placeholder="Selecione um projeto..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {activeProjects.map((project) => (
-                            <SelectItem key={project.id} value={project.id}>
-                                {project.name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                        value={selectedProjectId || ''}
+                        onValueChange={(value: string) => setSelectedProjectId(value)}
+                    >
+                        <SelectTrigger className="w-[260px]">
+                            <SelectValue placeholder="Selecione um projeto..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {filteredProjects.map((project) => (
+                                <SelectItem key={project.id} value={project.id}>
+                                    {project.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select
+                        value={selectedSprintId || ''}
+                        onValueChange={(value: string) => setSelectedSprintId(value)}
+                    >
+                        <SelectTrigger className="w-[260px]">
+                            <SelectValue placeholder="Selecione uma sprint..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {filteredSprints.map((sprint: Sprint) => (
+                                <SelectItem key={sprint.id} value={sprint.id}>
+                                    {sprint.name}
+                                </SelectItem>
+                            ))}
+                            {!filteredSprints.length && (
+                                <SelectItem value="__none" disabled>
+                                    Nenhuma sprint passada
+                                </SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
+
+                </div>
             </div>
+
             {currentSprint ? (
                 <>
-                    {/* Cards de Métricas */}
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <StatCard
                             title="Capacidade Total"
@@ -360,14 +403,9 @@ export function Dashboard() {
                             value={`${completedHours}h`}
                             icon={CheckCircle2}
                         />
-                        <BlockedItemsCard
-                            workItems={scopedBlockedItems}
-                            projectName={selectedProject?.name}
-                            itemsArePreFiltered
-                        />
+                        <BlockedItemsCard workItems={sprintWorkItems} projectName={selectedProject?.name} />
                     </div>
 
-                    {/* Barra de Progresso da Sprint baseada em Planejado vs Restante */}
                     {capacityData && plannedCurrent > 0 && (
                         <div className="bg-card rounded-lg shadow p-4 border border-border">
                             <div className="flex justify-between items-start gap-3 mb-3">
@@ -396,7 +434,7 @@ export function Dashboard() {
                             <div className="relative w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                                 <div
                                     className={`h-3 rounded-full transition-all duration-500 ${remainingHours > plannedCurrent
-                                        ? 'bg-red-500' // Vermelho se ultrapassou o planejado
+                                        ? 'bg-red-500'
                                         : 'bg-blue-600'
                                         }`}
                                     style={{ width: `${progressPct}%` }}
@@ -418,7 +456,6 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    {/* Saúde da Sprint + Work Item Aging */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {healthScore !== null && (
                             <SprintHealthCard
@@ -436,7 +473,6 @@ export function Dashboard() {
                         />
                     </div>
 
-                    {/* Distribuição de Work Items (Donuts) */}
                     {sprintWorkItems.length > 0 && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <WorkItemsByStateChart workItems={sprintWorkItems} />
@@ -445,13 +481,10 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    {/* Conteúdo Principal */}
                     <div className="space-y-6">
-                        {/* Tabela de Capacidade */}
                         {capacityData && <CapacityTable data={capacityData} plannedCurrent={plannedCurrent} projectName={selectedProject?.name} />}
                         {capacityData && <MemberCapacityProgress data={capacityData} />}
 
-                        {/* Diagrama de Fluxo Cumulativo (CFD) */}
                         {burndownData && (
                             <div className="pt-2">
                                 <CumulativeFlowChart
@@ -463,7 +496,6 @@ export function Dashboard() {
                             </div>
                         )}
 
-                        {/* Gráfico de Burndown */}
                         {burndownData && (
                             <div className="pt-2">
                                 <BurndownChart
@@ -488,7 +520,7 @@ export function Dashboard() {
                 </>
             ) : (
                 <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-card py-16 text-muted-foreground">
-                    Nenhuma sprint ativa encontrada no momento.
+                    Nenhuma sprint passada encontrada para o projeto selecionado.
                 </div>
             )}
         </div>

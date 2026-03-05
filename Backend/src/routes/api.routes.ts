@@ -33,6 +33,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
     fastify.get('/sprints', sprintController.listSprints);
     fastify.get('/sprints/:id', sprintController.getSprint);
     fastify.get('/sprints/:id/burndown', sprintController.getSprintBurndown);
+    fastify.get('/sprints/:id/scope-changes', sprintController.getSprintScopeChanges);
     // Especifico de capacidade
     fastify.get('/sprints/:sprintId/capacity/comparison', capacityController.getComparison);
 

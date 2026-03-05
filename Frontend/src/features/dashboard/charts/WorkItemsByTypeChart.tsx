@@ -7,12 +7,11 @@ interface WorkItemsByTypeChartProps {
     workItems: WorkItem[];
 }
 
-const ALLOWED_TYPES = ['task', 'bug', 'test case'];
+const ALLOWED_TYPES = ['task', 'bug'];
 
 const TYPE_COLORS: Record<string, string> = {
     'Task': '#3B82F6',
     'Bug': '#FC8181',
-    'Test Case': '#A78BFA',
 };
 
 const DEFAULT_COLOR = '#CBD5E1';

@@ -12,16 +12,24 @@ import {
     YAxis,
 } from 'recharts';
 import type { SprintSnapshot } from '@/types';
+import { useScopeChanges } from '@/features/dashboard/queries/sprints';
+import { toAzureEditUrl } from '@/features/dashboard/utils/azure-url';
 
 interface BurndownChartProps {
     data: SprintSnapshot[];
     plannedInitial?: number;
+    plannedInitialD1Date?: string | null;
     plannedCurrent?: number;
     plannedDelta?: number;
     currentRemaining?: number;
+    lateCompletionHours?: number;
+    lateCompletionItems?: number;
+    lateScopeAddedHours?: number;
+    lateScopeRemovedHours?: number;
     sprintStartDate?: string;
     sprintEndDate?: string;
     dayOffDates?: string[];
+    sprintId?: string;
 }
 
 type ChartPoint = {
@@ -146,10 +154,15 @@ const CustomTooltip = ({ active, payload }: any) => {
                 <TooltipRow color="#63B3ED" label="Ideal" value={`${point.ideal}h`} />
                 {point.actual !== null && <TooltipRow color="#F6AD55" label="Remaining" value={`${point.actual}h`} />}
                 {point.projected !== null && <TooltipRow color="#9F7AEA" label="Projeção" value={`${point.projected}h`} />}
-                {point.scopeAdded > 0 && <TooltipRow color="#FC8181" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
-                {point.scopeRemoved > 0 && <TooltipRow color="#EF4444" label="Escopo removido" value={`-${point.scopeRemoved}h`} />}
+                {point.scopeAdded > 0 && <TooltipRow color="#DC2626" label="Escopo adicionado" value={`+${point.scopeAdded}h`} />}
+                {point.scopeRemoved > 0 && <TooltipRow color="#1E3A8A" label="Escopo removido" value={`${point.scopeRemoved}h`} />}
                 {point.completedInDay > 0 && <TooltipRow color="#34D399" label="Concluído no dia" value={`${point.completedInDay}h`} />}
             </div>
+            {(point.scopeAdded > 0 || point.scopeRemoved > 0) && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${UI_COLORS.border}`, fontSize: 10, color: UI_COLORS.mutedSoft, textAlign: 'center' }}>
+                    Clique na barra para ver os itens
+                </div>
+            )}
         </div>
     );
 };
@@ -161,7 +174,7 @@ const ActiveDot = ({ cx, cy, stroke }: any) => (
     </g>
 );
 
-const ScopeBarLabel = ({ x, y, width, value }: any) => {
+const ScopeBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
@@ -171,6 +184,36 @@ const ScopeBarLabel = ({ x, y, width, value }: any) => {
             fill="#B91C1C"
             fontSize={9}
             fontWeight={700}
+            pointerEvents="all"
+            style={{ cursor: onOpen ? 'pointer' : 'default' }}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!onOpen || !payload) return;
+                onOpen(payload);
+            }}
+        >
+            {value}h
+        </text>
+    );
+};
+
+const ScopeRemovedBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
+    if (!value || value <= 0) return null;
+    return (
+        <text
+            x={x + width / 2}
+            y={y - 4}
+            textAnchor="middle"
+            fill="#1E3A8A"
+            fontSize={9}
+            fontWeight={700}
+            pointerEvents="all"
+            style={{ cursor: onOpen ? 'pointer' : 'default' }}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!onOpen || !payload) return;
+                onOpen(payload);
+            }}
         >
             {value}h
         </text>
@@ -182,7 +225,7 @@ const CompletedBarLabel = ({ x, y, width, value }: any) => {
     return (
         <text
             x={x + width / 2}
-            y={y - 12}
+            y={y - 4}
             textAnchor="middle"
             fill="#047857"
             fontSize={9}
@@ -254,18 +297,38 @@ const StatusBadge = ({ status, color, bgColor, deviation }: { status: string; co
 export function BurndownChart({
     data,
     plannedInitial,
+    plannedInitialD1Date,
     plannedCurrent,
     plannedDelta,
     currentRemaining,
+    lateCompletionHours = 0,
+    lateCompletionItems = 0,
+    lateScopeAddedHours = 0,
+    lateScopeRemovedHours = 0,
     sprintStartDate,
     sprintEndDate,
     dayOffDates = [],
+    sprintId,
 }: BurndownChartProps) {
     const [showIdeal, setShowIdeal] = useState(true);
     const [showActual, setShowActual] = useState(true);
     const [showProjected, setShowProjected] = useState(true);
-    const [showScope, setShowScope] = useState(true);
+    const [showScopeAdded, setShowScopeAdded] = useState(true);
+    const [showScopeRemoved, setShowScopeRemoved] = useState(true);
     const [showCompletedDaily, setShowCompletedDaily] = useState(true);
+
+    const [scopeModal, setScopeModal] = useState<{
+        date: string;
+        label: string;
+        initialTab: 'added' | 'removed';
+    } | null>(null);
+    const [scopeTab, setScopeTab] = useState<'added' | 'removed'>('added');
+    const azureOrgUrl = (import.meta as any)?.env?.VITE_AZURE_DEVOPS_ORG_URL as string | undefined;
+
+    const { data: scopeChanges, isLoading: scopeLoading } = useScopeChanges(
+        sprintId || '',
+        scopeModal?.date || null
+    );
 
     const model = useMemo(() => {
         if (!data.length || !sprintStartDate || !sprintEndDate) return null;
@@ -311,7 +374,7 @@ export function BurndownChart({
                 dayKey: `D${idx + 1}`,
                 axisLabel: `D${idx + 1}|${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
                 tooltipLabel: `D${idx + 1} - ${capitalizeFirst(weekdayPtBr(ms))} ${shortDatePtBr(ms)}`,
-                dateLabel: shortDatePtBr(ms),
+                dateLabel: toIsoDate(ms),
                 dateMs: ms,
                 ideal,
                 actual,
@@ -331,17 +394,42 @@ export function BurndownChart({
             Math.round(plannedInitial ?? snapshots[0]?.totalWork ?? points[0]?.totalWork ?? 0)
         );
         if (points.length > 0) {
-            points[0].ideal = baseInitial;
+            const firstBusinessMs = businessDays[0];
+            const d1Ms = plannedInitialD1Date ? toUtcDayMs(plannedInitialD1Date) : firstBusinessMs;
+            const d0Ms = d1Ms - (24 * 60 * 60 * 1000);
+            const isD0Future = d0Ms > todayMs;
+
+            points.unshift({
+                dayKey: 'Planning',
+                axisLabel: `Planning|${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                tooltipLabel: `Planning - ${capitalizeFirst(weekdayPtBr(d0Ms))} ${shortDatePtBr(d0Ms)}`,
+                dateLabel: toIsoDate(d0Ms),
+                dateMs: d0Ms,
+                ideal: baseInitial,
+                actual: isD0Future ? null : baseInitial,
+                projected: null,
+                scopeAdded: 0,
+                scopeRemoved: 0,
+                completedInDay: 0,
+                completedAccum: 0,
+                isToday: d0Ms === todayMs,
+                isFuture: isD0Future,
+                totalWork: baseInitial,
+            });
+
+            points[1].ideal = baseInitial;
             // Mudanças de escopo vêm dos campos do snapshot (histórico real), não derivadas da diferença de totalWork.
-            for (let i = 0; i < points.length; i++) {
+            for (let i = 1; i < points.length; i++) {
                 const snap = snapshotByDay.get(points[i].dateMs);
                 points[i].scopeAdded = Math.max(0, Math.round(snap?.addedCount || 0));
                 points[i].scopeRemoved = Math.max(0, Math.round(snap?.removedCount || 0));
             }
 
-            // Ideal piecewise: cada aumento de escopo recalcula o burn ideal para os dias restantes.
-            let idealCursor = baseInitial;
-            for (let i = 1; i < points.length; i++) {
+            // Ideal piecewise: D1 scope creep must affect ideal path starting on D1.
+            const d1NetScope = (points[1]?.scopeAdded || 0) - (points[1]?.scopeRemoved || 0);
+            points[1].ideal = Math.max(0, Math.round(baseInitial + d1NetScope));
+            let idealCursor = points[1].ideal;
+            for (let i = 2; i < points.length; i++) {
                 idealCursor += points[i].scopeAdded - points[i].scopeRemoved;
                 idealCursor = Math.max(0, idealCursor);
                 const stepsRemaining = points.length - i;
@@ -375,17 +463,14 @@ export function BurndownChart({
         }
 
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
-        const snapshotInitialD1 = Math.round(points[0]?.totalWork ?? 0);
-        const dayOneNetScope = Math.round((points[0]?.scopeAdded || 0) - (points[0]?.scopeRemoved || 0));
-        // Baseline do cabeçalho (D0) = total do primeiro dia visível menos o escopo líquido do D1.
-        // Isso mantém todas as barras de escopo D1..Dn visíveis e faz o Delta bater com o somatório líquido.
-        const snapshotInitial = Math.max(0, snapshotInitialD1 - dayOneNetScope);
+        const snapshotInitial = baseInitial;
         const snapshotFinal = Math.round(
             lastActualIdx >= 0
                 ? (points[lastActualIdx]?.totalWork ?? snapshotInitial)
                 : (points[points.length - 1]?.totalWork ?? snapshotInitial)
         );
         const snapshotDelta = snapshotFinal - snapshotInitial;
+        const headerDelta = typeof plannedDelta === 'number' ? Math.round(plannedDelta) : snapshotDelta;
         const effectiveTotalHours = snapshotFinal || totalHours;
         const remNow = Math.max(
             0,
@@ -394,7 +479,11 @@ export function BurndownChart({
         const burnedTotal = lastActualIdx >= 0
             ? Math.max(0, Math.round(completedAccum[lastActualIdx]))
             : Math.max(0, effectiveTotalHours - remNow);
-        const workedDays = lastActualIdx >= 0 ? lastActualIdx + 1 : 0;
+        const workedDays = businessDays.filter((ms) => ms <= todayMs).length;
+        const isAfterSprint = todayMs > endMs;
+        const remainingDaysIncludingToday = isAfterSprint
+            ? 0
+            : businessDays.filter((ms) => ms >= todayMs).length;
         const avgBurnValue = workedDays > 0 ? burnedTotal / workedDays : 0;
         if (lastActualIdx >= 0) {
             const anchorIdx = lastActualIdx;
@@ -415,9 +504,8 @@ export function BurndownChart({
 
         const deviationAbs = remNow - (todayIdx >= 0 ? points[todayIdx].ideal : effectiveTotalHours);
         const deviationPct = effectiveTotalHours > 0 ? (deviationAbs / effectiveTotalHours) * 100 : 0;
-        const idealNow = lastActualIdx >= 0 ? Math.max(0, Math.round(points[lastActualIdx].ideal)) : effectiveTotalHours;
-        const remainingDays = Math.max(0, points.length - workedDays);
-        const neededIdealVelocity = remainingDays > 0 ? idealNow / remainingDays : 0;
+        const remainingDays = Math.max(0, remainingDaysIncludingToday);
+        const neededIdealVelocity = businessDays.length > 0 ? effectiveTotalHours / businessDays.length : 0;
 
         let status = 'No Prazo';
         let statusColor = '#63B3ED';
@@ -441,7 +529,7 @@ export function BurndownChart({
             totalHours: effectiveTotalHours,
             headerInitial: snapshotInitial,
             headerFinal: snapshotFinal,
-            headerDelta: snapshotDelta,
+            headerDelta,
             remNow,
             burnedTotal,
             status,
@@ -449,7 +537,7 @@ export function BurndownChart({
             statusBg,
             deviationPct,
             completionPct: effectiveTotalHours > 0 ? Math.round((burnedTotal / effectiveTotalHours) * 100) : 0,
-            daysTotal: points.length,
+            daysTotal: businessDays.length,
             todayIdx,
             lastActualIdx,
             avgBurn: avgBurnValue,
@@ -457,11 +545,12 @@ export function BurndownChart({
             neededIdealVelocity,
             workedDays,
         };
-    }, [data, plannedInitial, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
+    }, [data, plannedInitial, plannedInitialD1Date, plannedCurrent, plannedDelta, currentRemaining, sprintStartDate, sprintEndDate, dayOffDates]);
 
     if (!model) return null;
 
     return (
+        <>
         <div style={{ background: UI_COLORS.bg, borderRadius: 12, padding: 24, color: UI_COLORS.text, maxWidth: '100%', margin: '0 auto', border: `1px solid ${UI_COLORS.border}`, boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <div>
@@ -485,7 +574,13 @@ export function BurndownChart({
             <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
                 <MetricCard label="Restante" value={model.remNow} unit="h" accent="#F6AD55" sublabel={`de ${model.totalHours}h planejadas`} />
                 <MetricCard label="Concluído" value={model.burnedTotal} unit="h" accent="#48BB78" sublabel={`${model.completionPct}% da sprint`} />
-                <MetricCard label="Vel. Média" value={model.avgBurn.toFixed(1)} unit="h/dia" accent="#63B3ED" sublabel={`necessário: ${model.neededIdealVelocity.toFixed(1)}h/dia`} />
+                <MetricCard
+                    label="Vel. Real"
+                    value={model.avgBurn.toFixed(1)}
+                    unit="h/dia"
+                    accent="#63B3ED"
+                    sublabel={`necessária: ${model.neededIdealVelocity.toFixed(1)}h/dia`}
+                />
                 <MetricCard label="Dias Restantes" value={model.remainingDays} unit="dias" accent="#9F7AEA" sublabel={`trabalhados: ${model.workedDays} de ${model.daysTotal}`} />
             </div>
 
@@ -493,9 +588,25 @@ export function BurndownChart({
                 <LegendToggle label="Ideal" color="#63B3ED" checked={showIdeal} onToggle={() => setShowIdeal(!showIdeal)} />
                 <LegendToggle label="Remaining" color="#F6AD55" checked={showActual} onToggle={() => setShowActual(!showActual)} />
                 <LegendToggle label="Projeção" color="#9F7AEA" checked={showProjected} onToggle={() => setShowProjected(!showProjected)} />
-                <LegendToggle label="Mudanças de Escopo" color="#FC8181" checked={showScope} onToggle={() => setShowScope(!showScope)} />
+                <LegendToggle label="Escopo Adicionado" color="#DC2626" checked={showScopeAdded} onToggle={() => setShowScopeAdded(!showScopeAdded)} />
+                <LegendToggle label="Escopo Removido" color="#1E3A8A" checked={showScopeRemoved} onToggle={() => setShowScopeRemoved(!showScopeRemoved)} />
                 <LegendToggle label="Concluído no dia" color="#34D399" checked={showCompletedDaily} onToggle={() => setShowCompletedDaily(!showCompletedDaily)} />
             </div>
+            {(lateCompletionHours > 0 || lateScopeAddedHours > 0 || lateScopeRemovedHours > 0) && (
+                <div style={{
+                    marginBottom: 12,
+                    borderRadius: 10,
+                    border: `1px solid ${UI_COLORS.border}`,
+                    background: '#F8FAFC',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    color: UI_COLORS.muted
+                }}>
+                    Obs: {lateCompletionHours > 0 ? `${Math.round(lateCompletionHours)}h concluídas após o fim da sprint` : '0h concluídas após o fim da sprint'}
+                    {lateCompletionItems > 0 ? ` (${lateCompletionItems} item(ns))` : ''}
+                    {(lateScopeAddedHours > 0 || lateScopeRemovedHours > 0) ? ` · escopo pós-sprint consolidado no D10: +${Math.round(lateScopeAddedHours)}h / -${Math.round(lateScopeRemovedHours)}h` : ''}
+                </div>
+            )}
 
             <div style={{ background: UI_COLORS.bgSoft, borderRadius: 12, padding: '18px 12px 12px 0', border: `1px solid ${UI_COLORS.border}` }}>
                 <ResponsiveContainer width="100%" height={400}>
@@ -525,13 +636,62 @@ export function BurndownChart({
                         {showIdeal && <Area type="monotone" dataKey="ideal" stroke="#63B3ED" strokeWidth={2} fill="url(#idealGrad)" dot={false} activeDot={<ActiveDot />} strokeOpacity={0.7} name="Ideal" />}
                         {showActual && <Line type="monotone" dataKey="actual" stroke="#F6AD55" strokeWidth={2} dot={false} activeDot={<ActiveDot />} connectNulls={false} name="Remaining" />}
                         {showProjected && <Line type="monotone" dataKey="projected" stroke="#9F7AEA" strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} name="Projeção" />}
-                        {showScope && (
-                            <Bar dataKey="scopeAdded" fill="rgba(252,129,129,0.6)" barSize={12}>
-                                <LabelList dataKey="scopeAdded" content={<ScopeBarLabel />} />
+                        {showScopeAdded && (
+                            <Bar
+                                dataKey="scopeAdded"
+                                fill="rgba(220,38,38,0.78)"
+                                barSize={20}
+                                style={sprintId ? { cursor: 'pointer' } : undefined}
+                                onClick={(point: ChartPoint) => {
+                                    if (!sprintId || !point.scopeAdded) return;
+                                    setScopeTab('added');
+                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
+                                }}
+                            >
+                                <LabelList
+                                    dataKey="scopeAdded"
+                                    content={(labelProps: any) => (
+                                        <ScopeBarLabel
+                                            {...labelProps}
+                                            onOpen={(point: ChartPoint) => {
+                                                if (!sprintId || !point?.scopeAdded) return;
+                                                setScopeTab('added');
+                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
+                                            }}
+                                        />
+                                    )}
+                                />
+                            </Bar>
+                        )}
+                        {showScopeRemoved && (
+                            <Bar
+                                dataKey="scopeRemoved"
+                                fill="rgba(30,58,138,0.78)"
+                                barSize={20}
+                                style={sprintId ? { cursor: 'pointer' } : undefined}
+                                onClick={(point: ChartPoint) => {
+                                    if (!sprintId || !point.scopeRemoved) return;
+                                    setScopeTab('removed');
+                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
+                                }}
+                            >
+                                <LabelList
+                                    dataKey="scopeRemoved"
+                                    content={(labelProps: any) => (
+                                        <ScopeRemovedBarLabel
+                                            {...labelProps}
+                                            onOpen={(point: ChartPoint) => {
+                                                if (!sprintId || !point?.scopeRemoved) return;
+                                                setScopeTab('removed');
+                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
+                                            }}
+                                        />
+                                    )}
+                                />
                             </Bar>
                         )}
                         {showCompletedDaily && (
-                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={12}>
+                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={20}>
                                 <LabelList dataKey="completedInDay" content={<CompletedBarLabel />} />
                             </Bar>
                         )}
@@ -539,7 +699,118 @@ export function BurndownChart({
                 </ResponsiveContainer>
             </div>
         </div>
+
+        {scopeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="w-full max-w-2xl rounded-lg border border-border bg-background shadow-xl">
+                    <div className="flex items-center justify-between border-b border-border p-4">
+                        <div>
+                            <h3 className="text-base font-semibold text-foreground">Alterações de Escopo</h3>
+                            <p className="text-sm text-muted-foreground">{scopeModal.label}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${scopeTab === 'added' ? 'bg-amber-100 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}
+                                onClick={() => setScopeTab('added')}
+                            >
+                                Adicionados
+                                {scopeChanges && (
+                                    <span className="ml-1.5 rounded-full bg-amber-200 px-1.5 py-0.5 text-xs text-amber-800">
+                                        {scopeChanges.added.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${scopeTab === 'removed' ? 'bg-red-100 text-red-800' : 'text-muted-foreground hover:bg-muted'}`}
+                                onClick={() => setScopeTab('removed')}
+                            >
+                                Removidos
+                                {scopeChanges && (
+                                    <span className="ml-1.5 rounded-full bg-red-200 px-1.5 py-0.5 text-xs text-red-800">
+                                        {scopeChanges.removed.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                className="ml-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+                                onClick={() => setScopeModal(null)}
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
+                        {scopeLoading && (
+                            <div className="py-10 text-center text-sm text-muted-foreground">Carregando...</div>
+                        )}
+                        {!scopeLoading && scopeChanges && (() => {
+                            const items = scopeTab === 'added' ? scopeChanges.added : scopeChanges.removed;
+                            if (items.length === 0) {
+                                return (
+                                    <div className="py-10 text-center text-sm text-muted-foreground">
+                                        Nenhum item {scopeTab === 'added' ? 'adicionado' : 'removido'} neste dia.
+                                    </div>
+                                );
+                            }
+                            const reasonLabel: Record<string, string> = {
+                                added_to_sprint: 'Entrou na sprint',
+                                removed_from_sprint: 'Saiu da sprint',
+                                hours_increased: 'Horas aumentadas',
+                                hours_decreased: 'Horas reduzidas',
+                            };
+                            const reasonColor: Record<string, string> = {
+                                added_to_sprint: 'bg-green-100 text-green-800',
+                                removed_from_sprint: 'bg-red-100 text-red-800',
+                                hours_increased: 'bg-amber-100 text-amber-800',
+                                hours_decreased: 'bg-orange-100 text-orange-800',
+                            };
+                            return items.map((item) => (
+                                <div key={item.id} className="rounded-lg border border-border bg-card p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="font-medium text-sm text-foreground">
+                                            #{item.id} — {item.title}
+                                        </div>
+                                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${reasonColor[item.reason] || 'bg-muted text-muted-foreground'}`}>
+                                            {reasonLabel[item.reason] || item.reason}
+                                        </span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                        {item.type}
+                                        {' · '}
+                                        <span className={scopeTab === 'added' ? 'text-amber-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                            {scopeTab === 'added' ? '+' : ''}{item.hoursChange}h
+                                        </span>
+                                        {' · '}
+                                        por {item.changedBy}
+                                    </div>
+                                    {(() => {
+                                        const azureUrl = toAzureEditUrl(item.azureUrl, item.id, { fallbackOrgUrl: azureOrgUrl });
+                                        if (!azureUrl) {
+                                            return (
+                                                <div className="mt-2 text-xs text-muted-foreground">
+                                                    Link Azure indisponivel para este item.
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <a
+                                                href={azureUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-2 inline-block text-blue-600 hover:underline text-sm font-medium"
+                                            >
+                                                Abrir no Azure DevOps
+                                            </a>
+                                        );
+                                    })()}
+                                </div>
+                            ));
+                        })()}
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }
-
-

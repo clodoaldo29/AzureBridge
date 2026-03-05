@@ -7,7 +7,7 @@ interface WorkItemsByMemberChartProps {
     workItems: WorkItem[];
 }
 
-const ALLOWED_TYPES = ['task', 'bug', 'test case'];
+const ALLOWED_TYPES = ['task', 'bug'];
 
 const MEMBER_PALETTE = [
     '#3B82F6', '#F6AD55', '#48BB78', '#9F7AEA', '#FC8181',

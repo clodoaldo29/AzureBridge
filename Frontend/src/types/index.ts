@@ -37,6 +37,17 @@ export interface Sprint {
     completedStoryPoints?: number;
     teamCapacityHours?: number;
     commitmentHours?: number;
+    capacities?: Array<{
+        availableHours?: number | null;
+    }>;
+    snapshots?: Array<{
+        snapshotDate?: string;
+        totalWork?: number | null;
+        completedWork?: number | null;
+        remainingWork?: number | null;
+        addedCount?: number | null;
+        removedCount?: number | null;
+    }>;
     isOnTrack: boolean;
     riskLevel?: 'low' | 'medium' | 'high' | 'critical';
     createdAt: string;
@@ -51,12 +62,14 @@ export interface WorkItem {
     state: string;
     title: string;
     url?: string;
+    azureUrl?: string | null;
     description?: string;
     assignedToId?: string;
     assignedTo?: TeamMember;
     originalEstimate?: number;
     initialRemainingWork?: number;
     lastRemainingWork?: number;
+    doneRemainingWork?: number;
     completedWork?: number;
     remainingWork?: number;
     storyPoints?: number;
@@ -70,6 +83,7 @@ export interface WorkItem {
     closedDate?: string;
     projectId: string;
     sprintId?: string;
+    isRemoved?: boolean;
 }
 
 export interface SprintSnapshot {
@@ -89,6 +103,22 @@ export interface SprintSnapshot {
     addedCount?: number;
     removedCount?: number;
     idealRemaining?: number;
+}
+
+export interface ScopeChangeItem {
+    id: number;
+    title: string;
+    type: string;
+    hoursChange: number;
+    changedBy: string;
+    azureUrl?: string | null;
+    reason: 'added_to_sprint' | 'removed_from_sprint' | 'hours_increased' | 'hours_decreased';
+}
+
+export interface ScopeChangesResult {
+    date: string;
+    added: ScopeChangeItem[];
+    removed: ScopeChangeItem[];
 }
 
 export interface MemberCapacity {
@@ -156,6 +186,7 @@ export interface CapacityComparison {
                     plannedHours: number;
                     remainingHours: number;
                     url: string | null;
+                    azureUrl?: string | null;
                 }>;
             };
             done?: {
@@ -173,6 +204,7 @@ export interface CapacityComparison {
                     plannedHours: number;
                     remainingHours: number;
                     url: string | null;
+                    azureUrl?: string | null;
                 }>;
             };
         };
