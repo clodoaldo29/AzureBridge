@@ -33,6 +33,7 @@
 /// <reference types="node" />
 import { PrismaClient } from '@prisma/client';
 import 'dotenv/config';
+import { capacityService } from '../../src/services/capacity.service';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,32 @@ interface BurndownStats {
     errors: number;
 }
 
+interface ReconcileItemLog {
+    azureId: number;
+    title: string;
+    type: string;
+    state: string;
+    iterationPath: string;
+    remainingHours: number;
+    changedBy?: string;
+    fromAssignee?: string | null;
+    toAssignee?: string | null;
+}
+
+interface SprintOutcomeLogRow {
+    azureId: number;
+    title: string;
+    type: string;
+    scopeAddedHours: number;
+    scopeRemovedHours: number;
+    completedInSprintHours: number;
+    enteredAfterD0: boolean;
+    leftDuringSprint: boolean;
+    removedByStateInSprint: boolean;
+    inSprintAtEnd: boolean;
+    lastScopeEventDate: Date | null;
+}
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const SPRINT_TIMEZONE = process.env.SPRINT_TIMEZONE || 'America/Sao_Paulo';
@@ -121,6 +148,43 @@ function step(msg: string): void {
 
 function done(msg: string): void {
     console.log(`  └── ${msg}`);
+}
+
+function formatHours(value: number | null | undefined): string {
+    const hours = Math.round(Number(value || 0) * 10) / 10;
+    return `${hours}h`;
+}
+
+function truncateText(value: string, max = 72): string {
+    const text = String(value || '').trim();
+    if (text.length <= max) return text;
+    return `${text.slice(0, Math.max(0, max - 3))}...`;
+}
+
+function formatAssigneeLabel(value?: string | null): string {
+    return value ? truncateText(value, 28) : 'Sem responsável';
+}
+
+function formatReconcileLog(kind: string, item: ReconcileItemLog): string {
+    const parts = [
+        `${kind} #${item.azureId}`,
+        `${truncateText(item.title)}`,
+        `${item.type || 'Work Item'}`,
+        `state=${item.state || 'n/a'}`,
+        `remaining=${formatHours(item.remainingHours)}`,
+    ];
+    if (item.iterationPath) parts.push(`iteration=${truncateText(item.iterationPath, 48)}`);
+    if (item.changedBy) parts.push(`changedBy=${truncateText(item.changedBy, 24)}`);
+    if (item.fromAssignee !== undefined || item.toAssignee !== undefined) {
+        parts.push(`${formatAssigneeLabel(item.fromAssignee)} -> ${formatAssigneeLabel(item.toAssignee)}`);
+    }
+    return parts.join(' | ');
+}
+
+function logIndentedList(lines: string[]): void {
+    for (const line of lines) {
+        step(`  ${line}`);
+    }
 }
 
 // ─── Helpers de data ──────────────────────────────────────────────────────────
@@ -206,6 +270,18 @@ function isInSprintPath(iteration: string | null | undefined, sprintPath: string
 
 function isDoneLike(state?: string | null): boolean {
     return DONE_LIKE_STATES.has(String(state || '').trim().toLowerCase());
+}
+
+function isRemovedLike(state?: string | null): boolean {
+    return String(state || '').trim().toLowerCase() === 'removed';
+}
+
+function isCountedInSprint(
+    iteration: string | null | undefined,
+    state: string | null | undefined,
+    sprintPath: string
+): boolean {
+    return isInSprintPath(iteration, sprintPath) && !isRemovedLike(state);
 }
 
 // ─── Helpers de member lookup ─────────────────────────────────────────────────
@@ -804,18 +880,34 @@ async function runReconcile(witApi: any, prisma: PrismaClient): Promise<Reconcil
             // Busca itens locais desta sprint
             const localItems = await prisma.workItem.findMany({
                 where: { sprintId: sprint.id },
-                select: { id: true, azureId: true, isRemoved: true, assignedToId: true },
+                select: {
+                    id: true,
+                    azureId: true,
+                    title: true,
+                    type: true,
+                    state: true,
+                    iterationPath: true,
+                    isRemoved: true,
+                    assignedToId: true,
+                    remainingWork: true,
+                    lastRemainingWork: true,
+                    changedBy: true,
+                    assignedTo: { select: { displayName: true, uniqueName: true } },
+                },
             });
             const localByAzureId = new Map(localItems.map((item: any) => [item.azureId, item]));
+            const removedLogs: ReconcileItemLog[] = [];
+            const reactivatedLogs: ReconcileItemLog[] = [];
+            const reassignedLogs: ReconcileItemLog[] = [];
 
             // Identifica remoções e reativações
-            const toMarkRemoved = localItems
+            const removedItems = localItems
                 .filter((w: any) => !w.isRemoved && !azureIdSet.has(w.azureId))
-                .map((w: any) => w.id);
+            const toMarkRemoved = removedItems.map((w: any) => w.id);
 
-            const toReactivate = localItems
+            const reactivatedItems = localItems
                 .filter((w: any) => w.isRemoved && azureIdSet.has(w.azureId))
-                .map((w: any) => w.id);
+            const toReactivate = reactivatedItems.map((w: any) => w.id);
 
             if (toMarkRemoved.length) {
                 await prisma.workItem.updateMany({
@@ -823,6 +915,17 @@ async function runReconcile(witApi: any, prisma: PrismaClient): Promise<Reconcil
                     data: { isRemoved: true, lastSyncAt: new Date() },
                 });
                 stats.markedRemoved += toMarkRemoved.length;
+                removedLogs.push(
+                    ...removedItems.map((item: any) => ({
+                        azureId: item.azureId,
+                        title: item.title || `#${item.azureId}`,
+                        type: item.type || '',
+                        state: item.state || '',
+                        iterationPath: item.iterationPath || '',
+                        remainingHours: Math.max(0, Number(item.remainingWork ?? item.lastRemainingWork ?? 0)),
+                        changedBy: item.changedBy || undefined,
+                    }))
+                );
             }
 
             if (toReactivate.length) {
@@ -831,6 +934,17 @@ async function runReconcile(witApi: any, prisma: PrismaClient): Promise<Reconcil
                     data: { isRemoved: false, lastSyncAt: new Date() },
                 });
                 stats.reactivated += toReactivate.length;
+                reactivatedLogs.push(
+                    ...reactivatedItems.map((item: any) => ({
+                        azureId: item.azureId,
+                        title: item.title || `#${item.azureId}`,
+                        type: item.type || '',
+                        state: item.state || '',
+                        iterationPath: item.iterationPath || '',
+                        remainingHours: Math.max(0, Number(item.remainingWork ?? item.lastRemainingWork ?? 0)),
+                        changedBy: item.changedBy || undefined,
+                    }))
+                );
             }
 
             // Verifica reatribuições: busca detalhes dos itens presentes no Azure
@@ -852,11 +966,26 @@ async function runReconcile(witApi: any, prisma: PrismaClient): Promise<Reconcil
                     );
 
                     if (local.assignedToId !== assignedToId) {
+                        const previousAssignee = local.assignedTo?.displayName || local.assignedTo?.uniqueName || null;
+                        const nextAssignee = azItem.fields?.['System.AssignedTo']?.displayName
+                            || azItem.fields?.['System.AssignedTo']?.uniqueName
+                            || null;
                         await prisma.workItem.update({
                             where: { id: local.id },
                             data: { assignedToId, lastSyncAt: new Date() }
                         });
                         stats.reassigned++;
+                        reassignedLogs.push({
+                            azureId: local.azureId,
+                            title: local.title || `#${local.azureId}`,
+                            type: local.type || '',
+                            state: local.state || '',
+                            iterationPath: local.iterationPath || '',
+                            remainingHours: Math.max(0, Number(local.remainingWork ?? local.lastRemainingWork ?? 0)),
+                            changedBy: local.changedBy || undefined,
+                            fromAssignee: previousAssignee,
+                            toAssignee: nextAssignee,
+                        });
                     }
                 }
             }
@@ -868,6 +997,15 @@ async function runReconcile(witApi: any, prisma: PrismaClient): Promise<Reconcil
                 `Azure=${azureIdSet.size} | Local=${localItems.length} | ` +
                 `-${toMarkRemoved.length} removidos | +${toReactivate.length} reativados`
             );
+            if (removedLogs.length) {
+                logIndentedList(removedLogs.map((item) => formatReconcileLog('REMOVED', item)));
+            }
+            if (reactivatedLogs.length) {
+                logIndentedList(reactivatedLogs.map((item) => formatReconcileLog('REACTIVATED', item)));
+            }
+            if (reassignedLogs.length) {
+                logIndentedList(reassignedLogs.map((item) => formatReconcileLog('REASSIGNED', item)));
+            }
 
         } catch (err: any) {
             warn(`Erro ao reconciliar sprint ${sprint.name}: ${err.message}`);
@@ -1016,7 +1154,7 @@ async function runRebuildBurndown(
             const workItems = await prisma.workItem.findMany({
                 where: { sprintId: sprint.id },
                 select: {
-                    id: true, azureId: true, type: true, state: true, isBlocked: true,
+                    id: true, azureId: true, title: true, type: true, state: true, isBlocked: true,
                     isRemoved: true, createdDate: true, changedDate: true, activatedDate: true,
                     closedDate: true, iterationPath: true, remainingWork: true, completedWork: true,
                     initialRemainingWork: true, lastRemainingWork: true, doneRemainingWork: true,
@@ -1036,6 +1174,7 @@ async function runRebuildBurndown(
             const scopeRemovedByDay = new Array<number>(businessDays.length).fill(0);
             const completedByDay = new Array<number>(businessDays.length).fill(0);
             const outcomeRows: Array<Record<string, any>> = [];
+            const outcomeLogRows: SprintOutcomeLogRow[] = [];
 
             // Processa cada item buscando revisões do Azure
             for (const item of scopedItems) {
@@ -1078,7 +1217,7 @@ async function runRebuildBurndown(
                 const createdBeforeD1 = item.createdDate
                     ? toUTCDateOnlyFromDate(new Date(item.createdDate)).getTime() < firstDayMs
                     : false;
-                const wasInSprintBeforeD1 = createdBeforeD1 && hadIterationBeforeD1 && isInSprintPath(prevIteration, sprint.path);
+                const wasInSprintBeforeD1 = createdBeforeD1 && hadIterationBeforeD1 && isCountedInSprint(prevIteration, prevState, sprint.path);
 
                 const plannedInitialHours = wasInSprintBeforeD1 && hadRemainingBeforeD1
                     ? Math.max(0, Number(prevRemaining || 0))
@@ -1095,6 +1234,7 @@ async function runRebuildBurndown(
                 let itemCompletedInSprint = 0;
                 let itemEnteredAfterD0 = false;
                 let itemLeftDuringSprint = false;
+                let itemRemovedByStateInSprint = false;
                 let itemLastScopeEventDate: Date | null = null;
 
                 // Processa revisões a partir do D1 até o fim da sprint (exclusive para sprints Past)
@@ -1116,10 +1256,13 @@ async function runRebuildBurndown(
                     if (remField === null && isDoneLike(currentState)) currentRemaining = 0;
 
                     const previousRemaining = prevRemaining || 0;
-                    const prevInSprint = isInSprintPath(prevIteration, sprint.path);
-                    const currentInSprint = isInSprintPath(currentIteration, sprint.path);
+                    const prevInSprint = isCountedInSprint(prevIteration, prevState, sprint.path);
+                    const currentInSprint = isCountedInSprint(currentIteration, currentState, sprint.path);
                     const crossedIntoSprint = !prevInSprint && currentInSprint;
                     const crossedOutOfSprint = prevInSprint && !currentInSprint;
+                    const removedInsideSprint = isInSprintPath(currentIteration, sprint.path)
+                        && !isRemovedLike(prevState)
+                        && isRemovedLike(currentState);
 
                     if (crossedIntoSprint) {
                         if (createdBeforeD1 && !hadIterationBeforeD1) {
@@ -1147,6 +1290,7 @@ async function runRebuildBurndown(
                             itemLastScopeEventDate = changed;
                         }
                         itemLeftDuringSprint = true;
+                        if (removedInsideSprint) itemRemovedByStateInSprint = true;
                         if (itemCompleted > 0) completedByDay[idx] -= itemCompleted;
 
                     } else if (currentInSprint || prevInSprint) {
@@ -1187,7 +1331,7 @@ async function runRebuildBurndown(
                 }
 
                 // Calcula estado final do item na sprint e registra outcome
-                const inSprintAtEnd = isInSprintPath(prevIteration, sprint.path);
+                const inSprintAtEnd = isCountedInSprint(prevIteration, prevState, sprint.path);
                 const remainingAtSprintEndHours = inSprintAtEnd ? Math.max(0, Number(prevRemaining || 0)) : 0;
 
                 // ── After-sprint tracking (apenas sprints encerradas) ──────────────
@@ -1214,8 +1358,8 @@ async function runRebuildBurndown(
                         if (remField === null && isDoneLike(currentState)) currentRemaining = 0;
 
                         const previousRemaining = aPrevRemaining || 0;
-                        const prevInSprintA = isInSprintPath(aPrevIteration, sprint.path);
-                        const currentInSprint = isInSprintPath(currentIteration, sprint.path);
+                        const prevInSprintA = isCountedInSprint(aPrevIteration, aPrevState, sprint.path);
+                        const currentInSprint = isCountedInSprint(currentIteration, currentState, sprint.path);
                         const completionEvent = previousRemaining > 0 && currentRemaining === 0 && currentInSprint;
 
                         if (completionEvent) {
@@ -1280,6 +1424,19 @@ async function runRebuildBurndown(
                     doneAfterSprintDate,
                     lastScopeEventDate: itemLastScopeEventDate,
                 });
+                outcomeLogRows.push({
+                    azureId: item.azureId,
+                    title: item.title || `#${item.azureId}`,
+                    type: item.type || '',
+                    scopeAddedHours: Math.round(itemScopeAdded * 10) / 10,
+                    scopeRemovedHours: Math.round(itemScopeRemoved * 10) / 10,
+                    completedInSprintHours: Math.round(itemCompletedInSprint * 10) / 10,
+                    enteredAfterD0: itemEnteredAfterD0,
+                    leftDuringSprint: itemLeftDuringSprint,
+                    removedByStateInSprint: itemRemovedByStateInSprint,
+                    inSprintAtEnd,
+                    lastScopeEventDate: itemLastScopeEventDate,
+                });
             }
 
             // Fallback: usa totalPlannedHours se não houver dados históricos suficientes
@@ -1335,6 +1492,8 @@ async function runRebuildBurndown(
                     const activatedTs = item.activatedDate ? toUTCDateOnly(new Date(item.activatedDate)).getTime() : null;
                     const changedTs = item.changedDate ? toUTCDateOnly(new Date(item.changedDate)).getTime() : null;
                     const currentState = parseState(item.state) || '';
+                    const removedByDate = isRemovedLike(currentState) && changedTs !== null && changedTs < dayEnd;
+                    if (removedByDate) continue;
 
                     if (item.isBlocked) blockedCount++;
 
@@ -1364,6 +1523,7 @@ async function runRebuildBurndown(
                     snapshotDate: day,
                     remainingWork: remaining,
                     completedWork: completed,
+                    completedInDay: sf(completedByDay[i]),
                     totalWork,
                     remainingPoints: 0,
                     completedPoints: 0,
@@ -1388,6 +1548,8 @@ async function runRebuildBurndown(
                 stats.outcomesCreated += outcomeRows.length;
             }
 
+            await capacityService.recalculateSprintCapacitySnapshot(sprint.id, prisma);
+
             stats.sprintsRebuilt++;
 
             const latest = rows[rows.length - 1];
@@ -1399,6 +1561,41 @@ async function runRebuildBurndown(
                 (lateCompletedTotal > 0 ? ` | lateDone=${Math.round(lateCompletedTotal)}h` : '') +
                 ` (${elapsedSec}s)`
             );
+            const addedItems = outcomeLogRows
+                .filter((item) => item.scopeAddedHours > 0)
+                .sort((a, b) => b.scopeAddedHours - a.scopeAddedHours);
+            const removedItems = outcomeLogRows
+                .filter((item) => item.scopeRemovedHours > 0)
+                .sort((a, b) => b.scopeRemovedHours - a.scopeRemovedHours);
+            const completedItems = outcomeLogRows
+                .filter((item) => item.completedInSprintHours > 0)
+                .sort((a, b) => b.completedInSprintHours - a.completedInSprintHours);
+
+            if (addedItems.length) {
+                const addedSummary = addedItems.reduce((sum, item) => sum + item.scopeAddedHours, 0);
+                step(`    scope+ ${addedItems.length} item(ns) | total=${formatHours(addedSummary)}`);
+                logIndentedList(addedItems.map((item) => {
+                    const reason = item.enteredAfterD0 ? 'iteration_in' : 'hours_increased';
+                    return `ADD #${item.azureId} | ${formatHours(item.scopeAddedHours)} | ${reason} | ${truncateText(item.title)}`;
+                }));
+            }
+            if (removedItems.length) {
+                const removedSummary = removedItems.reduce((sum, item) => sum + item.scopeRemovedHours, 0);
+                step(`    scope- ${removedItems.length} item(ns) | total=${formatHours(removedSummary)}`);
+                logIndentedList(removedItems.map((item) => {
+                    const reason = item.leftDuringSprint
+                        ? (item.removedByStateInSprint ? 'state_removed' : 'iteration_out')
+                        : 'hours_decreased';
+                    return `REMOVE #${item.azureId} | ${formatHours(item.scopeRemovedHours)} | ${reason} | ${truncateText(item.title)}`;
+                }));
+            }
+            if (completedItems.length) {
+                const completedSummary = completedItems.reduce((sum, item) => sum + item.completedInSprintHours, 0);
+                step(`    done ${completedItems.length} item(ns) | total=${formatHours(completedSummary)}`);
+                logIndentedList(completedItems.map((item) =>
+                    `DONE #${item.azureId} | ${formatHours(item.completedInSprintHours)} | ${truncateText(item.title)}`
+                ));
+            }
 
         } catch (err: any) {
             warn(`  ❌ ${sprintProgressLabel} — Erro: ${err.message}`);
@@ -1417,6 +1614,13 @@ async function runRebuildBurndown(
  * @param options - Configurações: instância do Prisma, witApi do Azure, credenciais
  * @returns Resultado de cada fase com estatísticas detalhadas
  */
+export async function rebuildActiveSprintBurndownOnly(options: {
+    prisma: PrismaClient;
+    witApi: any;
+}): Promise<BurndownStats> {
+    return runRebuildBurndown(options.witApi, options.prisma, new Set<string>(), true);
+}
+
 export async function runCorePipeline(options: CorePipelineOptions): Promise<CorePipelineResult> {
     const { prisma, witApi, azureProject } = options;
     const startTime = Date.now();

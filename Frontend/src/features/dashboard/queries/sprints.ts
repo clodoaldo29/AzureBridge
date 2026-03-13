@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { Sprint, ApiResponse, ApiListResponse, SprintSnapshot, ScopeChangesResult } from '@/types';
+import type { Sprint, ApiResponse, ApiListResponse, SprintSnapshot, ScopeChangesResult, SprintHistorySummary } from '@/types';
 
 // Chaves de query
 export const sprintKeys = {
@@ -11,6 +11,7 @@ export const sprintKeys = {
     detail: (id: string) => [...sprintKeys.details(), id] as const,
     burndown: (id: string) => [...sprintKeys.detail(id), 'burndown'] as const,
     scopeChanges: (id: string, date: string) => [...sprintKeys.detail(id), 'scope-changes', date] as const,
+    history: (projectId: string, limit: number) => [...sprintKeys.all, 'history', projectId, limit] as const,
 };
 
 // Busca lista de sprints
@@ -18,6 +19,7 @@ export const useSprints = (params?: {
     projectId?: string;
     state?: string;
     limit?: number;
+    includeDetails?: boolean;
 }) => {
     return useQuery({
         queryKey: sprintKeys.list(params || {}),
@@ -77,7 +79,21 @@ export const useSprintBurndown = (id: string) => {
             return data.data;
         },
         enabled: !!id,
-        refetchOnMount: 'always',
+        staleTime: 60 * 1000,
         refetchInterval: 60000,
+    });
+};
+
+export const useProjectSprintHistory = (projectId: string, limit = 100) => {
+    return useQuery({
+        queryKey: sprintKeys.history(projectId, limit),
+        queryFn: async () => {
+            const { data } = await api.get<ApiListResponse<SprintHistorySummary>>(`/projects/${projectId}/sprint-history`, {
+                params: { limit }
+            });
+            return data.data;
+        },
+        enabled: !!projectId,
+        staleTime: 5 * 60 * 1000,
     });
 };

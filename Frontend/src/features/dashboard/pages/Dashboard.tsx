@@ -4,24 +4,25 @@ import { useBlockedWorkItems, useWorkItems } from '@/services/queries/workItems'
 import { useSprintBurndown } from '@/services/queries/sprints';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { SprintHealthCard } from '@/components/dashboard/SprintHealthCard';
-import { CapacityTable } from '@/components/dashboard/CapacityTable';
-import { MemberCapacityProgress } from '@/components/dashboard/MemberCapacityProgress';
-import { WorkItemAgingCard } from '../components/WorkItemAgingCard';
 import { BlockedItemsCard } from '../components/BlockedItemsCard';
-import { BurndownChart } from '@/components/charts/BurndownChart';
-import { CumulativeFlowChart } from '../charts/CumulativeFlowChart';
-import { WorkItemsByStateChart } from '../charts/WorkItemsByStateChart';
-import { WorkItemsByTypeChart } from '../charts/WorkItemsByTypeChart';
-import { WorkItemsByMemberChart } from '../charts/WorkItemsByMemberChart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Target, Users, CheckCircle2, Clock } from 'lucide-react';
+import { Target, Users, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { calculateSprintHealthDetails } from '@/utils/calculations';
 import { useAppStore } from '@/stores/appStore';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Project, Sprint } from '@/types';
-import { useEffect, useMemo } from 'react';
+import { Suspense, lazy, useEffect, useMemo } from 'react';
+
+const CapacityTable = lazy(() => import('@/components/dashboard/CapacityTable').then((module) => ({ default: module.CapacityTable })));
+const MemberCapacityProgress = lazy(() => import('@/components/dashboard/MemberCapacityProgress').then((module) => ({ default: module.MemberCapacityProgress })));
+const WorkItemAgingCard = lazy(() => import('../components/WorkItemAgingCard').then((module) => ({ default: module.WorkItemAgingCard })));
+const BurndownChart = lazy(() => import('@/components/charts/BurndownChart').then((module) => ({ default: module.BurndownChart })));
+const CumulativeFlowChart = lazy(() => import('../charts/CumulativeFlowChart').then((module) => ({ default: module.CumulativeFlowChart })));
+const WorkItemsByStateChart = lazy(() => import('../charts/WorkItemsByStateChart').then((module) => ({ default: module.WorkItemsByStateChart })));
+const WorkItemsByTypeChart = lazy(() => import('../charts/WorkItemsByTypeChart').then((module) => ({ default: module.WorkItemsByTypeChart })));
+const WorkItemsByMemberChart = lazy(() => import('../charts/WorkItemsByMemberChart').then((module) => ({ default: module.WorkItemsByMemberChart })));
 
 function toUtcDayMs(value: string | Date): number {
     const d = new Date(value);
@@ -127,6 +128,100 @@ function getIdealRemainingToday(params: {
     return Math.max(0, idealSeries[todayIdx] ?? baseInitial);
 }
 
+function SectionLoader({ label, minHeight = 'min-h-[280px]' }: { label: string; minHeight?: string }) {
+    return (
+        <div className={`flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground ${minHeight}`}>
+            {label}
+        </div>
+    );
+}
+
+function SkeletonBlock({ className }: { className: string }) {
+    return <div className={`animate-pulse rounded-md bg-muted/70 ${className}`} />;
+}
+
+function DashboardSkeleton({
+    sprintName,
+    sprintDates,
+    projectName,
+}: {
+    sprintName?: string;
+    sprintDates?: string;
+    projectName?: string;
+}) {
+    return (
+        <div className="p-8 max-w-[1600px] mx-auto animate-in fade-in-0 duration-200">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                    <div className="text-4xl font-bold tracking-tight text-foreground">
+                        {sprintName || 'Carregando sprint ativa...'}
+                    </div>
+                    <div className="text-muted-foreground">
+                        {sprintDates || 'Aguardando dados da sprint'}
+                    </div>
+                </div>
+
+                <div className="w-full xl:w-auto">
+                    <div className="w-full xl:w-[340px] rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                        {projectName || 'Selecionando projeto...'}
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                        <SkeletonBlock className="h-4 w-24" />
+                        <SkeletonBlock className="mt-8 h-10 w-24" />
+                        <SkeletonBlock className="mt-4 h-3 w-32" />
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <SkeletonBlock className="h-5 w-56" />
+                <SkeletonBlock className="mt-4 h-3 w-36" />
+                <SkeletonBlock className="mt-6 h-4 w-full rounded-full" />
+                <div className="mt-4 flex items-center justify-between gap-4">
+                    <SkeletonBlock className="h-3 w-40" />
+                    <SkeletonBlock className="h-6 w-24" />
+                </div>
+            </div>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_1fr]">
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                    <SkeletonBlock className="h-7 w-52" />
+                    <SkeletonBlock className="mt-8 h-12 w-20" />
+                    <SkeletonBlock className="mt-6 h-4 w-full" />
+                    <SkeletonBlock className="mt-6 h-4 w-40" />
+                    <SkeletonBlock className="mt-3 h-3 w-64" />
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                    <SkeletonBlock className="h-7 w-44" />
+                    <div className="mt-8 grid gap-4 md:grid-cols-3">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                            <div key={index} className="rounded-xl border border-border p-4">
+                                <SkeletonBlock className="h-4 w-20" />
+                                <SkeletonBlock className="mt-6 h-10 w-10" />
+                                <SkeletonBlock className="mt-4 h-9 w-24" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                        <SkeletonBlock className="h-6 w-44" />
+                        <SkeletonBlock className="mt-6 h-56 w-full" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export function Dashboard() {
     const { selectedProjectId, setSelectedProjectId } = useAppStore();
 
@@ -145,7 +240,7 @@ export function Dashboard() {
         data: sprints,
         isLoading: sprintsLoading,
         isError: sprintsError,
-    } = useSprints({ state: 'Active' });
+    } = useSprints({ state: 'Active', includeDetails: false });
 
     const activeProjectIds = useMemo(
         () => new Set((sprints || []).map((sprint: Sprint) => sprint.projectId)),
@@ -155,7 +250,12 @@ export function Dashboard() {
         () => projects.filter((project) => activeProjectIds.has(project.id)),
         [projects, activeProjectIds]
     );
-    const selectedProject = activeProjects.find((p) => p.id === selectedProjectId);
+    const effectiveSelectedProjectId = useMemo(() => {
+        if (!activeProjects.length) return '';
+        const hasValidSelection = activeProjects.some((project) => project.id === selectedProjectId);
+        return hasValidSelection ? (selectedProjectId || '') : activeProjects[0].id;
+    }, [activeProjects, selectedProjectId]);
+    const selectedProject = activeProjects.find((p) => p.id === effectiveSelectedProjectId);
 
     useEffect(() => {
         if (!activeProjects.length) {
@@ -163,11 +263,10 @@ export function Dashboard() {
             return;
         }
 
-        const hasValidSelection = activeProjects.some((p) => p.id === selectedProjectId);
-        if (!hasValidSelection) {
-            setSelectedProjectId(activeProjects[0].id);
+        if (selectedProjectId !== effectiveSelectedProjectId) {
+            setSelectedProjectId(effectiveSelectedProjectId);
         }
-    }, [activeProjects, selectedProjectId, setSelectedProjectId]);
+    }, [activeProjects, effectiveSelectedProjectId, selectedProjectId, setSelectedProjectId]);
 
     // Filtra sprints pelo projeto selecionado (mais confiável que comparar por path)
     const currentSprint = selectedProject
@@ -177,28 +276,32 @@ export function Dashboard() {
     // Busca dados de capacidade para a sprint atual
     const {
         data: capacityData,
-        isLoading: capacityLoading,
         isError: capacityError,
     } = useCapacityComparison(currentSprint?.id || '');
 
     // Busca dados de burndown
-    const { data: burndownData } = useSprintBurndown(currentSprint?.id || '');
+    const {
+        data: burndownData,
+        isLoading: burndownLoading,
+    } = useSprintBurndown(currentSprint?.id || '');
 
     // Busca work items bloqueados (fonte original do card de impedimentos)
-    const { data: blockedItems } = useBlockedWorkItems();
-    const scopedBlockedItems = useMemo(() => {
-        const items = blockedItems || [];
-
-        return items.filter((item) => {
-            if (selectedProject && item.projectId !== selectedProject.id) return false;
-            if (currentSprint?.id && item.sprintId !== currentSprint.id) return false;
-            return true;
-        });
-    }, [blockedItems, selectedProject, currentSprint?.id]);
+    const {
+        data: blockedItems,
+        isLoading: blockedItemsLoading,
+    } = useBlockedWorkItems(
+        currentSprint
+            ? { sprintId: currentSprint.id, projectId: selectedProject?.id, compact: true }
+            : undefined
+    );
+    const scopedBlockedItems = blockedItems || [];
 
     // Busca todos os work items da sprint atual (para os gráficos donut)
-    const { data: workItemsResponse } = useWorkItems(
-        currentSprint ? { sprintId: currentSprint.id, includeRemoved: true, limit: 1000 } : undefined
+    const {
+        data: workItemsResponse,
+        isLoading: workItemsLoading,
+    } = useWorkItems(
+        currentSprint ? { sprintId: currentSprint.id, includeRemoved: true, compact: true, limit: 1000 } : undefined
     );
     const sprintWorkItems = workItemsResponse?.data || [];
 
@@ -207,12 +310,23 @@ export function Dashboard() {
         ? calculateSprintHealthDetails(currentSprint, capacityData, burndownData?.raw)
         : null;
     const healthScore = healthDetails ? healthDetails.score : null;
+    const formatSprintDate = (date: string) =>
+        new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 
-    if (sprintsLoading || capacityLoading) {
+    const isDashboardBootstrapping = sprintsLoading
+        || !!currentSprint && burndownLoading;
+
+    if (sprintsLoading) {
+        return <DashboardSkeleton projectName={selectedProject?.name} />;
+    }
+
+    if (isDashboardBootstrapping && currentSprint) {
         return (
-            <div className="flex items-center justify-center h-screen">
-                <div className="text-muted-foreground">Carregando...</div>
-            </div>
+            <DashboardSkeleton
+                sprintName={currentSprint.name}
+                sprintDates={`${formatSprintDate(currentSprint.startDate)} - ${formatSprintDate(currentSprint.endDate)}`}
+                projectName={selectedProject?.name}
+            />
         );
     }
 
@@ -234,9 +348,6 @@ export function Dashboard() {
             </div>
         );
     }
-
-    const formatSprintDate = (date: string) =>
-        new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 
     const burndownRaw = burndownData?.raw || [];
     const sortedBurndown = [...burndownRaw].sort(
@@ -341,7 +452,7 @@ export function Dashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <StatCard
                             title="Capacidade Total"
-                            value={`${capacityData?.summary.totalAvailable || 0}h`}
+                            value={capacityData ? `${capacityData.summary.totalAvailable}h` : '...'}
                             icon={Users}
                         />
                         <StatCard
@@ -360,11 +471,15 @@ export function Dashboard() {
                             value={`${completedHours}h`}
                             icon={CheckCircle2}
                         />
-                        <BlockedItemsCard
-                            workItems={scopedBlockedItems}
-                            projectName={selectedProject?.name}
-                            itemsArePreFiltered
-                        />
+                        {blockedItemsLoading ? (
+                            <StatCard title="Impedimentos" value="..." icon={AlertTriangle} />
+                        ) : (
+                            <BlockedItemsCard
+                                workItems={scopedBlockedItems}
+                                projectName={selectedProject?.name}
+                                itemsArePreFiltered
+                            />
+                        )}
                     </div>
 
                     {/* Barra de Progresso da Sprint baseada em Planejado vs Restante */}
@@ -426,62 +541,86 @@ export function Dashboard() {
                                 reasons={healthDetails?.penalties}
                             />
                         )}
-                        <WorkItemAgingCard
-                            workItems={sprintWorkItems}
-                            capacityData={capacityData}
-                            sprintStartDate={currentSprint.startDate}
-                            sprintEndDate={currentSprint.endDate}
-                            dayOffDates={capacityData?.summary.dayOffDates || []}
-                            projectName={selectedProject?.name}
-                        />
+                        {workItemsLoading ? (
+                            <SectionLoader label="Carregando aging..." />
+                        ) : (
+                            <Suspense fallback={<SectionLoader label="Carregando aging..." />}>
+                                <WorkItemAgingCard
+                                    workItems={sprintWorkItems}
+                                    capacityData={capacityData}
+                                    sprintStartDate={currentSprint.startDate}
+                                    sprintEndDate={currentSprint.endDate}
+                                    dayOffDates={capacityData?.summary.dayOffDates || []}
+                                    projectName={selectedProject?.name}
+                                />
+                            </Suspense>
+                        )}
                     </div>
 
                     {/* Distribuição de Work Items (Donuts) */}
-                    {sprintWorkItems.length > 0 && (
+                    {!workItemsLoading && sprintWorkItems.length > 0 && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <WorkItemsByStateChart workItems={sprintWorkItems} />
-                            <WorkItemsByTypeChart workItems={sprintWorkItems} />
-                            <WorkItemsByMemberChart workItems={sprintWorkItems} />
+                            <Suspense fallback={<SectionLoader label="Carregando gráfico..." />}>
+                                <WorkItemsByStateChart workItems={sprintWorkItems} />
+                            </Suspense>
+                            <Suspense fallback={<SectionLoader label="Carregando gráfico..." />}>
+                                <WorkItemsByTypeChart workItems={sprintWorkItems} />
+                            </Suspense>
+                            <Suspense fallback={<SectionLoader label="Carregando gráfico..." />}>
+                                <WorkItemsByMemberChart workItems={sprintWorkItems} />
+                            </Suspense>
                         </div>
                     )}
 
                     {/* Conteúdo Principal */}
                     <div className="space-y-6">
                         {/* Tabela de Capacidade */}
-                        {capacityData && <CapacityTable data={capacityData} plannedCurrent={plannedCurrent} projectName={selectedProject?.name} />}
-                        {capacityData && <MemberCapacityProgress data={capacityData} />}
+                        {capacityData && (
+                            <Suspense fallback={<SectionLoader label="Carregando capacidade..." minHeight="min-h-[320px]" />}>
+                                <CapacityTable data={capacityData} plannedCurrent={plannedCurrent} projectName={selectedProject?.name} />
+                            </Suspense>
+                        )}
+                        {capacityData && (
+                            <Suspense fallback={<SectionLoader label="Carregando membros..." minHeight="min-h-[320px]" />}>
+                                <MemberCapacityProgress data={capacityData} />
+                            </Suspense>
+                        )}
 
                         {/* Diagrama de Fluxo Cumulativo (CFD) */}
                         {burndownData && (
                             <div className="pt-2">
-                                <CumulativeFlowChart
-                                    data={burndownData.raw}
-                                    sprintStartDate={currentSprint.startDate}
-                                    sprintEndDate={currentSprint.endDate}
-                                    dayOffDates={capacityData?.summary.dayOffDates || []}
-                                />
+                                <Suspense fallback={<SectionLoader label="Carregando fluxo..." minHeight="min-h-[360px]" />}>
+                                    <CumulativeFlowChart
+                                        data={burndownData.raw}
+                                        sprintStartDate={currentSprint.startDate}
+                                        sprintEndDate={currentSprint.endDate}
+                                        dayOffDates={capacityData?.summary.dayOffDates || []}
+                                    />
+                                </Suspense>
                             </div>
                         )}
 
                         {/* Gráfico de Burndown */}
                         {burndownData && (
                             <div className="pt-2">
-                                <BurndownChart
-                                    sprintId={currentSprint.id}
-                                    data={burndownData.raw}
-                                    plannedInitial={plannedInitial}
-                                    plannedInitialD1Date={burndownData.plannedInitialD1Date}
-                                    plannedCurrent={plannedCurrent}
-                                    plannedDelta={plannedDelta}
-                                    currentRemaining={remainingHours}
-                                    lateCompletionHours={burndownData.lateCompletionHours}
-                                    lateCompletionItems={burndownData.lateCompletionItems}
-                                    lateScopeAddedHours={burndownData.lateScopeAddedHours}
-                                    lateScopeRemovedHours={burndownData.lateScopeRemovedHours}
-                                    sprintStartDate={currentSprint.startDate}
-                                    sprintEndDate={currentSprint.endDate}
-                                    dayOffDates={capacityData?.summary.dayOffDates || []}
-                                />
+                                <Suspense fallback={<SectionLoader label="Carregando burndown..." minHeight="min-h-[420px]" />}>
+                                    <BurndownChart
+                                        sprintId={currentSprint.id}
+                                        data={burndownData.raw}
+                                        plannedInitial={plannedInitial}
+                                        plannedInitialD1Date={burndownData.plannedInitialD1Date}
+                                        plannedCurrent={plannedCurrent}
+                                        plannedDelta={plannedDelta}
+                                        currentRemaining={remainingHours}
+                                        lateCompletionHours={burndownData.lateCompletionHours}
+                                        lateCompletionItems={burndownData.lateCompletionItems}
+                                        lateScopeAddedHours={burndownData.lateScopeAddedHours}
+                                        lateScopeRemovedHours={burndownData.lateScopeRemovedHours}
+                                        sprintStartDate={currentSprint.startDate}
+                                        sprintEndDate={currentSprint.endDate}
+                                        dayOffDates={capacityData?.summary.dayOffDates || []}
+                                    />
+                                </Suspense>
                             </div>
                         )}
                     </div>

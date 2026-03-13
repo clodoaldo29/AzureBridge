@@ -44,6 +44,7 @@ type ChartPoint = {
     scopeAdded: number;
     scopeRemoved: number;
     completedInDay: number;
+    completedInDayFromApi: number | null;
     completedAccum: number;
     isToday: boolean;
     isFuture: boolean;
@@ -158,9 +159,9 @@ const CustomTooltip = ({ active, payload }: any) => {
                 {point.scopeRemoved > 0 && <TooltipRow color="#1E3A8A" label="Escopo removido" value={`${point.scopeRemoved}h`} />}
                 {point.completedInDay > 0 && <TooltipRow color="#34D399" label="Concluído no dia" value={`${point.completedInDay}h`} />}
             </div>
-            {(point.scopeAdded > 0 || point.scopeRemoved > 0) && (
+            {(point.scopeAdded > 0 || point.scopeRemoved > 0 || point.completedInDay > 0) && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${UI_COLORS.border}`, fontSize: 10, color: UI_COLORS.mutedSoft, textAlign: 'center' }}>
-                    Clique na barra para ver os itens
+                    Clique na barra ou no rótulo para ver os itens
                 </div>
             )}
         </div>
@@ -174,7 +175,7 @@ const ActiveDot = ({ cx, cy, stroke }: any) => (
     </g>
 );
 
-const ScopeBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
+const ScopeBarLabel = ({ x, y, width, value, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
@@ -188,8 +189,8 @@ const ScopeBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
             style={{ cursor: onOpen ? 'pointer' : 'default' }}
             onClick={(e) => {
                 e.stopPropagation();
-                if (!onOpen || !payload) return;
-                onOpen(payload);
+                if (!onOpen) return;
+                onOpen();
             }}
         >
             {value}h
@@ -197,7 +198,7 @@ const ScopeBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
     );
 };
 
-const ScopeRemovedBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
+const ScopeRemovedBarLabel = ({ x, y, width, value, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
@@ -211,8 +212,8 @@ const ScopeRemovedBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
             style={{ cursor: onOpen ? 'pointer' : 'default' }}
             onClick={(e) => {
                 e.stopPropagation();
-                if (!onOpen || !payload) return;
-                onOpen(payload);
+                if (!onOpen) return;
+                onOpen();
             }}
         >
             {value}h
@@ -220,7 +221,7 @@ const ScopeRemovedBarLabel = ({ x, y, width, value, payload, onOpen }: any) => {
     );
 };
 
-const CompletedBarLabel = ({ x, y, width, value }: any) => {
+const CompletedBarLabel = ({ x, y, width, value, onOpen }: any) => {
     if (!value || value <= 0) return null;
     return (
         <text
@@ -230,6 +231,13 @@ const CompletedBarLabel = ({ x, y, width, value }: any) => {
             fill="#047857"
             fontSize={9}
             fontWeight={700}
+            pointerEvents="all"
+            style={{ cursor: onOpen ? 'pointer' : 'default' }}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!onOpen) return;
+                onOpen();
+            }}
         >
             {value}h
         </text>
@@ -320,9 +328,9 @@ export function BurndownChart({
     const [scopeModal, setScopeModal] = useState<{
         date: string;
         label: string;
-        initialTab: 'added' | 'removed';
+        initialTab: 'added' | 'removed' | 'completed';
     } | null>(null);
-    const [scopeTab, setScopeTab] = useState<'added' | 'removed'>('added');
+    const [scopeTab, setScopeTab] = useState<'added' | 'removed' | 'completed'>('added');
     const azureOrgUrl = (import.meta as any)?.env?.VITE_AZURE_DEVOPS_ORG_URL as string | undefined;
 
     const { data: scopeChanges, isLoading: scopeLoading } = useScopeChanges(
@@ -369,6 +377,9 @@ export function BurndownChart({
             const ideal = Math.round(snap?.idealRemaining || 0);
             const actual = isFuture ? null : Math.round(snap?.remainingWork || 0);
             const totalWork = Math.round(snap?.totalWork || 0);
+            const completedInDayFromApi = exact && typeof exact.completedInDay === 'number'
+                ? Math.max(0, Math.round(Number(exact.completedInDay || 0)))
+                : null;
 
             return {
                 dayKey: `D${idx + 1}`,
@@ -381,7 +392,8 @@ export function BurndownChart({
                 projected: null,
                 scopeAdded: 0,
                 scopeRemoved: 0,
-                completedInDay: 0,
+                completedInDay: isFuture ? 0 : (completedInDayFromApi ?? 0),
+                completedInDayFromApi,
                 completedAccum: Math.round(snap?.completedWork || 0),
                 isToday: ms === todayMs,
                 isFuture,
@@ -411,6 +423,7 @@ export function BurndownChart({
                 scopeAdded: 0,
                 scopeRemoved: 0,
                 completedInDay: 0,
+                completedInDayFromApi: null,
                 completedAccum: 0,
                 isToday: d0Ms === todayMs,
                 isFuture: isD0Future,
@@ -454,12 +467,22 @@ export function BurndownChart({
             }
         }
 
-        // Concluído no dia usa completedWork acumulado do snapshot (histórico real).
+        // Prefer explicit completed-in-day from API (same source used by modal).
+        // Fallback to completedWork accumulated delta when API field is unavailable.
         const completedAccum: number[] = new Array(points.length).fill(0);
+        const hasCompletedInDayFromApi = points.some((point) => (point.completedInDayFromApi ?? 0) > 0);
         for (let i = 0; i < points.length; i++) {
             completedAccum[i] = Math.max(0, Math.round(points[i].completedAccum || 0));
-            const prevAccum = i > 0 ? completedAccum[i - 1] : 0;
-            points[i].completedInDay = Math.max(0, completedAccum[i] - prevAccum);
+            if (hasCompletedInDayFromApi) {
+                if (points[i].dayKey === 'Planning' || points[i].isFuture) {
+                    points[i].completedInDay = 0;
+                } else {
+                    points[i].completedInDay = Math.max(0, Math.round(points[i].completedInDayFromApi || 0));
+                }
+            } else {
+                const prevAccum = i > 0 ? completedAccum[i - 1] : 0;
+                points[i].completedInDay = Math.max(0, completedAccum[i] - prevAccum);
+            }
         }
 
         const totalHours = Math.round(plannedCurrent ?? plannedInitial ?? snapshots[0]?.totalWork ?? 0);
@@ -650,16 +673,19 @@ export function BurndownChart({
                             >
                                 <LabelList
                                     dataKey="scopeAdded"
-                                    content={(labelProps: any) => (
-                                        <ScopeBarLabel
-                                            {...labelProps}
-                                            onOpen={(point: ChartPoint) => {
-                                                if (!sprintId || !point?.scopeAdded) return;
-                                                setScopeTab('added');
-                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
-                                            }}
-                                        />
-                                    )}
+                                    content={(labelProps: any) => {
+                                        const point = model.points?.[labelProps?.index];
+                                        return (
+                                            <ScopeBarLabel
+                                                {...labelProps}
+                                                onOpen={() => {
+                                                    if (!sprintId || !point?.scopeAdded) return;
+                                                    setScopeTab('added');
+                                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'added' });
+                                                }}
+                                            />
+                                        );
+                                    }}
                                 />
                             </Bar>
                         )}
@@ -677,22 +703,50 @@ export function BurndownChart({
                             >
                                 <LabelList
                                     dataKey="scopeRemoved"
-                                    content={(labelProps: any) => (
-                                        <ScopeRemovedBarLabel
-                                            {...labelProps}
-                                            onOpen={(point: ChartPoint) => {
-                                                if (!sprintId || !point?.scopeRemoved) return;
-                                                setScopeTab('removed');
-                                                setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
-                                            }}
-                                        />
-                                    )}
+                                    content={(labelProps: any) => {
+                                        const point = model.points?.[labelProps?.index];
+                                        return (
+                                            <ScopeRemovedBarLabel
+                                                {...labelProps}
+                                                onOpen={() => {
+                                                    if (!sprintId || !point?.scopeRemoved) return;
+                                                    setScopeTab('removed');
+                                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'removed' });
+                                                }}
+                                            />
+                                        );
+                                    }}
                                 />
                             </Bar>
                         )}
                         {showCompletedDaily && (
-                            <Bar dataKey="completedInDay" fill="rgba(52,211,153,0.55)" barSize={20}>
-                                <LabelList dataKey="completedInDay" content={<CompletedBarLabel />} />
+                            <Bar
+                                dataKey="completedInDay"
+                                fill="rgba(52,211,153,0.55)"
+                                barSize={20}
+                                style={sprintId ? { cursor: 'pointer' } : undefined}
+                                onClick={(point: ChartPoint) => {
+                                    if (!sprintId || !point.completedInDay) return;
+                                    setScopeTab('completed');
+                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'completed' });
+                                }}
+                            >
+                                <LabelList
+                                    dataKey="completedInDay"
+                                    content={(labelProps: any) => {
+                                        const point = model.points?.[labelProps?.index];
+                                        return (
+                                            <CompletedBarLabel
+                                                {...labelProps}
+                                                onOpen={() => {
+                                                    if (!sprintId || !point?.completedInDay) return;
+                                                    setScopeTab('completed');
+                                                    setScopeModal({ date: point.dateLabel, label: point.tooltipLabel, initialTab: 'completed' });
+                                                }}
+                                            />
+                                        );
+                                    }}
+                                />
                             </Bar>
                         )}
                     </ComposedChart>
@@ -705,7 +759,7 @@ export function BurndownChart({
                 <div className="w-full max-w-2xl rounded-lg border border-border bg-background shadow-xl">
                     <div className="flex items-center justify-between border-b border-border p-4">
                         <div>
-                            <h3 className="text-base font-semibold text-foreground">Alterações de Escopo</h3>
+                            <h3 className="text-base font-semibold text-foreground">Detalhes do Dia</h3>
                             <p className="text-sm text-muted-foreground">{scopeModal.label}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -732,6 +786,17 @@ export function BurndownChart({
                                 )}
                             </button>
                             <button
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${scopeTab === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'text-muted-foreground hover:bg-muted'}`}
+                                onClick={() => setScopeTab('completed')}
+                            >
+                                Concluídos
+                                {scopeChanges && (
+                                    <span className="ml-1.5 rounded-full bg-emerald-200 px-1.5 py-0.5 text-xs text-emerald-800">
+                                        {(scopeChanges.completed || []).length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
                                 className="ml-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
                                 onClick={() => setScopeModal(null)}
                             >
@@ -745,11 +810,15 @@ export function BurndownChart({
                             <div className="py-10 text-center text-sm text-muted-foreground">Carregando...</div>
                         )}
                         {!scopeLoading && scopeChanges && (() => {
-                            const items = scopeTab === 'added' ? scopeChanges.added : scopeChanges.removed;
+                            const items = scopeTab === 'added'
+                                ? scopeChanges.added
+                                : scopeTab === 'removed'
+                                    ? scopeChanges.removed
+                                    : (scopeChanges.completed || []);
                             if (items.length === 0) {
                                 return (
                                     <div className="py-10 text-center text-sm text-muted-foreground">
-                                        Nenhum item {scopeTab === 'added' ? 'adicionado' : 'removido'} neste dia.
+                                        Nenhum item {scopeTab === 'added' ? 'adicionado' : scopeTab === 'removed' ? 'removido' : 'concluído'} neste dia.
                                     </div>
                                 );
                             }
@@ -758,12 +827,14 @@ export function BurndownChart({
                                 removed_from_sprint: 'Saiu da sprint',
                                 hours_increased: 'Horas aumentadas',
                                 hours_decreased: 'Horas reduzidas',
+                                completed: 'Concluído',
                             };
                             const reasonColor: Record<string, string> = {
                                 added_to_sprint: 'bg-green-100 text-green-800',
                                 removed_from_sprint: 'bg-red-100 text-red-800',
                                 hours_increased: 'bg-amber-100 text-amber-800',
                                 hours_decreased: 'bg-orange-100 text-orange-800',
+                                completed: 'bg-emerald-100 text-emerald-800',
                             };
                             return items.map((item) => (
                                 <div key={item.id} className="rounded-lg border border-border bg-card p-3">
@@ -778,7 +849,7 @@ export function BurndownChart({
                                     <div className="mt-1 text-xs text-muted-foreground">
                                         {item.type}
                                         {' · '}
-                                        <span className={scopeTab === 'added' ? 'text-amber-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                        <span className={scopeTab === 'added' ? 'text-amber-700 font-semibold' : scopeTab === 'removed' ? 'text-red-700 font-semibold' : 'text-emerald-700 font-semibold'}>
                                             {scopeTab === 'added' ? '+' : ''}{item.hoursChange}h
                                         </span>
                                         {' · '}

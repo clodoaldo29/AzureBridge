@@ -72,6 +72,7 @@ import { PrismaClient } from '@prisma/client';
 import * as azdev from 'azure-devops-node-api';
 import 'dotenv/config';
 import { runCorePipeline, CorePipelineResult } from './sync-core';
+import { capacityService } from '../../src/services/capacity.service';
 
 // ─── Configuração de projetos alvo ────────────────────────────────────────────
 //
@@ -635,6 +636,7 @@ async function syncCapacityForSprint(
                     totalHours,
                     availableHours,
                     allocatedHours: 0,
+                    completedHours: 0,
                     daysOff: mergedDaysOff,
                     activitiesPerDay: cap.activities || []
                 },
@@ -648,6 +650,8 @@ async function syncCapacityForSprint(
 
             totalSynced++;
         }
+
+        await capacityService.recalculateSprintCapacitySnapshot(sprint.id, prisma);
 
         return totalSynced;
     } catch {

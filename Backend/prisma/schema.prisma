@@ -47,6 +47,7 @@ model Project {
   rdaWorkItemSnapshots       RDAWorkItemSnapshot[]
   rdaSprintSnapshots         RDASprintSnapshot[]
   rdaMonthlySnapshots        RDAMonthlySnapshot[]
+  sprintHistorySummaries     SprintHistorySummary[]
 
   @@index([azureId])
   @@index([name])
@@ -94,6 +95,7 @@ model TeamCapacity {
   totalHours     Float @default(0) // Horas totais teóricas (8h/dia * dias úteis)
   availableHours Float @default(0) // Horas disponíveis (após descontar férias, feriados)
   allocatedHours Float @default(0) // Horas já alocadas em work items
+  completedHours Float @default(0) // Horas concluídas pelos itens atribuídos ao membro
 
   // Dias off (JSON: [{ date: "2025-01-15", reason: "Férias" }])
   daysOff Json?
@@ -141,6 +143,7 @@ model Sprint {
   // Capacidade vs Comprometimento
   teamCapacityHours Float? @default(0)
   commitmentHours   Float? @default(0)
+  capacityDetails   Json?
 
   // Flags de saúde
   isOnTrack Boolean @default(true)
@@ -152,6 +155,7 @@ model Sprint {
   snapshots  SprintSnapshot[]
   outcomes   SprintItemOutcome[]
   alerts     Alert[]
+  historySummary SprintHistorySummary?
 
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -178,6 +182,7 @@ model SprintSnapshot {
   // Métricas de trabalho (horas)
   remainingWork Float @default(0)
   completedWork Float @default(0)
+  completedInDay Float @default(0)
   totalWork     Float @default(0)
 
   // Métricas de story points
@@ -204,6 +209,43 @@ model SprintSnapshot {
   @@index([sprintId])
   @@index([snapshotDate])
   @@map("sprint_snapshots")
+}
+
+model SprintHistorySummary {
+  id String @id @default(cuid())
+
+  sprintId String @unique
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sprintName String
+  startDate  DateTime
+  endDate    DateTime
+  isCurrent  Boolean @default(false)
+
+  capacityHours         Float @default(0)
+  plannedHours          Float @default(0)
+  deliveredHours        Float @default(0)
+  remainingHours        Float @default(0)
+  scopeAddedHours       Float @default(0)
+  scopeRemovedHours     Float @default(0)
+  finalDeviationHours   Float @default(0)
+  planVsCapacityPct     Float @default(0)
+  deliveredVsPlannedPct Float @default(0)
+  deliveredVsCapacityPct Float @default(0)
+
+  snapshotCount       Int @default(0)
+  capacityMemberCount Int @default(0)
+  calculatedAt        DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([projectId, startDate])
+  @@index([projectId, isCurrent])
+  @@index([calculatedAt])
+  @@map("sprint_history_summaries")
 }
 
 // Congelamento de resultado por item dentro da sprint.

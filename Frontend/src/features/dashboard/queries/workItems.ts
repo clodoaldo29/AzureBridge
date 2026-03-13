@@ -15,26 +15,37 @@ export const useWorkItems = (params?: {
     type?: string;
     state?: string;
     includeRemoved?: boolean;
+    compact?: boolean;
     limit?: number;
     offset?: number;
 }) => {
+    const hasFilters = params !== undefined;
+
     return useQuery({
         queryKey: workItemKeys.list(params || {}),
         queryFn: async () => {
             const { data } = await api.get<ApiListResponse<WorkItem>>('/work-items', { params });
             return data;
         },
+        enabled: hasFilters,
         refetchInterval: 30000,
     });
 };
 
-export const useBlockedWorkItems = () => {
+export const useBlockedWorkItems = (params?: {
+    sprintId?: string;
+    projectId?: string;
+    compact?: boolean;
+}) => {
+    const hasFilters = params !== undefined;
+
     return useQuery({
-        queryKey: workItemKeys.blocked(),
+        queryKey: [...workItemKeys.blocked(), params || {}],
         queryFn: async () => {
-            const { data } = await api.get<ApiListResponse<WorkItem>>('/work-items/blocked');
+            const { data } = await api.get<ApiListResponse<WorkItem>>('/work-items/blocked', { params });
             return data.data;
         },
+        enabled: hasFilters,
         refetchInterval: 30000, // Atualizar a cada 30 segundos
     });
 };

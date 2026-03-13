@@ -6,7 +6,51 @@ import { getAzureDevOpsClient } from '@/integrations/azure/client';
 import { buildAzureWorkItemUrl } from '@/utils/azure-url';
 import { z } from 'zod';
 
-async function resolveBlockedIdsFromAzureTaskboard(): Promise<number[]> {
+const BLOCKED_IDS_TTL_MS = 30_000;
+const blockedIdsCache = new Map<string, { expiresAt: number; ids: number[] }>();
+
+function getCompactWorkItemSelect() {
+    return {
+        id: true,
+        azureId: true,
+        projectId: true,
+        sprintId: true,
+        type: true,
+        state: true,
+        title: true,
+        url: true,
+        assignedToId: true,
+        originalEstimate: true,
+        initialRemainingWork: true,
+        lastRemainingWork: true,
+        doneRemainingWork: true,
+        completedWork: true,
+        remainingWork: true,
+        priority: true,
+        isBlocked: true,
+        isDelayed: true,
+        tags: true,
+        createdDate: true,
+        activatedDate: true,
+        changedDate: true,
+        closedDate: true,
+        isRemoved: true,
+        assignedTo: {
+            select: {
+                displayName: true,
+                imageUrl: true
+            }
+        }
+    } as const;
+}
+
+async function resolveBlockedIdsFromAzureTaskboard(filter?: { sprintId?: string; projectId?: string }): Promise<number[]> {
+    const cacheKey = `${filter?.sprintId || 'all'}:${filter?.projectId || 'all'}`;
+    const cached = blockedIdsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.ids;
+    }
+
     const client = getAzureDevOpsClient();
     const [coreApi, workApi] = await Promise.all([
         client.getCoreApi(),
@@ -14,7 +58,11 @@ async function resolveBlockedIdsFromAzureTaskboard(): Promise<number[]> {
     ]);
 
     const activeSprints = await prisma.sprint.findMany({
-        where: { state: { in: ['active', 'Active'] } },
+        where: {
+            state: { in: ['active', 'Active'] },
+            ...(filter?.sprintId ? { id: filter.sprintId } : {}),
+            ...(filter?.projectId ? { projectId: filter.projectId } : {})
+        },
         include: { project: true },
     });
 
@@ -46,7 +94,12 @@ async function resolveBlockedIdsFromAzureTaskboard(): Promise<number[]> {
         }
     }
 
-    return [...blockedIds];
+    const ids = [...blockedIds];
+    blockedIdsCache.set(cacheKey, {
+        expiresAt: Date.now() + BLOCKED_IDS_TTL_MS,
+        ids
+    });
+    return ids;
 }
 
 export class WorkItemController {
@@ -61,6 +114,7 @@ export class WorkItemController {
             state: z.string().optional(),
             assignedTo: z.string().optional(),
             includeRemoved: z.coerce.boolean().optional().default(false),
+            compact: z.coerce.boolean().optional().default(false),
             limit: z.coerce.number().optional().default(50),
             offset: z.coerce.number().optional().default(0)
         });
@@ -78,20 +132,29 @@ export class WorkItemController {
 
             // Filtros de Pendente/Bloqueado podem ser adicionados aqui
 
+            const itemQueryArgs: any = {
+                where,
+                take: filters.limit,
+                skip: filters.offset,
+                orderBy: { changedDate: 'desc' }
+            };
+            if (filters.compact) {
+                itemQueryArgs.select = getCompactWorkItemSelect();
+            } else {
+                itemQueryArgs.include = {
+                    assignedTo: { select: { displayName: true, imageUrl: true } },
+                    project: { select: { name: true } }
+                };
+            }
+
             const [total, items] = await Promise.all([
                 prisma.workItem.count({ where }),
-                prisma.workItem.findMany({
-                    where,
-                    take: filters.limit,
-                    skip: filters.offset,
-                    orderBy: { changedDate: 'desc' },
-                    include: {
-                        assignedTo: { select: { displayName: true, imageUrl: true } },
-                        project: { select: { name: true } }
-                    }
-                })
+                prisma.workItem.findMany(itemQueryArgs)
             ]);
             const normalizedItems = items.map((item: any) => {
+                if (filters.compact) {
+                    return item;
+                }
                 const azureUrl = buildAzureWorkItemUrl({
                     id: item.id,
                     rawUrl: item.url,
@@ -197,20 +260,39 @@ export class WorkItemController {
      * Buscar Itens Bloqueados
      */
     async getBlockedWorkItems(_req: FastifyRequest, reply: FastifyReply) {
+        const querySchema = z.object({
+            sprintId: z.string().optional(),
+            projectId: z.string().optional(),
+            compact: z.coerce.boolean().optional().default(false),
+        });
+
         try {
-            const azureBlockedIds = await resolveBlockedIdsFromAzureTaskboard();
-            const items = await prisma.workItem.findMany({
-                where: {
-                    isRemoved: false,
-                    OR: [
-                        { isBlocked: true },
-                        ...(azureBlockedIds.length > 0 ? [{ id: { in: azureBlockedIds } }] : []),
-                        { state: { in: ['Blocked', 'blocked', 'Impedido', 'impedido'] } },
-                        { tags: { hasSome: ['Blocked', 'blocked', 'Blocker', 'blocker', 'Impedimento', 'impedimento'] } }
-                    ]
-                },
-                include: { assignedTo: true }
+            const filters = querySchema.parse(_req.query);
+            const azureBlockedIds = await resolveBlockedIdsFromAzureTaskboard({
+                sprintId: filters.sprintId,
+                projectId: filters.projectId
             });
+            const blockedWhere = {
+                isRemoved: false,
+                ...(filters.sprintId ? { sprintId: filters.sprintId } : {}),
+                ...(filters.projectId ? { projectId: filters.projectId } : {}),
+                OR: [
+                    { isBlocked: true },
+                    ...(azureBlockedIds.length > 0 ? [{ id: { in: azureBlockedIds } }] : []),
+                    { state: { in: ['Blocked', 'blocked', 'Impedido', 'impedido'] } },
+                    { tags: { hasSome: ['Blocked', 'blocked', 'Blocker', 'blocker', 'Impedimento', 'impedimento'] } }
+                ]
+            };
+            const blockedQueryArgs: any = {
+                where: blockedWhere,
+                orderBy: { changedDate: 'desc' }
+            };
+            if (filters.compact) {
+                blockedQueryArgs.select = getCompactWorkItemSelect();
+            } else {
+                blockedQueryArgs.include = { assignedTo: true };
+            }
+            const items = await prisma.workItem.findMany(blockedQueryArgs);
 
             return reply.send({ success: true, data: items });
         } catch (error) {
