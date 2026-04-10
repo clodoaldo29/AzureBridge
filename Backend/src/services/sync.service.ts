@@ -456,6 +456,7 @@ export class SyncService {
                 initialRemainingWork: true,
                 originalEstimate: true,
                 completedWork: true,
+                boardColumn: true,
                 closedDate: true,
                 resolvedDate: true,
                 stateChangeDate: true,
@@ -478,10 +479,12 @@ export class SyncService {
                 const resolvedRaw = fields['System.ResolvedDate'] || fields['Microsoft.VSTS.Common.ResolvedDate'];
                 const stateChangeRaw = fields['System.StateChangeDate'];
                 const activatedRaw = fields['Microsoft.VSTS.Common.ActivatedDate'];
+                const boardColumnRaw = fields['System.BoardColumn'];
                 const hasClosedField = hasField('System.ClosedDate') || hasField('Microsoft.VSTS.Common.ClosedDate');
                 const hasResolvedField = hasField('System.ResolvedDate') || hasField('Microsoft.VSTS.Common.ResolvedDate');
                 const hasStateChangeField = hasField('System.StateChangeDate');
                 const hasActivatedField = hasField('Microsoft.VSTS.Common.ActivatedDate');
+                const hasBoardColumnField = hasField('System.BoardColumn');
                 const closedDate = hasClosedField
                     ? (closedRaw ? new Date(closedRaw as string) : null)
                     : (existing?.closedDate ?? null);
@@ -494,6 +497,9 @@ export class SyncService {
                 const activatedDate = hasActivatedField
                     ? (activatedRaw ? new Date(activatedRaw as string) : null)
                     : (existing?.activatedDate ?? null);
+                const boardColumn = hasBoardColumnField
+                    ? (boardColumnRaw ? String(boardColumnRaw).trim() : null)
+                    : (existing?.boardColumn ?? null);
                 const state = (fields['System.State'] || '').toString();
                 const isDone = state.toLowerCase() === 'done' || state.toLowerCase() === 'closed' || state.toLowerCase() === 'completed';
                 const isBlocked = this.isBlockedState(state)
@@ -607,6 +613,7 @@ export class SyncService {
                     type: fields['System.WorkItemType'],
                     state: fields['System.State'],
                     reason: fields['System.Reason'],
+                    boardColumn,
                     title: fields['System.Title'],
                     description: fields['System.Description'],
                     acceptanceCriteria,

@@ -13,7 +13,10 @@
       "Bash(ls -la \"c:\\\\Users\\\\Clodoaldo Filho\\\\AzureBridge\\\\Backend\\\\scripts\"\" 2>nul || echo \"Checking directory structure \")",
       "Bash(npx prisma migrate dev:*)",
       "Bash(npm uninstall:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(xargs grep -l \"burndown\")",
+      "Bash(xargs grep -l \"SprintSnapshot\")",
+      "Bash(ls \"c:\\\\Users\\\\Clodoaldo Filho\\\\AzureBridge\\\\Frontend\\\\src\\\\services\\\\queries\"\" 2>/dev/null || ls \"c:UsersClodoaldo FilhoAzureBridgeFrontendsrcfeaturesdashboardqueries\"\")"
     ]
   }
 }

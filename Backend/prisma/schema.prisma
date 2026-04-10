@@ -310,6 +310,7 @@ model WorkItem {
   type   String // Product Backlog Item, Task, Bug, Feature, Epic
   state  String // New, Approved, Committed, To Do, In Progress, Done, Removed
   reason String? // Razão da mudança de estado
+  boardColumn String?
 
   // Informações básicas
   title              String  @db.Text

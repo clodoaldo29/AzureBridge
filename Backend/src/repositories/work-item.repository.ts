@@ -19,6 +19,8 @@ export class WorkItemRepository {
                     type: data.type,
                     state: data.state,
                     reason: data.reason,
+                    // @ts-ignore - Campo existe no BD mas o client pode nao estar gerado ainda
+                    boardColumn: (data as any).boardColumn,
                     title: data.title,
                     description: data.description,
                     acceptanceCriteria: data.acceptanceCriteria,

@@ -1,16 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 import * as azdev from 'azure-devops-node-api';
 import 'dotenv/config';
+import { getTripleTimezoneParts } from '../../src/utils/timezone-display';
 import { rebuildActiveSprintBurndownOnly } from './sync-core';
 
 function printHeader(): void {
-    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const now = getTripleTimezoneParts();
     console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║   REBUILD BURNDOWN - Sprints Ativas                        ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log(`║  Inicio: ${now.padEnd(51)}║`);
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log('==============================================================');
+    console.log('  REBUILD BURNDOWN - Sprints Ativas');
+    console.log(`  UTC:       ${now.utc}`);
+    console.log(`  Brasilia: ${now.brasilia}`);
+    console.log(`  Manaus:   ${now.manaus}`);
+    console.log('==============================================================');
 }
 
 function printFooter(durationMs: number, sprintsRebuilt: number, snapshotsCreated: number, outcomesCreated: number): void {
@@ -20,14 +22,13 @@ function printFooter(durationMs: number, sprintsRebuilt: number, snapshotsCreate
     const durationLabel = min > 0 ? `${min}min ${sec}s` : `${sec}s`;
 
     console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║  REBUILD CONCLUIDO                                         ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log(`║  Duracao total: ${durationLabel.padEnd(43)}║`);
-    console.log(`║  Sprints reconstruidas: ${String(sprintsRebuilt).padEnd(34)}║`);
-    console.log(`║  Snapshots gerados: ${String(snapshotsCreated).padEnd(38)}║`);
-    console.log(`║  Outcomes gerados: ${String(outcomesCreated).padEnd(39)}║`);
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log('==============================================================');
+    console.log('  REBUILD CONCLUIDO');
+    console.log(`  Duracao total: ${durationLabel}`);
+    console.log(`  Sprints reconstruidas: ${sprintsRebuilt}`);
+    console.log(`  Snapshots gerados: ${snapshotsCreated}`);
+    console.log(`  Outcomes gerados: ${outcomesCreated}`);
+    console.log('==============================================================');
     console.log('');
 }
 

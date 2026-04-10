@@ -23,29 +23,29 @@ services:
       FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
       RDA_UPLOADS_DIR: /app/uploads
 
-  worker:
-    build:
-      context: ./Backend
-      dockerfile: Dockerfile
-      target: builder
-    user: "0:0"
-    command: npm run worker
-    volumes:
-      - ./Backend/src:/app/src
-      - ./Backend/prisma:/app/prisma
-      - ./Backend/uploads:/app/uploads
-    environment:
-      NODE_ENV: development
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
-      REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
-      RDA_UPLOADS_DIR: /app/uploads
-    depends_on:
-      - redis
+  # worker:
+  #   build:
+  #     context: ./Backend
+  #     dockerfile: Dockerfile
+  #     target: builder
+  #   user: "0:0"
+  #   command: npm run worker
+  #   volumes:
+  #     - ./Backend/src:/app/src
+  #     - ./Backend/prisma:/app/prisma
+  #     - ./Backend/uploads:/app/uploads
+  #   environment:
+  #     NODE_ENV: development
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #     ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
+  #     REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+  #     RDA_UPLOADS_DIR: /app/uploads
+  #   depends_on:
+  #     - redis
 
   web:
     build:

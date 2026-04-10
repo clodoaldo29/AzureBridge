@@ -8,6 +8,7 @@ import type { CapacityComparison, WorkItem } from '@/types';
 
 interface WorkItemAgingCardProps {
     workItems: WorkItem[];
+    blockedItemIds?: number[];
     capacityData?: CapacityComparison;
     sprintStartDate?: string;
     sprintEndDate?: string;
@@ -15,8 +16,8 @@ interface WorkItemAgingCardProps {
     projectName?: string;
 }
 
-type AgingStatus = 'ok' | 'warning' | 'critical';
-type ModalFilter = 'all' | 'critical' | 'warning' | 'ok';
+type AgingStatus = 'ok' | 'warning' | 'critical' | 'review';
+type ModalFilter = 'all' | 'critical' | 'warning' | 'review' | 'ok';
 
 type AgingRow = {
     id: number;
@@ -31,17 +32,32 @@ type AgingRow = {
     inProgressAt: string;
     dueAt: string;
     azureUrl: string | null;
+    boardColumn?: string | null;
     ratio: number;
     status: AgingStatus;
 };
 
 const IN_PROGRESS_STATES = new Set(['in progress', 'active']);
 const ALLOWED_TYPES = ['Task'];
+const REVIEW_BOARD_COLUMNS = new Set([
+    'review',
+    'in review',
+    'code review',
+    'em revisao',
+]);
 const WORK_HOURS_PER_DAY = 8;
 const WORK_START_HOUR = 8;
 const WORK_END_HOUR = 17;
 const LUNCH_START_HOUR = 12;
 const LUNCH_END_HOUR = 13;
+
+function normalizeLabel(value?: string | null): string {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
 
 function toUtcDayMs(value: string | Date): number {
     const d = new Date(value);
@@ -55,6 +71,10 @@ function toIsoDate(ms: number): string {
 function isInProgressState(state?: string): boolean {
     const s = String(state || '').trim().toLowerCase();
     return IN_PROGRESS_STATES.has(s) || s.includes('progress');
+}
+
+function isReviewBoardColumn(boardColumn?: string | null): boolean {
+    return REVIEW_BOARD_COLUMNS.has(normalizeLabel(boardColumn));
 }
 
 function businessDaysBetween(start: Date, end: Date, dayOffSet: Set<string>): number {
@@ -189,6 +209,7 @@ function getPlannedEffortHours(item: WorkItem): number {
 
 export function WorkItemAgingCard({
     workItems,
+    blockedItemIds = [],
     capacityData,
     sprintStartDate,
     sprintEndDate,
@@ -200,6 +221,7 @@ export function WorkItemAgingCard({
     const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
     const dayOffSet = useMemo(() => new Set(dayOffDates), [dayOffDates]);
+    const blockedItemIdSet = useMemo(() => new Set(blockedItemIds), [blockedItemIds]);
     const sprintBusinessDays = getSprintBusinessDays(sprintStartDate, sprintEndDate, dayOffDates);
     const today = new Date();
 
@@ -233,6 +255,7 @@ export function WorkItemAgingCard({
     };
 
     const rows: AgingRow[] = workItems
+        .filter((wi) => !blockedItemIdSet.has(wi.id))
         .filter((wi) => ALLOWED_TYPES.includes(wi.type))
         .filter((wi) => isInProgressState(wi.state))
         .map((wi) => {
@@ -259,7 +282,8 @@ export function WorkItemAgingCard({
             const dueAt = addBusinessHours(activated, expectedHours, dayOffSet);
 
             let status: AgingStatus = 'ok';
-            if (ratio > 1.2) status = 'critical';
+            if (isReviewBoardColumn(wi.boardColumn)) status = 'review';
+            else if (ratio > 1.2) status = 'critical';
             else if (ratio > 1) status = 'warning';
 
             return {
@@ -278,14 +302,16 @@ export function WorkItemAgingCard({
                     fallbackOrgUrl: azureOrgUrl,
                     projectName
                 }) || getAzureWorkItemUrl(wi.id),
+                boardColumn: wi.boardColumn,
                 ratio,
                 status,
             };
         })
         .sort((a, b) => b.ratio - a.ratio);
 
-    const alertRows = rows.filter((r) => r.status !== 'ok');
+    const alertRows = rows.filter((r) => r.status === 'critical' || r.status === 'warning');
     const okRows = rows.filter((r) => r.status === 'ok');
+    const reviewRows = rows.filter((r) => r.status === 'review');
     const criticalRows = alertRows.filter((r) => r.status === 'critical');
     const warningRows = alertRows.filter((r) => r.status === 'warning');
 
@@ -294,6 +320,8 @@ export function WorkItemAgingCard({
             ? criticalRows
             : modalFilter === 'warning'
                 ? warningRows
+                : modalFilter === 'review'
+                    ? reviewRows
                 : modalFilter === 'ok'
                     ? okRows
                     : rows;
@@ -314,7 +342,7 @@ export function WorkItemAgingCard({
     };
 
     const exportAlertItemsPdf = () => {
-        const rowsToExport = [...criticalRows, ...warningRows];
+        const rowsToExport = [...criticalRows, ...warningRows, ...reviewRows];
         if (rowsToExport.length === 0) return;
 
         const now = new Date();
@@ -374,8 +402,11 @@ export function WorkItemAgingCard({
                 ensureSpace(lineHeight * 8);
                 writeLine(`${index + 1}. #${row.id} - ${row.title}`, { bold: true });
                 writeLine(`Responsavel: ${row.assignee}`);
-                writeLine(`Status: ${row.status === 'critical' ? 'Critico' : 'Atencao'}`);
+                writeLine(`Status: ${row.status === 'critical' ? 'Critico' : row.status === 'warning' ? 'Atencao' : 'Review'}`);
                 writeLine(`Horas previstas: ${row.effortHours}h | Capacidade: ${row.capacityPerDay}h/dia`);
+                if (row.boardColumn) {
+                    writeLine(`Coluna no board: ${row.boardColumn}`);
+                }
                 writeLine(`Inicio em progresso: ${new Date(row.inProgressAt).toLocaleString('pt-BR')}`);
                 writeLine(`Previsao de conclusao: ${dueDate.toLocaleString('pt-BR')}`);
                 writeLine(`Dias em atraso: ${delayDays} | Horas uteis em atraso: ${delayHours.toFixed(1)}h`);
@@ -395,11 +426,14 @@ export function WorkItemAgingCard({
         writeLine(`Projeto: ${projectName || 'Nao informado'}`);
         writeLine(`Total Criticos: ${criticalRows.length}`);
         writeLine(`Total Atencao: ${warningRows.length}`);
-        writeLine(`Total em risco: ${rowsToExport.length}`);
+        writeLine(`Total Review: ${reviewRows.length}`);
+        writeLine(`Total em risco: ${criticalRows.length + warningRows.length}`);
+        writeLine(`Total exportado: ${rowsToExport.length}`);
         y += 8;
 
         writeSection('Itens Criticos', criticalRows);
         writeSection('Itens Atencao', warningRows);
+        writeSection('Itens Review', reviewRows);
 
         doc.save(`aging-alertas-${now.toISOString().slice(0, 10)}.pdf`);
     };
@@ -413,7 +447,7 @@ export function WorkItemAgingCard({
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
                             <div className="text-xs uppercase tracking-wide text-red-700 font-medium">Critico</div>
                             <div className="text-3xl font-bold text-red-700 mt-1">{criticalRows.length}</div>
@@ -437,6 +471,19 @@ export function WorkItemAgingCard({
                                 disabled={warningRows.length === 0}
                             >
                                 Ver atencao
+                            </Button>
+                        </div>
+
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-sky-700 font-medium">Review</div>
+                            <div className="text-3xl font-bold text-sky-700 mt-1">{reviewRows.length}</div>
+                            <Button
+                                variant="outline"
+                                className="mt-3 border-sky-300 text-sky-700 hover:bg-sky-100"
+                                onClick={() => openModal('review')}
+                                disabled={reviewRows.length === 0}
+                            >
+                                Ver review
                             </Button>
                         </div>
 
@@ -476,10 +523,13 @@ export function WorkItemAgingCard({
                                 <Button variant={modalFilter === 'warning' ? 'default' : 'outline'} onClick={() => setModalFilter('warning')}>
                                     Atencao
                                 </Button>
+                                <Button variant={modalFilter === 'review' ? 'default' : 'outline'} onClick={() => setModalFilter('review')}>
+                                    Review
+                                </Button>
                                 <Button variant={modalFilter === 'ok' ? 'default' : 'outline'} onClick={() => setModalFilter('ok')}>
                                     No prazo
                                 </Button>
-                                <Button variant="outline" onClick={exportAlertItemsPdf} disabled={alertRows.length === 0}>
+                                <Button variant="outline" onClick={exportAlertItemsPdf} disabled={alertRows.length === 0 && reviewRows.length === 0}>
                                     Exportar PDF
                                 </Button>
                                 <Button variant="outline" onClick={() => setIsModalOpen(false)}>Fechar</Button>
@@ -498,7 +548,9 @@ export function WorkItemAgingCard({
                                             ? 'bg-red-50 text-red-700 border-red-200'
                                             : row.status === 'warning'
                                                 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                                : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                                : row.status === 'review'
+                                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
                                     const delayDays = Math.max(0, row.actualDays - row.expectedDays);
                                     const delayHours = Math.max(0, row.actualHours - row.expectedHours);
@@ -533,6 +585,9 @@ export function WorkItemAgingCard({
                                                 <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
                                                     <div><span className="font-medium text-foreground">Horas previstas:</span> {row.effortHours}h</div>
                                                     <div><span className="font-medium text-foreground">Capacidade:</span> {row.capacityPerDay}h/dia</div>
+                                                    {row.boardColumn && (
+                                                        <div><span className="font-medium text-foreground">Coluna no board:</span> {row.boardColumn}</div>
+                                                    )}
                                                     <div><span className="font-medium text-foreground">Inicio em progresso:</span> {new Date(row.inProgressAt).toLocaleString('pt-BR')}</div>
                                                     <div><span className="font-medium text-foreground">Previsao de conclusao:</span> {dueDate.toLocaleString('pt-BR')}</div>
                                                     <div><span className="font-medium text-foreground">Dias em atraso:</span> {delayDays}</div>

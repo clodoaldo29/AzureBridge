@@ -46,47 +46,47 @@ services:
       - api-uploads:/app/uploads
 
   # ========================================
-  # Auto Sync Scheduler
+  # Legacy BullMQ Worker
   # ========================================
-  worker:
-    build:
-      context: ./Backend
-      dockerfile: Dockerfile
-    container_name: azurebridge-worker
-    restart: unless-stopped
-    user: "0:0"
-    command: ["node", "dist/worker.js"]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
-      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
-      AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
-      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
-      AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
-      REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
-      RDA_UPLOADS_DIR: /app/uploads
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "grep -a -q 'dist/worker.js' /proc/1/cmdline"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    networks:
-      - azurebridge-network
-    volumes:
-      - api-logs:/app/logs
-      - api-uploads:/app/uploads
+  # worker:
+  #   build:
+  #     context: ./Backend
+  #     dockerfile: Dockerfile
+  #   container_name: azurebridge-worker
+  #   restart: unless-stopped
+  #   user: "0:0"
+  #   command: ["node", "dist/worker.js"]
+  #   environment:
+  #     NODE_ENV: production
+  #     DATABASE_URL: ${DATABASE_URL}
+  #     DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+  #     AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
+  #     AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
+  #     AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  #     CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  #     ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
+  #     REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  #     FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
+  #     RDA_UPLOADS_DIR: /app/uploads
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "grep -a -q 'dist/worker.js' /proc/1/cmdline"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 20s
+  #   networks:
+  #     - azurebridge-network
+  #   volumes:
+  #     - api-logs:/app/logs
+  #     - api-uploads:/app/uploads
 
   auto-sync:
     build:

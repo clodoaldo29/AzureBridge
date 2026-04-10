@@ -60,6 +60,7 @@ export interface WorkItem {
     azureId: number;
     type: string;
     state: string;
+    boardColumn?: string | null;
     title: string;
     url?: string;
     azureUrl?: string | null;
@@ -76,6 +77,7 @@ export interface WorkItem {
     priority?: number;
     isBlocked: boolean;
     isDelayed: boolean;
+    isRemoved?: boolean;
     tags: string[];
     createdDate: string;
     activatedDate?: string;
@@ -83,7 +85,6 @@ export interface WorkItem {
     closedDate?: string;
     projectId: string;
     sprintId?: string;
-    isRemoved?: boolean;
 }
 
 export interface SprintSnapshot {

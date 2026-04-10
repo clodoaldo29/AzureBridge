@@ -1,14 +1,17 @@
 import { PrismaClient } from '@prisma/client';
 import 'dotenv/config';
-import { snapshotService } from '../../src/services/snapshot.service';
 import { sprintHistoryService } from '../../src/services/sprint-history.service';
+import { snapshotService } from '../../src/services/snapshot.service';
+import { getTripleTimezoneParts } from '../../src/utils/timezone-display';
 
 function printHeader(): void {
-    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const now = getTripleTimezoneParts();
     console.log('');
     console.log('==============================================');
     console.log('  BACKFILL HISTORICO DE SPRINTS');
-    console.log(`  Inicio: ${now}`);
+    console.log(`  UTC:       ${now.utc}`);
+    console.log(`  Brasilia: ${now.brasilia}`);
+    console.log(`  Manaus:   ${now.manaus}`);
     console.log('==============================================');
 }
 

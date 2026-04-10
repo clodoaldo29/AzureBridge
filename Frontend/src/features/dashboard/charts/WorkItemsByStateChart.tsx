@@ -69,7 +69,8 @@ const SliceLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) 
 export function WorkItemsByStateChart({ workItems }: WorkItemsByStateChartProps) {
     const { data, total } = useMemo(() => {
         const filtered = workItems.filter(wi =>
-            ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
+            !wi.isRemoved
+            && ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
         );
         const counts = new Map<string, number>();
         filtered.forEach(wi => {

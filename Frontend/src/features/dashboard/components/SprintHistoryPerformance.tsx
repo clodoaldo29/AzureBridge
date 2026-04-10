@@ -144,12 +144,13 @@ export function SprintHistoryPerformance({ summaries, projectName }: SprintHisto
             finalDeviation: round(Number(summary.finalDeviationHours || 0), 0),
         }));
 
-    const nonZeroRows = rows.filter((row) => row.capacity > 0 || row.planned > 0 || row.delivered > 0);
-    const avgCapacity = round(mean(rows.map((row) => row.capacity)), 0);
-    const avgPlanned = round(mean(rows.map((row) => row.planned)), 0);
-    const avgDelivered = round(mean(rows.map((row) => row.delivered)), 0);
-    const avgPredictability = round(mean(rows.map((row) => row.deliveredVsPlanned)), 1);
     const chartRows = rows.filter((row) => !row.isCurrent);
+    const nonZeroRows = rows.filter((row) => row.capacity > 0 || row.planned > 0 || row.delivered > 0);
+    const metricRows = chartRows.length > 0 ? chartRows : [];
+    const avgCapacity = round(mean(metricRows.map((row) => row.capacity)), 0);
+    const avgPlanned = round(mean(metricRows.map((row) => row.planned)), 0);
+    const avgDelivered = round(mean(metricRows.map((row) => row.delivered)), 0);
+    const avgPredictability = round(mean(metricRows.map((row) => row.deliveredVsPlanned)), 1);
     const hasChartRows = chartRows.length > 0;
     const deliveredValues = chartRows.map((row) => row.delivered);
     const deliveryMean = round(mean(deliveredValues), 0);

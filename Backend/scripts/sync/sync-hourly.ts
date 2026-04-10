@@ -1,46 +1,31 @@
 /**
- * ╔══════════════════════════════════════════════════════════════╗
- * ║               SYNC HORÁRIO — AzureBridge                    ║
- * ╚══════════════════════════════════════════════════════════════╝
+ * Sync horario incremental.
  *
- * Execução: a cada hora (ex: via cron, Docker, ou BullMQ)
- * Comando:  npx tsx scripts/sync-hourly.ts
- *
- * O que este script faz:
- *
- *   1. Conecta ao Azure DevOps e ao banco de dados
- *   2. Executa o pipeline central (sync-core.ts) que contém:
- *      ├─ FASE 1: Smart Sync — atualiza work items alterados recentemente
- *      ├─ FASE 2: Reconcile — corrige remoções, reativações e reatribuições
- *      └─ FASE 3: Rebuild Burndown — reconstrói os gráficos das sprints ativas
- *   3. Exibe resumo final com tempo de execução e estatísticas
- *
- * Este script é leve e incremental: só processa o que mudou desde
- * a última execução. Ideal para rodar com frequência (15min a 1h).
- *
- * Para sincronização estrutural completa (projetos, times, capacidade),
- * use o script diário: npx tsx scripts/sync-daily.ts
+ * O script:
+ * 1. Conecta no Azure DevOps e no banco
+ * 2. Executa o pipeline central
+ * 3. Exibe um resumo final da execucao
  */
 
 import { PrismaClient } from '@prisma/client';
 import * as azdev from 'azure-devops-node-api';
 import 'dotenv/config';
+import { getTripleTimezoneParts } from '../../src/utils/timezone-display';
 import { runCorePipeline, CorePipelineResult } from './sync-core';
 
-// ─── Utilitários de display ────────────────────────────────────────────────────
-
 function cls(): void {
-    // Não limpa tela para não apagar logs anteriores em produção
+    // Nao limpa a tela para preservar logs em producao.
 }
 
 function printHeader(): void {
-    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const now = getTripleTimezoneParts();
     console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║        🔄  SYNC HORÁRIO — AzureBridge Dashboard             ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log(`║  📅  Início: ${now.padEnd(48)}║`);
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log('==============================================================');
+    console.log('  SYNC HORARIO - AzureBridge Dashboard');
+    console.log(`  UTC:       ${now.utc}`);
+    console.log(`  Brasilia: ${now.brasilia}`);
+    console.log(`  Manaus:   ${now.manaus}`);
+    console.log('==============================================================');
 }
 
 function printFooter(result: CorePipelineResult, startMs: number): void {
@@ -48,86 +33,72 @@ function printFooter(result: CorePipelineResult, startMs: number): void {
     const min = Math.floor(durationSec / 60);
     const sec = durationSec % 60;
     const durationLabel = min > 0 ? `${min}min ${sec}s` : `${sec}s`;
-    const status = result.hasErrors ? '⚠️  COM AVISOS' : '✅  CONCLUÍDO';
+    const status = result.hasErrors ? 'COM AVISOS' : 'CONCLUIDO';
 
     console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log(`║  ${status.padEnd(60)}║`);
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log(`║  ⏱  Duração total: ${durationLabel.padEnd(43)}║`);
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log('║  📊  Resumo por fase:                                        ║');
+    console.log('==============================================================');
+    console.log(`  STATUS: ${status}`);
+    console.log(`  Duracao total: ${durationLabel}`);
+    console.log('  Resumo por fase:');
 
-    // Fase 1
     const p1 = result.phase1;
     if (p1.skipped) {
-        console.log('║    Fase 1 (Smart Sync)   — Sem mudanças detectadas           ║');
+        console.log('    Fase 1 (Smart Sync): sem mudancas detectadas');
     } else {
-        console.log(`║    Fase 1 (Smart Sync)   — ${p1.evaluated} avaliados, ${p1.basicUpdated} atualizados`.padEnd(65) + '║');
+        console.log(`    Fase 1 (Smart Sync): ${p1.evaluated} avaliados, ${p1.basicUpdated} atualizados`);
         if (p1.historyRecovered > 0) {
-            console.log(`║                            ${p1.historyRecovered} históricos recuperados`.padEnd(65) + '║');
+            console.log(`      Historicos recuperados: ${p1.historyRecovered}`);
         }
     }
 
-    // Fase 2
     const p2 = result.phase2;
-    const reconcileSummary = `${p2.sprintsProcessed} sprint(s), -${p2.markedRemoved}/+${p2.reactivated} itens`;
-    console.log(`║    Fase 2 (Reconcile)     — ${reconcileSummary}`.padEnd(65) + '║');
+    console.log(`    Fase 2 (Reconcile): ${p2.sprintsProcessed} sprint(s), -${p2.markedRemoved}/+${p2.reactivated} itens`);
 
-    // Fase 3
     const p3 = result.phase3;
-    const burndownSummary = `${p3.sprintsRebuilt} sprint(s), ${p3.snapshotsCreated} snapshots`;
-    console.log(`║    Fase 3 (Burndown)      — ${burndownSummary}`.padEnd(65) + '║');
+    console.log(`    Fase 3 (Burndown): ${p3.sprintsRebuilt} sprint(s), ${p3.snapshotsCreated} snapshots`);
 
     if (result.hasErrors) {
         const totalErrors = p1.errors + p2.errors + p3.errors;
-        console.log('╠══════════════════════════════════════════════════════════════╣');
-        console.log(`║  ⚠️   ${totalErrors} erro(s) encontrado(s) — verifique os logs acima`.padEnd(65) + '║');
+        console.log(`  Erros encontrados: ${totalErrors}`);
     }
 
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log('==============================================================');
     console.log('');
 }
 
-// ─── Função principal ──────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
     const startMs = Date.now();
+    cls();
     printHeader();
 
-    // Valida credenciais antes de qualquer coisa
     const orgUrl = process.env.AZURE_DEVOPS_ORG_URL;
     const pat = process.env.AZURE_DEVOPS_PAT;
     const azureProject = process.env.AZURE_DEVOPS_PROJECT;
 
     if (!orgUrl || !pat) {
-        console.error('\n  ❌  ERRO: AZURE_DEVOPS_ORG_URL e AZURE_DEVOPS_PAT devem estar definidos no .env');
+        console.error('\n  ERRO: AZURE_DEVOPS_ORG_URL e AZURE_DEVOPS_PAT devem estar definidos no .env');
         process.exit(1);
     }
 
-    console.log('\n  🔌  Conectando ao Azure DevOps...');
+    console.log('\n  Conectando ao Azure DevOps...');
 
     let witApi: any;
     let prisma: PrismaClient;
 
     try {
-        // Conexão Azure
         const authHandler = azdev.getPersonalAccessTokenHandler(pat);
         const connection = new azdev.WebApi(orgUrl, authHandler);
         witApi = await connection.getWorkItemTrackingApi();
-        console.log('  ✅  Azure DevOps conectado');
+        console.log('  Azure DevOps conectado');
 
-        // Conexão banco de dados
         prisma = new PrismaClient();
         await prisma.$connect();
-        console.log('  ✅  Banco de dados conectado');
-
+        console.log('  Banco de dados conectado');
     } catch (err: any) {
-        console.error(`\n  ❌  Falha na conexão: ${err.message}`);
+        console.error(`\n  Falha na conexao: ${err.message}`);
         process.exit(1);
     }
 
-    // Executa o pipeline central
     let result: CorePipelineResult;
     try {
         result = await runCorePipeline({
@@ -138,22 +109,19 @@ async function main(): Promise<void> {
             azureProject,
         });
     } catch (err: any) {
-        console.error(`\n  ❌  Pipeline falhou com erro inesperado: ${err.message}`);
+        console.error(`\n  Pipeline falhou com erro inesperado: ${err.message}`);
         await prisma.$disconnect();
         process.exit(1);
     }
 
-    // Desconecta e exibe resumo
     await prisma.$disconnect();
     printFooter(result, startMs);
 
-    // Sai com código de erro se houve problemas (útil para monitoramento)
     if (result.hasErrors) {
         process.exit(1);
     }
 }
 
-// Retry em caso de erro transitório de banco de dados
 const DB_RETRY_DELAYS_MS = [5000, 15000, 30000];
 
 function isTransientDbError(error: any): boolean {
@@ -180,12 +148,12 @@ async function sleep(ms: number): Promise<void> {
             const hasNext = attempt <= DB_RETRY_DELAYS_MS.length;
 
             if (!retriable || !hasNext) {
-                console.error('\n  ❌  Sync horário falhou definitivamente:', error.message);
+                console.error('\n  Sync horario falhou definitivamente:', error.message);
                 process.exit(1);
             }
 
             const delay = DB_RETRY_DELAYS_MS[attempt - 1];
-            console.warn(`\n  ⚠️  Banco indisponível (tentativa ${attempt}). Retentando em ${Math.floor(delay / 1000)}s...`);
+            console.warn(`\n  Banco indisponivel (tentativa ${attempt}). Retentando em ${Math.floor(delay / 1000)}s...`);
             await sleep(delay);
         }
     }

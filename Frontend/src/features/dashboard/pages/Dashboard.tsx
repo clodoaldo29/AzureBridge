@@ -301,7 +301,7 @@ export function Dashboard() {
         data: workItemsResponse,
         isLoading: workItemsLoading,
     } = useWorkItems(
-        currentSprint ? { sprintId: currentSprint.id, includeRemoved: true, compact: true, limit: 1000 } : undefined
+        currentSprint ? { sprintId: currentSprint.id, includeRemoved: false, compact: true, limit: 1000 } : undefined
     );
     const sprintWorkItems = workItemsResponse?.data || [];
 

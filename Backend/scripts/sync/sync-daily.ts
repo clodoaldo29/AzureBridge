@@ -73,6 +73,7 @@ import * as azdev from 'azure-devops-node-api';
 import 'dotenv/config';
 import { runCorePipeline, CorePipelineResult } from './sync-core';
 import { capacityService } from '../../src/services/capacity.service';
+import { getTripleTimezoneParts } from '../../src/utils/timezone-display';
 
 // ─── Configuração de projetos alvo ────────────────────────────────────────────
 //
@@ -148,12 +149,16 @@ interface DailyStats {
 // ─── Utilitários de display ────────────────────────────────────────────────────
 
 function printHeader(mode: 'initial' | 'incremental'): void {
-    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const dualNow = getTripleTimezoneParts();
+    const now = dualNow.brasilia;
     const modeLabel = mode === 'initial'
         ? '🚀  CARGA INICIAL — Primeira sincronização completa'
         : '🔄  SYNC DIÁRIO — Atualização estrutural incremental';
 
     console.log('');
+    console.log(`  Horario UTC:       ${dualNow.utc}`);
+    console.log(`  Horario Brasilia: ${dualNow.brasilia}`);
+    console.log(`  Horario Manaus:   ${dualNow.manaus}`);
     console.log('╔══════════════════════════════════════════════════════════════╗');
     console.log('║          📅  SYNC DIÁRIO — AzureBridge Dashboard            ║');
     console.log('╠══════════════════════════════════════════════════════════════╣');
@@ -608,7 +613,7 @@ async function syncCapacityForSprint(
             }
 
             const capacityPerDay = (cap.activities || []).reduce(
-                (acc: number, act: any) => acc + (act.capacityPerDay || 0), 0
+                (acc: number, act: any) => acc + Number(act.capacityPerDay || 0), 0
             );
 
             let individualDaysOff = 0;
