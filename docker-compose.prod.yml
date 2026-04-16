@@ -1,5 +1,26 @@
 services:
   # ========================================
+  # PostgreSQL com pgvector (internal only)
+  # ========================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: azurebridge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-azurebridge}
+      POSTGRES_USER: ${POSTGRES_USER:-azurebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - azurebridge-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-azurebridge} -d ${POSTGRES_DB:-azurebridge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================
   # Backend API (internal only)
   # ========================================
   api:
@@ -13,9 +34,9 @@ services:
       NODE_ENV: production
       PORT: 3001
       HOST: "::"
-      # Database
-      DATABASE_URL: ${DATABASE_URL}
-      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      # Database (PostgreSQL local no container)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
@@ -37,6 +58,8 @@ services:
       FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
       RDA_UPLOADS_DIR: /app/uploads
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -56,9 +79,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      # Database
-      DATABASE_URL: ${DATABASE_URL}
-      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
+      # Database (PostgreSQL local no container)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
@@ -142,6 +165,8 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
+    driver: local
   redis-data:
     driver: local
   api-logs:
