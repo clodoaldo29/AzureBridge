@@ -16,6 +16,7 @@ RUN npm ci && npm cache clean --force
 
 # Copy source and scripts
 COPY . .
+RUN sed -i 's/\r$//' scripts/orchestrators/auto-sync-cron.sh
 
 # Generate Prisma Client
 RUN npx prisma generate

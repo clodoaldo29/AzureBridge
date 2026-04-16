@@ -25,9 +25,6 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# Install production dependencies only for final image
-RUN npm prune --production
-
 # ========================================
 # STAGE 2: Production
 # ========================================
@@ -48,6 +45,9 @@ COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
 COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nodejs:nodejs /app/prompts ./prompts
+
+# Keep the builder target usable for development while trimming the production image.
+RUN npm prune --production
 
 # Switch to non-root user
 USER nodejs

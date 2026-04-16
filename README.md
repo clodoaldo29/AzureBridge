@@ -110,20 +110,24 @@
 git clone <repo-url>
 cd AzureBridge
 
-cp Backend/.env.example Backend/.env
-# Edite Backend/.env com suas credenciais
+cp .env.example .env
+# Edite .env com suas credenciais
 ```
 
-Variáveis **obrigatórias** no `Backend/.env`:
+Variáveis **obrigatórias** no `.env` da raiz:
 
 ```env
 AZURE_DEVOPS_ORG_URL=https://dev.azure.com/sua-organizacao
 AZURE_DEVOPS_PAT=seu-pat-aqui
 DATABASE_URL=postgresql://...
 DIRECT_DATABASE_URL=postgresql://...
-REDIS_HOST=redis
+JWT_SECRET=change-me
+AZURE_AD_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+AZURE_AD_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+CORS_ORIGIN=http://localhost:5173,http://localhost:5174
 ```
 
+> Se quiser rodar o backend fora do Docker, copie também `Backend/.env.example` para `Backend/.env`.
 > Veja [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para a lista completa de variáveis e instruções detalhadas.
 
 ### 2. Desenvolvimento local

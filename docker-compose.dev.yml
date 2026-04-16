@@ -16,12 +16,20 @@ services:
       LOG_PRETTY: "true"
       PORT: 3001
       HOST: 0.0.0.0
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_SECRET: ${JWT_SECRET}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
       REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
       FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
       RDA_UPLOADS_DIR: /app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
 
   # worker:
   #   build:
@@ -54,7 +62,7 @@ services:
       target: builder
     command: npm run dev
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
     volumes:
       - ./Frontend/src:/app/src
       - ./Frontend/public:/app/public

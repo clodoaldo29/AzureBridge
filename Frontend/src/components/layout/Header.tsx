@@ -1,6 +1,27 @@
-import { Bell, Search, User } from 'lucide-react';
+import { Bell, Search, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAuth } from '@/hooks/useAuth';
+
+function getInitials(name: string): string {
+    return name
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0].toUpperCase())
+        .join('');
+}
+
 export function Header() {
+    const { user, logout } = useAuth();
+
     return (
         <header className="bg-card border-b border-border sticky top-0 z-50">
             <div className="flex items-center justify-between h-16 px-6">
@@ -25,9 +46,42 @@ export function Header() {
                     <Button variant="ghost" size="icon">
                         <Bell className="w-5 h-5" />
                     </Button>
-                    <Button variant="ghost" size="icon">
-                        <User className="w-5 h-5" />
-                    </Button>
+
+                    {/* Avatar + menu do usuário */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="relative w-9 h-9 rounded-full p-0 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold text-sm"
+                            >
+                                {user ? getInitials(user.displayName) : '?'}
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            {user && (
+                                <>
+                                    <DropdownMenuLabel className="font-normal">
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="font-semibold text-foreground text-sm">
+                                                {user.displayName}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground truncate">
+                                                {user.email}
+                                            </span>
+                                        </div>
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                </>
+                            )}
+                            <DropdownMenuItem
+                                onClick={logout}
+                                className="text-destructive focus:text-destructive cursor-pointer"
+                            >
+                                <LogOut className="w-4 h-4 mr-2" />
+                                Sair
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
         </header>
