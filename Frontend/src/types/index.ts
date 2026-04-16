@@ -60,6 +60,7 @@ export interface WorkItem {
     azureId: number;
     type: string;
     state: string;
+    boardColumn?: string | null;
     title: string;
     url?: string;
     azureUrl?: string | null;
@@ -76,6 +77,7 @@ export interface WorkItem {
     priority?: number;
     isBlocked: boolean;
     isDelayed: boolean;
+    isRemoved?: boolean;
     tags: string[];
     createdDate: string;
     activatedDate?: string;
@@ -83,7 +85,6 @@ export interface WorkItem {
     closedDate?: string;
     projectId: string;
     sprintId?: string;
-    isRemoved?: boolean;
 }
 
 export interface SprintSnapshot {
@@ -92,6 +93,7 @@ export interface SprintSnapshot {
     snapshotDate: string;
     remainingWork: number;
     completedWork: number;
+    completedInDay?: number;
     totalWork: number;
     remainingPoints: number;
     completedPoints: number;
@@ -105,6 +107,31 @@ export interface SprintSnapshot {
     idealRemaining?: number;
 }
 
+export interface SprintHistorySummary {
+    id: string;
+    sprintId: string;
+    projectId: string;
+    sprintName: string;
+    startDate: string;
+    endDate: string;
+    isCurrent: boolean;
+    capacityHours: number;
+    plannedHours: number;
+    deliveredHours: number;
+    remainingHours: number;
+    scopeAddedHours: number;
+    scopeRemovedHours: number;
+    finalDeviationHours: number;
+    planVsCapacityPct: number;
+    deliveredVsPlannedPct: number;
+    deliveredVsCapacityPct: number;
+    snapshotCount: number;
+    capacityMemberCount: number;
+    calculatedAt: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface ScopeChangeItem {
     id: number;
     title: string;
@@ -112,13 +139,14 @@ export interface ScopeChangeItem {
     hoursChange: number;
     changedBy: string;
     azureUrl?: string | null;
-    reason: 'added_to_sprint' | 'removed_from_sprint' | 'hours_increased' | 'hours_decreased';
+    reason: 'added_to_sprint' | 'removed_from_sprint' | 'hours_increased' | 'hours_decreased' | 'completed';
 }
 
 export interface ScopeChangesResult {
     date: string;
     added: ScopeChangeItem[];
     removed: ScopeChangeItem[];
+    completed: ScopeChangeItem[];
 }
 
 export interface MemberCapacity {

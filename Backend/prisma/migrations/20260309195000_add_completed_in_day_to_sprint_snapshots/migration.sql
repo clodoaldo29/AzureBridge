@@ -1,0 +1,2 @@
+ALTER TABLE "sprint_snapshots"
+ADD COLUMN "completedInDay" DOUBLE PRECISION NOT NULL DEFAULT 0;

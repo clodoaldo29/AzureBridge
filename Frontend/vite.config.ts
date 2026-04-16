@@ -33,5 +33,44 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    modulePreload: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+
+          if (
+            id.includes('react/') ||
+            id.includes('react-dom/') ||
+            id.includes('react-router-dom') ||
+            id.includes('@tanstack/react-query') ||
+            id.includes('zustand')
+          ) {
+            return 'vendor-core';
+          }
+
+          if (
+            id.includes('recharts') ||
+            id.includes('chart.js') ||
+            id.includes('react-chartjs-2')
+          ) {
+            return 'vendor-charts';
+          }
+
+          if (
+            id.includes('@radix-ui') ||
+            id.includes('lucide-react')
+          ) {
+            return 'vendor-ui';
+          }
+
+          if (id.includes('jspdf')) {
+            return 'vendor-docs';
+          }
+
+          return undefined;
+        },
+      },
+    },
   }
 });

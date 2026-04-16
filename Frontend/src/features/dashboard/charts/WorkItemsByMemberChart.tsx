@@ -89,7 +89,8 @@ function buildDisplayNames(fullNames: string[]): Map<string, string> {
 export function WorkItemsByMemberChart({ workItems }: WorkItemsByMemberChartProps) {
     const { data, total } = useMemo(() => {
         const filtered = workItems.filter(wi =>
-            ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
+            !wi.isRemoved
+            && ALLOWED_TYPES.includes(String(wi.type || '').trim().toLowerCase())
         );
         const counts = new Map<string, number>();
         filtered.forEach(wi => {

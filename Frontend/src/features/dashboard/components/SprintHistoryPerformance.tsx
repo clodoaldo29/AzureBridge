@@ -17,10 +17,10 @@ import {
     YAxis,
     ZAxis,
 } from 'recharts';
-import type { Sprint } from '@/types';
+import type { SprintHistorySummary } from '@/types';
 
 interface SprintHistoryPerformanceProps {
-    sprints: Sprint[];
+    summaries: SprintHistorySummary[];
     projectName?: string;
 }
 
@@ -68,11 +68,6 @@ function stdDev(values: number[]): number {
     return Math.sqrt(variance);
 }
 
-function toPercent(part: number, total: number): number {
-    if (total <= 0) return 0;
-    return (part / total) * 100;
-}
-
 function getPlanVsCapacityClass(value: number): string {
     if (value >= 85) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     if (value >= 60) return 'bg-amber-50 text-amber-700 border-amber-200';
@@ -83,32 +78,6 @@ function getDeliveredVsPlannedClass(value: number): string {
     if (value >= 90) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     if (value >= 70) return 'bg-amber-50 text-amber-700 border-amber-200';
     return 'bg-red-50 text-red-700 border-red-200';
-}
-
-function calculateScopeChanges(snapshots: Sprint['snapshots']): { added: number; removed: number } {
-    const ordered = [...(snapshots || [])].sort(
-        (a, b) => new Date(String(a.snapshotDate || '')).getTime() - new Date(String(b.snapshotDate || '')).getTime()
-    );
-    if (!ordered.length) return { added: 0, removed: 0 };
-
-    const addedFromFields = ordered.reduce((acc, snap) => acc + Math.max(0, Number(snap.addedCount ?? 0)), 0);
-    const removedFromFields = ordered.reduce((acc, snap) => acc + Math.max(0, Number(snap.removedCount ?? 0)), 0);
-
-    let addedFromDiff = 0;
-    let removedFromDiff = 0;
-    for (let i = 1; i < ordered.length; i++) {
-        const prev = Number(ordered[i - 1]?.totalWork ?? 0);
-        const curr = Number(ordered[i]?.totalWork ?? 0);
-        const delta = curr - prev;
-        if (delta > 0) addedFromDiff += delta;
-        if (delta < 0) removedFromDiff += Math.abs(delta);
-    }
-
-    const useFieldValues = addedFromFields + removedFromFields > 0;
-    return {
-        added: round(useFieldValues ? addedFromFields : addedFromDiff),
-        removed: round(useFieldValues ? removedFromFields : removedFromDiff),
-    };
 }
 
 function TooltipContent({ active, payload, label }: any) {
@@ -153,70 +122,35 @@ function EfficiencyTooltip({ active, payload }: any) {
     );
 }
 
-export function SprintHistoryPerformance({ sprints, projectName }: SprintHistoryPerformanceProps) {
-    const rows: HistoryRow[] = [...sprints]
+export function SprintHistoryPerformance({ summaries, projectName }: SprintHistoryPerformanceProps) {
+    const rows: HistoryRow[] = [...summaries]
         .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-        .map((sprint) => {
-            const sprintState = String(sprint.state || '').toLowerCase();
-            const sprintTimeFrame = String(sprint.timeFrame || '').toLowerCase();
-            const isCurrent = sprintState === 'active' || sprintTimeFrame === 'current';
-            const orderedSnapshots = [...(sprint.snapshots || [])].sort(
-                (a, b) => new Date(String(a.snapshotDate || '')).getTime() - new Date(String(b.snapshotDate || '')).getTime()
-            );
-            const latestSnapshot = orderedSnapshots[orderedSnapshots.length - 1];
-            const capacityFromMembers = (sprint.capacities || []).reduce(
-                (acc, cap) => acc + Number(cap.availableHours ?? 0),
-                0
-            );
-            const capacity = Math.max(
-                0,
-                Number(sprint.teamCapacityHours ?? 0) || capacityFromMembers
-            );
+        .map((summary) => ({
+            sprintId: summary.sprintId,
+            sprintName: summary.sprintName,
+            startDateLabel: formatDatePtBr(summary.startDate),
+            endDateLabel: formatDatePtBr(summary.endDate),
+            isCurrent: Boolean(summary.isCurrent),
+            capacity: round(Number(summary.capacityHours || 0), 0),
+            planned: round(Number(summary.plannedHours || 0), 0),
+            delivered: round(Number(summary.deliveredHours || 0), 0),
+            planVsCapacity: round(Number(summary.planVsCapacityPct || 0), 1),
+            deliveredVsPlanned: round(Number(summary.deliveredVsPlannedPct || 0), 1),
+            deliveredVsCapacity: round(Number(summary.deliveredVsCapacityPct || 0), 1),
+            scopeAdded: round(Number(summary.scopeAddedHours || 0), 0),
+            scopeRemoved: round(Number(summary.scopeRemovedHours || 0), 0),
+            scopeRemovedVisual: round(-Number(summary.scopeRemovedHours || 0), 0),
+            scopeNet: round(Number(summary.scopeAddedHours || 0) - Number(summary.scopeRemovedHours || 0), 0),
+            finalDeviation: round(Number(summary.finalDeviationHours || 0), 0),
+        }));
 
-            const plannedFromSnapshot = Number(latestSnapshot?.totalWork ?? 0);
-            const planned = Math.max(
-                0,
-                Number(sprint.totalPlannedHours ?? 0) ||
-                    Number(sprint.commitmentHours ?? 0) ||
-                    plannedFromSnapshot
-            );
-
-            const remaining = Number(sprint.totalRemainingHours ?? 0) || Number(latestSnapshot?.remainingWork ?? 0);
-            const completedFromSnapshot = Number(latestSnapshot?.completedWork ?? 0);
-            const deliveredRaw =
-                Number(sprint.totalCompletedHours ?? 0) ||
-                completedFromSnapshot ||
-                (planned - remaining);
-            const delivered = Math.max(0, Number(deliveredRaw ?? 0));
-            const scope = calculateScopeChanges(orderedSnapshots);
-            const finalDeviation = round(planned - delivered);
-
-            return {
-                sprintId: sprint.id,
-                sprintName: sprint.name,
-                startDateLabel: formatDatePtBr(sprint.startDate),
-                endDateLabel: formatDatePtBr(sprint.endDate),
-                isCurrent,
-                capacity: round(capacity, 0),
-                planned: round(planned, 0),
-                delivered: round(delivered, 0),
-                planVsCapacity: round(toPercent(planned, capacity), 1),
-                deliveredVsPlanned: round(toPercent(delivered, planned), 1),
-                deliveredVsCapacity: round(toPercent(delivered, capacity), 1),
-                scopeAdded: round(scope.added, 0),
-                scopeRemoved: round(scope.removed, 0),
-                scopeRemovedVisual: round(-scope.removed, 0),
-                scopeNet: round(scope.added - scope.removed, 0),
-                finalDeviation: round(finalDeviation, 0),
-            };
-        });
-
-    const nonZeroRows = rows.filter((row) => row.capacity > 0 || row.planned > 0 || row.delivered > 0);
-    const avgCapacity = round(mean(rows.map((row) => row.capacity)), 0);
-    const avgPlanned = round(mean(rows.map((row) => row.planned)), 0);
-    const avgDelivered = round(mean(rows.map((row) => row.delivered)), 0);
-    const avgPredictability = round(mean(rows.map((row) => row.deliveredVsPlanned)), 1);
     const chartRows = rows.filter((row) => !row.isCurrent);
+    const nonZeroRows = rows.filter((row) => row.capacity > 0 || row.planned > 0 || row.delivered > 0);
+    const metricRows = chartRows.length > 0 ? chartRows : [];
+    const avgCapacity = round(mean(metricRows.map((row) => row.capacity)), 0);
+    const avgPlanned = round(mean(metricRows.map((row) => row.planned)), 0);
+    const avgDelivered = round(mean(metricRows.map((row) => row.delivered)), 0);
+    const avgPredictability = round(mean(metricRows.map((row) => row.deliveredVsPlanned)), 1);
     const hasChartRows = chartRows.length > 0;
     const deliveredValues = chartRows.map((row) => row.delivered);
     const deliveryMean = round(mean(deliveredValues), 0);

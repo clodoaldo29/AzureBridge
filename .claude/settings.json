@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(docker compose build api web)",
+      "Bash(docker compose build web)",
+      "Bash(docker compose exec api node -e \":*)"
     ]
   }
 }

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import { useSprints } from '@/services/queries/sprints';
+import { useProjectSprintHistory } from '@/services/queries/sprints';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SprintHistoryPerformance } from '@/features/dashboard/components/SprintHistoryPerformance';
-import type { Project, Sprint } from '@/types';
+import type { Project, SprintHistorySummary } from '@/types';
 
 const ALLOWED_PROJECT_NAMES = new Set([
     'GIGA - Retrabalho',
@@ -42,30 +42,23 @@ export function SprintHistory() {
     }, [filteredProjects, selectedProjectId]);
 
     const {
-        data: sprints,
-        isLoading: sprintsLoading,
-        isError: sprintsError,
-    } = useSprints({
-        limit: 100,
-        ...(selectedProjectId ? { projectId: selectedProjectId } : {}),
-    });
+        data: historyRows,
+        isLoading: historyLoading,
+        isError: historyError,
+    } = useProjectSprintHistory(selectedProjectId, 100);
 
     const selectedProject = filteredProjects.find((project) => project.id === selectedProjectId);
-    const filteredSprints = useMemo(() => {
-        const allSprints = (sprints || []).filter((sprint: Sprint) => {
-            const state = String(sprint.state || '').toLowerCase();
-            const timeFrame = String(sprint.timeFrame || '').toLowerCase();
-            return state === 'past' || state === 'active' || timeFrame === 'past' || timeFrame === 'current';
-        });
+    const filteredHistory = useMemo(() => {
+        const allSprints = historyRows || [];
         if (selectedProject?.name === TM_PROJECT_NAME) {
-            return allSprints.filter((sprint: Sprint) =>
-                String(sprint.name || '').toUpperCase().includes('AV-NAV')
+            return allSprints.filter((sprint: SprintHistorySummary) =>
+                String(sprint.sprintName || '').toUpperCase().includes('AV-NAV')
             );
         }
         return allSprints;
-    }, [sprints, selectedProject?.name]);
+    }, [historyRows, selectedProject?.name]);
 
-    if (projectsLoading || (selectedProjectId && sprintsLoading)) {
+    if (projectsLoading || (selectedProjectId && historyLoading)) {
         return (
             <div className="flex items-center justify-center h-screen">
                 <div className="text-muted-foreground">Carregando...</div>
@@ -73,7 +66,7 @@ export function SprintHistory() {
         );
     }
 
-    if (projectsError || sprintsError) {
+    if (projectsError || historyError) {
         return (
             <div className="flex items-center justify-center h-screen">
                 <div className="text-center text-muted-foreground">
@@ -118,7 +111,7 @@ export function SprintHistory() {
 
             {selectedProject ? (
                 <SprintHistoryPerformance
-                    sprints={filteredSprints}
+                    summaries={filteredHistory}
                     projectName={selectedProject.name}
                 />
             ) : (

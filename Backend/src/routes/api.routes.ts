@@ -6,19 +6,23 @@ import { syncController } from '@/controllers/sync.controller';
 import { dashboardController } from '@/controllers/dashboard.controller';
 import { capacityController } from '@/controllers/capacity.controller';
 import { logger } from '@/utils/logger';
-import { checkDatabaseConnection } from '@/database/client';
+import { getDatabaseHealthSnapshot } from '@/database/client';
 
 export async function apiRoutes(fastify: FastifyInstance) {
     // Verificacao de saude
     fastify.get('/health', async () => {
-        const dbConnected = await checkDatabaseConnection();
-        if (!dbConnected) {
+        const dbHealth = await getDatabaseHealthSnapshot();
+        if (dbHealth.connected === false) {
             logger.warn('Health check em modo degradado: sem conexao com banco.');
         }
 
         return {
-            status: dbConnected ? 'ok' : 'degraded',
-            database: dbConnected ? 'connected' : 'disconnected',
+            status: dbHealth.connected === false ? 'degraded' : 'ok',
+            database: dbHealth.connected === true
+                ? 'connected'
+                : (dbHealth.connected === false ? 'disconnected' : 'checking'),
+            databaseCheckedAt: dbHealth.checkedAt,
+            databaseFresh: !dbHealth.stale,
             timestamp: new Date(),
             version: '2.0.0',
         };
@@ -27,6 +31,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
     // Projetos
     fastify.get('/projects', projectController.listProjects);
     fastify.get('/projects/:id', projectController.getProject);
+    fastify.get('/projects/:id/sprint-history', projectController.getProjectSprintHistory);
     fastify.get('/projects/:id/stats', projectController.getProjectStats);
 
     // Sprints

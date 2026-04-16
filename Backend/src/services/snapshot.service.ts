@@ -48,6 +48,18 @@ export class SnapshotService {
         return it === sp || it.startsWith(`${sp}\\`);
     }
 
+    private isRemovedState(state?: string | null): boolean {
+        return String(state || '').trim().toLowerCase() === 'removed';
+    }
+
+    private isCountedInSprint(
+        iteration: string | null | undefined,
+        state: string | null | undefined,
+        sprintPath: string
+    ): boolean {
+        return this.isInSprintPath(iteration, sprintPath) && !this.isRemovedState(state);
+    }
+
     private findPreviousParsed<T>(
         history: Array<{ changes: any }>,
         currentIndex: number,
@@ -137,13 +149,17 @@ export class SnapshotService {
             );
             let currRemaining = currRemainingRaw !== null ? currRemainingRaw : prevRemaining;
 
+            const prevState = this.findPreviousParsed(itemHistory, idx, (changes) =>
+                this.parseState(changes[this.stateField])
+            ) || '';
+            const currState = this.parseState(currentChanges[this.stateField]) || prevState;
             const prevIteration = this.findPreviousParsed(itemHistory, idx, (changes) =>
                 this.parseIteration(changes[this.iterationField])
             );
             const currIteration = this.parseIteration(currentChanges[this.iterationField]) || prevIteration;
 
-            const prevInSprint = this.isInSprintPath(prevIteration, sprintPath);
-            const currInSprint = this.isInSprintPath(currIteration, sprintPath);
+            const prevInSprint = this.isCountedInSprint(prevIteration, prevState, sprintPath);
+            const currInSprint = this.isCountedInSprint(currIteration, currState, sprintPath);
 
             // First estimate rule (real scenario):
             // item can be created before D1 with no RemainingWork and receive first estimate on D1..Dn.
@@ -154,12 +170,22 @@ export class SnapshotService {
             }
             if (prevRemaining === null || currRemaining === null) continue;
 
-            const prevState = this.findPreviousParsed(itemHistory, idx, (changes) =>
-                this.parseState(changes[this.stateField])
-            ) || '';
-            const currState = this.parseState(currentChanges[this.stateField]) || prevState;
-
-            const completionEvent = prevRemaining > 0 && currRemaining === 0 && this.isDoneState(currState);
+            const stateTransitionToDone = !this.isDoneState(prevState) && this.isDoneState(currState);
+            let completedBase = Math.max(0, Number(prevRemaining || 0));
+            if (stateTransitionToDone && completedBase <= 0) {
+                for (let h = idx - 1; h >= 0; h--) {
+                    const candidate = this.parseRemaining((itemHistory[h]?.changes || {})[this.remainingWorkField]);
+                    if (candidate !== null && candidate > 0) {
+                        completedBase = candidate;
+                        break;
+                    }
+                }
+            }
+            const completionHours = stateTransitionToDone && prevInSprint && currInSprint
+                ? Math.max(0, completedBase)
+                : 0;
+            const completionEvent = completionHours > 0
+                || (prevRemaining > 0 && currRemaining === 0 && this.isDoneState(currState));
 
             if (!prevInSprint && currInSprint) {
                 if (currRemaining > 0) added += currRemaining;
@@ -540,6 +566,10 @@ export class SnapshotService {
                 sprintPath: sprint.path,
                 day: today
             });
+            const completedInDay = await this.getCompletedHoursForDay(
+                sprintId,
+                today.toISOString().slice(0, 10)
+            );
 
             // Save or refresh same-day snapshot to capture intra-day scope changes.
             await prisma.sprintSnapshot.upsert({
@@ -554,6 +584,7 @@ export class SnapshotService {
                     snapshotDate: today,
                     remainingWork,
                     completedWork,
+                    completedInDay,
                     totalWork,
                     remainingPoints,
                     completedPoints,
@@ -564,10 +595,11 @@ export class SnapshotService {
                     blockedCount,
                     addedCount,
                     removedCount
-                },
+                } as any,
                 update: {
                     remainingWork,
                     completedWork,
+                    completedInDay,
                     totalWork,
                     remainingPoints,
                     completedPoints,
@@ -578,7 +610,7 @@ export class SnapshotService {
                     blockedCount,
                     addedCount,
                     removedCount
-                }
+                } as any
             });
 
             logger.info(`📸 Snapshot created for sprint ${sprintId}: Rem=${remainingWork}h, Comp=${completedWork}h`);
@@ -683,6 +715,10 @@ export class SnapshotService {
 
             const snapshotDate = new Date(ms);
             const existingSnap = byDate.get(ms);
+            const completedInDay = await this.getCompletedHoursForDay(
+                sprintId,
+                snapshotDate.toISOString().slice(0, 10)
+            );
 
             await prisma.sprintSnapshot.upsert({
                 where: {
@@ -696,6 +732,7 @@ export class SnapshotService {
                     snapshotDate,
                     remainingWork: existingSnap?.remainingWork || 0,
                     completedWork: existingSnap?.completedWork || 0,
+                    completedInDay,
                     totalWork: existingSnap?.totalWork || 0,
                     remainingPoints: existingSnap?.remainingPoints || 0,
                     completedPoints: existingSnap?.completedPoints || 0,
@@ -707,13 +744,14 @@ export class SnapshotService {
                     addedCount: existingSnap?.addedCount || 0,
                     removedCount: existingSnap?.removedCount || 0,
                     idealRemaining: existingSnap?.idealRemaining || null
-                },
+                } as any,
                 update: {
+                    completedInDay,
                     todoCount,
                     inProgressCount,
                     doneCount,
                     blockedCount
-                }
+                } as any
             });
         }
 
@@ -792,6 +830,7 @@ export class SnapshotService {
         const latestByItem = new Map<number, {
             remaining: number | null;
             iteration: string | null;
+            state: string | null;
             createdDate: Date | null;
             sprintId: string | null;
             changedDate: Date | null;
@@ -802,6 +841,7 @@ export class SnapshotService {
             const latest = latestByItem.get(row.workItemId) || {
                 remaining: null,
                 iteration: null,
+                state: null,
                 createdDate: row.workItem?.createdDate || null,
                 sprintId: row.workItem?.sprintId || null,
                 changedDate: row.workItem?.changedDate || null
@@ -813,6 +853,9 @@ export class SnapshotService {
 
             const iter = this.parseIteration(changes[this.iterationField]);
             if (iter !== null) latest.iteration = iter;
+
+            const state = this.parseState(changes[this.stateField]);
+            if (state !== null) latest.state = state;
 
             if (!latest.createdDate && row.workItem?.createdDate) {
                 latest.createdDate = row.workItem.createdDate;
@@ -839,7 +882,7 @@ export class SnapshotService {
                 continue;
             }
 
-            if (!this.isInSprintPath(latest.iteration, sprint.path)) continue;
+            if (!this.isCountedInSprint(latest.iteration, latest.state, sprint.path)) continue;
 
             const rem = latest.remaining;
             if (rem !== null && rem > 0) {
@@ -885,8 +928,17 @@ export class SnapshotService {
             azureUrl: string | null;
             reason: 'added_to_sprint' | 'removed_from_sprint' | 'hours_increased' | 'hours_decreased';
         }>;
+        completed: Array<{
+            id: number;
+            title: string;
+            type: string;
+            hoursChange: number;
+            changedBy: string;
+            azureUrl: string | null;
+            reason: 'completed';
+        }>;
     }> {
-        const empty = { date: dateStr, added: [], removed: [] };
+        const empty = { date: dateStr, added: [], removed: [], completed: [] };
 
         const sprint = await prisma.sprint.findUnique({
             where: { id: sprintId },
@@ -952,6 +1004,7 @@ export class SnapshotService {
         type ItemAccum = {
             addedHours: number;
             removedHours: number;
+            completedHours: number;
             sprintAdded: boolean;
             sprintRemoved: boolean;
             title: string;
@@ -979,13 +1032,17 @@ export class SnapshotService {
             );
             let currRemaining = currRemainingRaw !== null ? currRemainingRaw : prevRemaining;
 
+            const prevState = this.findPreviousParsed(itemHistory, idx, (changes) =>
+                this.parseState(changes[this.stateField])
+            ) || '';
+            const currState = this.parseState(currentChanges[this.stateField]) || prevState;
             const prevIteration = this.findPreviousParsed(itemHistory, idx, (changes) =>
                 this.parseIteration(changes[this.iterationField])
             );
             const currIteration = this.parseIteration(currentChanges[this.iterationField]) || prevIteration;
 
-            const prevInSprint = this.isInSprintPath(prevIteration, sprintPath);
-            const currInSprint = this.isInSprintPath(currIteration, sprintPath);
+            const prevInSprint = this.isCountedInSprint(prevIteration, prevState, sprintPath);
+            const currInSprint = this.isCountedInSprint(currIteration, currState, sprintPath);
 
             // Same first-estimate rule used by snapshot bars:
             // if first RemainingWork appears while item is in sprint, it is scope added.
@@ -995,16 +1052,27 @@ export class SnapshotService {
             }
             if (prevRemaining === null || currRemaining === null) continue;
 
-            const prevState = this.findPreviousParsed(itemHistory, idx, (changes) =>
-                this.parseState(changes[this.stateField])
-            ) || '';
-            const currState = this.parseState(currentChanges[this.stateField]) || prevState;
-
-            const completionEvent = prevRemaining > 0 && currRemaining === 0 && this.isDoneState(currState);
+            const stateTransitionToDone = !this.isDoneState(prevState) && this.isDoneState(currState);
+            let completedBase = Math.max(0, Number(prevRemaining || 0));
+            if (stateTransitionToDone && completedBase <= 0) {
+                for (let h = idx - 1; h >= 0; h--) {
+                    const candidate = this.parseRemaining((itemHistory[h]?.changes || {})[this.remainingWorkField]);
+                    if (candidate !== null && candidate > 0) {
+                        completedBase = candidate;
+                        break;
+                    }
+                }
+            }
+            const completionHours = stateTransitionToDone && prevInSprint && currInSprint
+                ? Math.max(0, completedBase)
+                : 0;
+            const completionEvent = completionHours > 0
+                || (prevRemaining > 0 && currRemaining === 0 && this.isDoneState(currState));
 
             const accum: ItemAccum = accumMap.get(wiId) || {
                 addedHours: 0,
                 removedHours: 0,
+                completedHours: 0,
                 sprintAdded: false,
                 sprintRemoved: false,
                 title: rev.workItem?.title || `#${wiId}`,
@@ -1029,6 +1097,7 @@ export class SnapshotService {
                 }
             } else if (prevInSprint && currInSprint) {
                 const delta = currRemaining - prevRemaining;
+                if (completionHours > 0) accum.completedHours += completionHours;
                 if (delta > 0) accum.addedHours += delta;
                 if (delta < 0 && !completionEvent) accum.removedHours += Math.abs(delta);
             }
@@ -1045,10 +1114,21 @@ export class SnapshotService {
             azureUrl: string | null;
             reason: 'added_to_sprint' | 'removed_from_sprint' | 'hours_increased' | 'hours_decreased';
         };
+        type CompletedItem = {
+            id: number;
+            title: string;
+            type: string;
+            hoursChange: number;
+            changedBy: string;
+            azureUrl: string | null;
+            reason: 'completed';
+        };
         const added: ScopeItem[] = [];
         const removed: ScopeItem[] = [];
+        const completed: CompletedItem[] = [];
 
         for (const [wiId, accum] of accumMap) {
+            const effectiveRemovedHours = Math.max(0, accum.removedHours - accum.completedHours);
             if (accum.addedHours > 0) {
                 added.push({
                     id: wiId,
@@ -1061,19 +1141,242 @@ export class SnapshotService {
                 });
             }
 
-            if (accum.removedHours > 0) {
+            if (effectiveRemovedHours > 0) {
                 removed.push({
                     id: wiId,
                     title: accum.title,
                     type: accum.type,
-                    hoursChange: Math.round(accum.removedHours * 10) / 10,
+                    hoursChange: Math.round(effectiveRemovedHours * 10) / 10,
                     changedBy: accum.changedBy,
                     azureUrl: accum.azureUrl,
                     reason: accum.sprintRemoved ? 'removed_from_sprint' : 'hours_decreased'
                 });
             }
+
+            if (accum.completedHours > 0) {
+                completed.push({
+                    id: wiId,
+                    title: accum.title,
+                    type: accum.type,
+                    hoursChange: Math.round(accum.completedHours * 10) / 10,
+                    changedBy: accum.changedBy,
+                    azureUrl: accum.azureUrl,
+                    reason: 'completed'
+                });
+            }
         }
 
+        try {
+            const doneItems = await prisma.workItem.findMany({
+                where: {
+                    sprintId,
+                    isRemoved: false,
+                    changedDate: { gte: queryStart, lt: queryEnd },
+                    OR: [
+                        { type: { equals: 'Task', mode: 'insensitive' } },
+                        { type: { equals: 'Bug', mode: 'insensitive' } },
+                        { type: { equals: 'Test Case', mode: 'insensitive' } }
+                    ]
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    type: true,
+                    state: true,
+                    changedDate: true,
+                    url: true,
+                    doneRemainingWork: true,
+                    lastRemainingWork: true,
+                    remainingWork: true,
+                    completedWork: true
+                }
+            });
+
+            const completedIds = new Set(completed.map((item) => item.id));
+            for (const item of doneItems) {
+                if (!this.isDoneState(item.state)) continue;
+                if (this.toBusinessDayKey(item.changedDate) !== dayKey) continue;
+                if (completedIds.has(item.id)) continue;
+
+                const doneRemaining = Math.max(0, Number(item.doneRemainingWork || 0));
+                const lastRemaining = Math.max(0, Number(item.lastRemainingWork || 0));
+                const currentTotal = Math.max(0, Number(item.remainingWork || 0) + Number(item.completedWork || 0));
+                const hours = Math.max(doneRemaining, lastRemaining, currentTotal);
+                if (hours <= 0) continue;
+
+                completed.push({
+                    id: item.id,
+                    title: item.title || `#${item.id}`,
+                    type: item.type || '',
+                    hoursChange: Math.round(hours * 10) / 10,
+                    changedBy: 'Atualização do item',
+                    azureUrl: buildAzureWorkItemUrl({
+                        id: item.id,
+                        rawUrl: item.url || null,
+                        projectName
+                    }),
+                    reason: 'completed'
+                });
+                completedIds.add(item.id);
+            }
+        } catch {
+            // Mantém comportamento principal baseado em revisões.
+        }
+
+        try {
+            const snapshotsUntilDay = await prisma.sprintSnapshot.findMany({
+                where: {
+                    sprintId,
+                    snapshotDate: { lt: queryEnd }
+                },
+                orderBy: { snapshotDate: 'asc' },
+                select: {
+                    snapshotDate: true,
+                    completedWork: true
+                }
+            });
+
+            const daySnapshots = snapshotsUntilDay
+                .filter((snap) => this.toBusinessDayKey(snap.snapshotDate) === dayKey)
+                .sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime());
+            const daySnapshot = daySnapshots.length > 0 ? daySnapshots[daySnapshots.length - 1] : null;
+            const prevSnapshot = daySnapshot
+                ? [...snapshotsUntilDay]
+                    .filter((snap) => snap.snapshotDate < daySnapshot.snapshotDate && this.toBusinessDayKey(snap.snapshotDate) < dayKey)
+                    .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())[0] || null
+                : null;
+
+            const expectedCompletedHours = daySnapshot
+                ? Math.max(
+                    0,
+                    Math.round(Number(daySnapshot.completedWork || 0) - Number(prevSnapshot?.completedWork || 0))
+                )
+                : 0;
+            const currentCompletedHours = Math.max(
+                0,
+                Math.round(completed.reduce((sum, item) => sum + Number(item.hoursChange || 0), 0))
+            );
+            let missingHours = Math.max(0, expectedCompletedHours - currentCompletedHours);
+
+            if (missingHours > 0) {
+                const doneUntilDay = await prisma.workItem.findMany({
+                    where: {
+                        sprintId,
+                        isRemoved: false,
+                        state: { in: ['Done', 'Closed', 'Completed'] },
+                        changedDate: { lt: queryEnd },
+                        OR: [
+                            { type: { equals: 'Task', mode: 'insensitive' } },
+                            { type: { equals: 'Bug', mode: 'insensitive' } },
+                            { type: { equals: 'Test Case', mode: 'insensitive' } }
+                        ]
+                    },
+                    select: {
+                        id: true,
+                        title: true,
+                        type: true,
+                        changedDate: true,
+                        url: true,
+                        doneRemainingWork: true,
+                        lastRemainingWork: true,
+                        remainingWork: true,
+                        completedWork: true
+                    }
+                });
+
+                const completedIds = new Set(completed.map((item) => item.id));
+                const candidates = doneUntilDay
+                    .filter((item) => !completedIds.has(item.id))
+                    .filter((item) => this.toBusinessDayKey(item.changedDate) <= dayKey)
+                    .map((item) => {
+                        const doneRemaining = Math.max(0, Number(item.doneRemainingWork || 0));
+                        const lastRemaining = Math.max(0, Number(item.lastRemainingWork || 0));
+                        const currentTotal = Math.max(0, Number(item.remainingWork || 0) + Number(item.completedWork || 0));
+                        const hours = Math.max(doneRemaining, lastRemaining, currentTotal);
+                        return { item, hours };
+                    })
+                    .filter((entry) => entry.hours > 0);
+
+                while (missingHours > 0 && candidates.length > 0) {
+                    let pickIdx = candidates.findIndex((entry) => entry.hours <= missingHours);
+                    if (pickIdx >= 0) {
+                        let best = pickIdx;
+                        for (let i = 0; i < candidates.length; i++) {
+                            if (candidates[i].hours <= missingHours && candidates[i].hours > candidates[best].hours) {
+                                best = i;
+                            }
+                        }
+                        pickIdx = best;
+                    } else {
+                        let minIdx = 0;
+                        for (let i = 1; i < candidates.length; i++) {
+                            if (candidates[i].hours < candidates[minIdx].hours) {
+                                minIdx = i;
+                            }
+                        }
+                        pickIdx = minIdx;
+                    }
+
+                    const chosen = candidates.splice(pickIdx, 1)[0];
+                    const changedLabel = this.toBusinessDayKey(chosen.item.changedDate) === dayKey
+                        ? 'Atualiza��o do item'
+                        : 'Conclu�do antes (baseline no dia)';
+
+                    completed.push({
+                        id: chosen.item.id,
+                        title: chosen.item.title || `#${chosen.item.id}`,
+                        type: chosen.item.type || '',
+                        hoursChange: Math.round(chosen.hours * 10) / 10,
+                        changedBy: changedLabel,
+                        azureUrl: buildAzureWorkItemUrl({
+                            id: chosen.item.id,
+                            rawUrl: chosen.item.url || null,
+                            projectName
+                        }),
+                        reason: 'completed'
+                    });
+
+                    completedIds.add(chosen.item.id);
+                    missingHours = Math.max(0, missingHours - chosen.hours);
+                }
+            }
+
+            if (expectedCompletedHours > 0) {
+                const normalized: CompletedItem[] = [];
+                let normalizedSum = 0;
+
+                for (const item of completed) {
+                    if (normalizedSum >= expectedCompletedHours) break;
+                    const remaining = expectedCompletedHours - normalizedSum;
+                    const cappedHours = Math.min(Math.max(0, Number(item.hoursChange || 0)), remaining);
+                    if (cappedHours <= 0) continue;
+
+                    normalized.push({
+                        ...item,
+                        hoursChange: Math.round(cappedHours * 10) / 10
+                    });
+                    normalizedSum += cappedHours;
+                }
+
+                if (normalizedSum < expectedCompletedHours) {
+                    const syntheticId = -Math.floor(dayStart.getTime() / 1000);
+                    normalized.push({
+                        id: syntheticId,
+                        title: 'Horas concluídas sem item rastreável no histórico',
+                        type: 'Resumo',
+                        hoursChange: Math.round((expectedCompletedHours - normalizedSum) * 10) / 10,
+                        changedBy: 'Snapshot diário',
+                        azureUrl: null,
+                        reason: 'completed'
+                    });
+                }
+
+                completed.length = 0;
+                completed.push(...normalized);
+            }
+        } catch {
+            // Se falhar, mantem os concluidos ja coletados.
+        }
         // Regra de pós-sprint:
         // quando o usuário abre o último dia da sprint (D10), incluir no modal
         // o escopo pós-fim consolidado nesse dia para manter coerência com as barras.
@@ -1092,12 +1395,14 @@ export class SnapshotService {
                     where: {
                         sprintId,
                         OR: [
+                            { completedAfterSprintHours: { gt: 0 } },
                             { scopeAddedAfterSprintHours: { gt: 0 } },
                             { scopeRemovedAfterSprintHours: { gt: 0 } }
                         ]
                     },
                     select: {
                         workItemId: true,
+                        completedAfterSprintHours: true,
                         scopeAddedAfterSprintHours: true,
                         scopeRemovedAfterSprintHours: true
                     }
@@ -1121,6 +1426,19 @@ export class SnapshotService {
                             projectName
                         });
                         const changedBy = 'Pós-sprint (consolidado em D10)';
+
+                        const lateCompleted = Math.max(0, Number(outcome.completedAfterSprintHours || 0));
+                        if (lateCompleted > 0) {
+                            completed.push({
+                                id: outcome.workItemId,
+                                title,
+                                type,
+                                hoursChange: Math.round(lateCompleted * 10) / 10,
+                                changedBy,
+                                azureUrl,
+                                reason: 'completed'
+                            });
+                        }
 
                         const lateAdded = Math.max(0, Number(outcome.scopeAddedAfterSprintHours || 0));
                         if (lateAdded > 0) {
@@ -1156,8 +1474,9 @@ export class SnapshotService {
 
         added.sort((a, b) => b.hoursChange - a.hoursChange);
         removed.sort((a, b) => b.hoursChange - a.hoursChange);
+        completed.sort((a, b) => b.hoursChange - a.hoursChange);
 
-        return { date: dateStr, added, removed };
+        return { date: dateStr, added, removed, completed };
     }
 
     async getScopeTotalsForDay(sprintId: string, dateStr: string): Promise<{
@@ -1175,6 +1494,18 @@ export class SnapshotService {
         );
         return { addedCount, removedCount };
     }
+
+    async getCompletedHoursForDay(sprintId: string, dateStr: string): Promise<number> {
+        const scope = await this.getScopeChangesForDay(sprintId, dateStr);
+        return Math.max(
+            0,
+            Math.round(
+                scope.completed.reduce((sum, item) => sum + Number(item.hoursChange || 0), 0) * 100
+            ) / 100
+        );
+    }
 }
 
 export const snapshotService = new SnapshotService();
+
+

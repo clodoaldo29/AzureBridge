@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import 'dotenv/config';
+import { formatUtcDualTimezoneInline } from '../../src/utils/timezone-display';
 
 type StepResult = {
     name: string;
@@ -12,15 +13,15 @@ type StepResult = {
 
 const backendDir = path.resolve(__dirname, '..', '..');
 
-function nowIso(): string {
-    return new Date().toISOString();
+function nowLabel(): string {
+    return formatUtcDualTimezoneInline(new Date());
 }
 
 function runStep(name: string, scriptPath: string, env?: Record<string, string>): Promise<number> {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
-        console.log(`\n🚀 ${name}`);
-        console.log(`🕒 started_at=${nowIso()}`);
+        console.log(`\n[RUN] ${name}`);
+        console.log(`started_at=${nowLabel()}`);
 
         const cmd = process.platform === 'win32' ? 'node.exe' : 'node';
         const child = spawn(cmd, ['node_modules/tsx/dist/cli.mjs', scriptPath], {
@@ -32,7 +33,7 @@ function runStep(name: string, scriptPath: string, env?: Record<string, string>)
         child.on('exit', code => {
             const duration = Math.floor((Date.now() - startedAt) / 1000);
             if (code === 0) {
-                console.log(`✅ ${name} (${duration}s)`);
+                console.log(`[OK] ${name} (${duration}s)`);
                 resolve(duration);
             } else {
                 reject(new Error(`${name} exited with code ${code} after ${duration}s`));
@@ -57,14 +58,14 @@ async function runStepWithRetry(
         try {
             if (attempt > 1) {
                 const waitSec = Math.min(15, attempt * 3);
-                console.log(`🔁 Retry ${name} | tentativa=${attempt}/${maxAttempts} | espera=${waitSec}s`);
+                console.log(`[RETRY] ${name} | tentativa=${attempt}/${maxAttempts} | espera=${waitSec}s`);
                 await new Promise(r => setTimeout(r, waitSec * 1000));
             }
             const durationSec = await runStep(name, scriptPath, env);
             return { name, status: 'OK', durationSec, attempts: attempt };
         } catch (err: any) {
             lastErr = err;
-            console.error(`⚠️ ${name} falhou na tentativa ${attempt}/${maxAttempts}: ${err?.message || err}`);
+            console.error(`[WARN] ${name} falhou na tentativa ${attempt}/${maxAttempts}: ${err?.message || err}`);
         }
     }
 
@@ -87,7 +88,7 @@ async function main() {
     console.log('='.repeat(72));
     console.log(`MODE: ${mode}`);
     console.log(`STEP_RETRIES: ${maxAttempts}`);
-    console.log(`started_at=${nowIso()}`);
+    console.log(`started_at=${nowLabel()}`);
 
     let scriptPath: string;
     let scriptEnv: Record<string, string> | undefined;
@@ -95,14 +96,14 @@ async function main() {
 
     if (mode === 'hourly') {
         scriptPath = 'scripts/sync/sync-hourly.ts';
-        stepName = 'SYNC HORÁRIO';
+        stepName = 'SYNC HORARIO';
     } else if (mode === 'full') {
         scriptPath = 'scripts/sync/sync-daily.ts';
         scriptEnv = { FULL_SYNC: 'true' };
-        stepName = 'SYNC DIÁRIO (FULL)';
+        stepName = 'SYNC DIARIO (FULL)';
     } else {
         scriptPath = 'scripts/sync/sync-daily.ts';
-        stepName = 'SYNC DIÁRIO';
+        stepName = 'SYNC DIARIO';
     }
 
     const result = await runStepWithRetry(stepName, scriptPath, scriptEnv, maxAttempts);
@@ -114,13 +115,13 @@ async function main() {
         console.log(`SYNC PIPELINE COMPLETED (${duration}s)`);
     } else {
         console.log(`SYNC PIPELINE FAILED (${duration}s)`);
-        console.error(`❌ ${result.name}: ${result.error}`);
+        console.error(`[ERROR] ${result.name}: ${result.error}`);
     }
 
     console.log('='.repeat(72));
-    const icon = result.status === 'OK' ? '✅' : '❌';
+    const icon = result.status === 'OK' ? '[OK]' : '[FAIL]';
     console.log(`${icon} ${result.name} | attempts=${result.attempts} | duration=${result.durationSec}s`);
-    console.log(`finished_at=${nowIso()}`);
+    console.log(`finished_at=${nowLabel()}`);
 
     if (result.status === 'FAILED') {
         process.exit(1);
@@ -128,6 +129,6 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error(`\n❌ SYNC PIPELINE FALHOU: ${err.message || err}`);
+    console.error(`\n[ERROR] SYNC PIPELINE FALHOU: ${err.message || err}`);
     process.exit(1);
 });

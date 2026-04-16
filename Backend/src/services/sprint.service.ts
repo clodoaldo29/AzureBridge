@@ -1,10 +1,19 @@
 import { prisma } from '@/database/client';
 
 export class SprintService {
-    async findAll(filter: { projectId?: string, state?: string, limit?: number }) {
+    async findAll(filter: { projectId?: string, state?: string, limit?: number, includeDetails?: boolean }) {
         const where: any = {};
         if (filter.projectId) where.projectId = filter.projectId;
         if (filter.state) where.state = filter.state;
+        const includeDetails = filter.includeDetails !== false;
+
+        if (!includeDetails) {
+            return prisma.sprint.findMany({
+                where,
+                orderBy: { startDate: 'desc' },
+                take: filter.limit || 20,
+            });
+        }
 
         return prisma.sprint.findMany({
             where,

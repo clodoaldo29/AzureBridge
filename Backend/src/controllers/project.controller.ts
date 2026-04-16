@@ -1,8 +1,9 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '@/database/client';
-import { projectParamsSchema } from '@/schemas/project.schema';
+import { projectParamsSchema, projectSprintHistoryQuerySchema } from '@/schemas/project.schema';
 import { logger } from '@/utils/logger';
 import { isMissingDatabaseTableError } from '@/utils/prisma-errors';
+import { sprintHistoryService } from '@/services/sprint-history.service';
 
 export class ProjectController {
     /**
@@ -96,6 +97,29 @@ export class ProjectController {
         return reply.send({
             success: true,
             data: stats
+        });
+    }
+
+    async getProjectSprintHistory(req: FastifyRequest, reply: FastifyReply) {
+        const { id } = projectParamsSchema.parse(req.params);
+        const { limit } = projectSprintHistoryQuerySchema.parse(req.query);
+
+        const project = await prisma.project.findUnique({
+            where: { id },
+            select: { id: true }
+        });
+
+        if (!project) {
+            return reply.status(404).send({
+                success: false,
+                error: 'Project not found'
+            });
+        }
+
+        const history = await sprintHistoryService.listProjectHistory(id, limit);
+        return reply.send({
+            success: true,
+            data: history
         });
     }
 }

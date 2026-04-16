@@ -1,6 +1,6 @@
 services:
   # ========================================
-  # Backend API
+  # Backend API (internal only)
   # ========================================
   api:
     build:
@@ -9,8 +9,6 @@ services:
     container_name: azurebridge-api
     restart: unless-stopped
     user: "0:0"
-    ports:
-      - "3001:3001"
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -22,9 +20,11 @@ services:
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      # AI (optional)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Sync
       ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
       REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
       # Redis
@@ -46,48 +46,8 @@ services:
       - api-uploads:/app/uploads
 
   # ========================================
-  # Legacy BullMQ Worker
+  # Auto Sync Scheduler (internal only)
   # ========================================
-  # worker:
-  #   build:
-  #     context: ./Backend
-  #     dockerfile: Dockerfile
-  #   container_name: azurebridge-worker
-  #   restart: unless-stopped
-  #   user: "0:0"
-  #   command: ["node", "dist/worker.js"]
-  #   environment:
-  #     NODE_ENV: production
-  #     DATABASE_URL: ${DATABASE_URL}
-  #     DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL}
-  #     AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
-  #     AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
-  #     AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
-  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-  #     CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
-  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  #     ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
-  #     REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-  #     FEATURE_RDA_MODULE: ${FEATURE_RDA_MODULE:-false}
-  #     RDA_UPLOADS_DIR: /app/uploads
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "grep -a -q 'dist/worker.js' /proc/1/cmdline"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 20s
-  #   networks:
-  #     - azurebridge-network
-  #   volumes:
-  #     - api-logs:/app/logs
-  #     - api-uploads:/app/uploads
-
   auto-sync:
     build:
       context: ./Backend
@@ -103,12 +63,14 @@ services:
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      # AI (optional)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Sync
       ENABLE_REVISION_PERSISTENCE: ${ENABLE_REVISION_PERSISTENCE:-false}
       REVISION_SYNC_MAX_ITEMS_PER_RUN: ${REVISION_SYNC_MAX_ITEMS_PER_RUN:-100}
-      # Redis (if needed by any scripts)
+      # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -121,7 +83,7 @@ services:
       AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY: ${AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_HOURLY:-true}
       AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY: ${AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_DAILY:-true}
       AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_FULL: ${AUTO_SYNC_REBUILD_ACTIVE_BURNDOWN_FULL:-true}
-      TZ: ${TZ:-UTC}
+      TZ: ${TZ:-America/Sao_Paulo}
     depends_on:
       api:
         condition: service_healthy
@@ -131,7 +93,7 @@ services:
       - azurebridge-network
 
   # ========================================
-  # Frontend Web
+  # Frontend Web (exposto na 80/443 com SSL)
   # ========================================
   web:
     build:
@@ -144,6 +106,10 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./Frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       api:
         condition: service_healthy
@@ -151,14 +117,12 @@ services:
       - azurebridge-network
 
   # ========================================
-  # Redis Cache
+  # Redis Cache (internal only)
   # ========================================
   redis:
     image: redis:7-alpine
     container_name: azurebridge-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command: >
@@ -168,7 +132,7 @@ services:
     networks:
       - azurebridge-network
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3

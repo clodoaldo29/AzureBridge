@@ -92,7 +92,8 @@ export class SprintController {
             ...snapshot,
             totalWork: Math.max(0, Math.round(Number(snapshot.totalWork || 0))),
             remainingWork: Math.max(0, Math.round(Number(snapshot.remainingWork || 0))),
-            completedWork: Math.max(0, Math.round(Number(snapshot.completedWork || 0)))
+            completedWork: Math.max(0, Math.round(Number(snapshot.completedWork || 0))),
+            completedInDay: Math.max(0, Number((snapshot as any).completedInDay || 0))
         }));
 
         const remainingSeries = raw.map(s => s.remainingWork);
