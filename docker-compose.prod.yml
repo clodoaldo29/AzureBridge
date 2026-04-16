@@ -34,9 +34,9 @@ services:
       NODE_ENV: production
       PORT: 3001
       HOST: "::"
-      # Database (PostgreSQL local no container)
-      DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
+      # Database (PostgreSQL local no container — definida explicitamente no .env.prod)
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_DATABASE_URL: ${DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
@@ -79,9 +79,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      # Database (PostgreSQL local no container)
-      DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-azurebridge}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-azurebridge}
+      # Database (PostgreSQL local no container — definida explicitamente no .env.prod)
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_DATABASE_URL: ${DATABASE_URL}
       # Azure DevOps
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
