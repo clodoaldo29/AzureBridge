@@ -138,7 +138,10 @@ cp .env.example .env
 | `REDIS_HOST` | ✅ | — | Host do Redis (ex: `localhost` ou `redis`) |
 | `REDIS_PORT` | — | `6379` | Porta Redis |
 | `REDIS_PASSWORD` | — | — | Senha Redis (se aplicável) |
-| `CORS_ORIGIN` | — | `http://localhost:5173` | Origin permitida pelo CORS |
+| `CORS_ORIGIN` | — | `http://localhost:5173` | Origens permitidas pelo CORS, separadas por vírgula |
+| `JWT_SECRET` | ✅ | — | Segredo usado para assinar o JWT interno da aplicação |
+| `AZURE_AD_CLIENT_ID` | ✅ | — | Application (client) ID do app Microsoft Entra usado no SSO |
+| `AZURE_AD_TENANT_ID` | ✅ | — | Directory (tenant) ID do tenant Microsoft Entra usado no SSO |
 | `SYNC_INTERVAL_HOURS` | — | `1` | Intervalo entre syncs automáticos (horas) |
 | `SNAPSHOT_INTERVAL_HOURS` | — | `4` | Intervalo entre snapshots |
 | `LOG_LEVEL` | — | `info` | `debug`, `info`, `warn`, `error` |

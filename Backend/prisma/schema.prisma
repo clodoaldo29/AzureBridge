@@ -637,12 +637,35 @@ model Alert {
 }
 
 // ============================================
+// AUTENTICAÇÃO
+// ============================================
+
+model User {
+  id          String   @id @default(uuid())
+  azureId     String   @unique // claim "oid" do token Microsoft
+  email       String   @unique
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  preference UserPreference?
+
+  @@index([azureId])
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================
 // CONFIGURAÇÕES E PREFERÊNCIAS
 // ============================================
 
 model UserPreference {
   id     String @id @default(cuid())
   userId String @unique // Email ou Azure ID
+
+  // Relação com User (opcional para retrocompatibilidade)
+  ownerId String? @unique
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   // Preferências de UI
   theme           String @default("light") // light, dark, auto

@@ -5,29 +5,8 @@ import { workItemController } from '@/controllers/work-item.controller';
 import { syncController } from '@/controllers/sync.controller';
 import { dashboardController } from '@/controllers/dashboard.controller';
 import { capacityController } from '@/controllers/capacity.controller';
-import { logger } from '@/utils/logger';
-import { getDatabaseHealthSnapshot } from '@/database/client';
 
 export async function apiRoutes(fastify: FastifyInstance) {
-    // Verificacao de saude
-    fastify.get('/health', async () => {
-        const dbHealth = await getDatabaseHealthSnapshot();
-        if (dbHealth.connected === false) {
-            logger.warn('Health check em modo degradado: sem conexao com banco.');
-        }
-
-        return {
-            status: dbHealth.connected === false ? 'degraded' : 'ok',
-            database: dbHealth.connected === true
-                ? 'connected'
-                : (dbHealth.connected === false ? 'disconnected' : 'checking'),
-            databaseCheckedAt: dbHealth.checkedAt,
-            databaseFresh: !dbHealth.stale,
-            timestamp: new Date(),
-            version: '2.0.0',
-        };
-    });
-
     // Projetos
     fastify.get('/projects', projectController.listProjects);
     fastify.get('/projects/:id', projectController.getProject);

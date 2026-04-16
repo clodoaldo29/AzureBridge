@@ -34,6 +34,8 @@ services:
       NODE_ENV: production
       PORT: 3001
       HOST: "::"
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_SECRET: ${JWT_SECRET}
       # Database (PostgreSQL local no container — definida explicitamente no .env.prod)
       DATABASE_URL: ${DATABASE_URL}
       DIRECT_DATABASE_URL: ${DATABASE_URL}
@@ -41,6 +43,9 @@ services:
       AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
       AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}
       AZURE_DEVOPS_PROJECT: ${AZURE_DEVOPS_PROJECT}
+      # Microsoft SSO
+      AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID}
+      AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID}
       # AI (optional)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
@@ -125,6 +130,8 @@ services:
       args:
         VITE_AZURE_DEVOPS_ORG_URL: ${AZURE_DEVOPS_ORG_URL}
         VITE_FEATURE_RDA_MODULE: ${VITE_FEATURE_RDA_MODULE:-false}
+        VITE_AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID}
+        VITE_AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID}
     container_name: azurebridge-web
     restart: unless-stopped
     ports:

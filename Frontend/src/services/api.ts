@@ -1,4 +1,7 @@
-﻿import axios from 'axios';
+import axios from 'axios';
+import { useAppStore } from '@/stores/appStore';
+
+const AUTH_TOKEN_KEY = 'azurebridge-auth-token';
 
 const apiUrl = import.meta.env.VITE_API_URL?.trim();
 const resolvedApiUrl = apiUrl ? apiUrl.replace(/\/$/, '') : '';
@@ -11,11 +14,10 @@ export const api = axios.create({
     timeout: 30000,
 });
 
-// Interceptor de requisição
+// Interceptor de requisição — injeta o JWT em todas as chamadas
 api.interceptors.request.use(
     (config) => {
-        // Adicionar token de autenticação se existir
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem(AUTH_TOKEN_KEY);
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -24,15 +26,15 @@ api.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// Interceptor de resposta
+// Interceptor de resposta — redireciona para login em caso de 401
 api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            // Redirecionar para login se não autenticado
+            // Limpar estado de auth antes de redirecionar
+            useAppStore.getState().clearAuth();
             window.location.href = '/login';
         }
         return Promise.reject(error);
     }
 );
-
