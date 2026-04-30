@@ -587,6 +587,7 @@ async function syncCapacityForSprint(
         const netSprintDays = Math.max(0, totalSprintDays - teamDaysOffCount);
 
         let totalSynced = 0;
+        const syncedMemberIds: string[] = [];
         for (const cap of capacityData.teamMembers) {
             if (!cap.teamMember?.id) continue;
 
@@ -611,6 +612,8 @@ async function syncCapacityForSprint(
                     }
                 });
             }
+
+            syncedMemberIds.push(member.id);
 
             const capacityPerDay = (cap.activities || []).reduce(
                 (acc: number, act: any) => acc + Number(act.capacityPerDay || 0), 0
@@ -654,6 +657,16 @@ async function syncCapacityForSprint(
             });
 
             totalSynced++;
+        }
+
+        const staleCapacity = await prisma.teamCapacity.deleteMany({
+            where: {
+                sprintId: sprint.id,
+                memberId: { notIn: syncedMemberIds }
+            }
+        });
+        if (staleCapacity.count > 0) {
+            step(`  -> ${staleCapacity.count} capacidade(s) obsoleta(s) removida(s)`);
         }
 
         await capacityService.recalculateSprintCapacitySnapshot(sprint.id, prisma);
@@ -1376,15 +1389,11 @@ async function backfillNewPastSprints(
                 }
             }
 
-            // 5. Capacidade — sincroniza se não existir nenhum registro
+            // 5. Capacidade — refaz o espelho do Azure para remover membros obsoletos
             const hasCapacity = await prisma.teamCapacity.count({ where: { sprintId: sprint.id } });
-            if (hasCapacity === 0) {
-                step(`      ↳ Capacidade ausente — sincronizando via Azure...`);
-                const capSynced = await syncCapacityForSprint(coreApi, workApi, prisma, sprint);
-                step(`        ${capSynced > 0 ? `${capSynced} membro(s) sincronizados` : 'sem dados de capacidade retornados pelo Azure'}`);
-            } else {
-                step(`      ↳ Capacidade: ${hasCapacity} registro(s) já existente(s) — mantendo`);
-            }
+            step(`      ↳ Capacidade: ${hasCapacity} registro(s) local(is) — sincronizando via Azure...`);
+            const capSynced = await syncCapacityForSprint(coreApi, workApi, prisma, sprint);
+            step(`        ${capSynced > 0 ? `${capSynced} membro(s) sincronizados` : 'sem dados de capacidade retornados pelo Azure'}`);
 
             stats.itemsLoaded += newCount;
             stats.sprintsProcessed++;
