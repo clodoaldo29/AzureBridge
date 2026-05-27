@@ -390,6 +390,16 @@ async function syncProjectsAndSprints(
             }
         };
 
+        // Coleta todos os azureIds do Azure (sem filtro) para detectar deleções
+        const allAzureSprintIds = new Set<string>();
+        const collectAllAzureIds = (node: any): void => {
+            if (!node) return;
+            const id = node.identifier || node.id?.toString();
+            if (id && node.attributes) allAzureSprintIds.add(id);
+            if (node.children?.length > 0) node.children.forEach((child: any) => collectAllAzureIds(child));
+        };
+        iterationNode.children.forEach((child: any) => collectAllAzureIds(child));
+
         iterationNode.children.forEach((child: any) => extractIterations(child, azProject.name));
 
         // Upserta cada sprint
@@ -416,6 +426,17 @@ async function syncProjectsAndSprints(
                     projectId: dbProject.id
                 }
             });
+        }
+
+        // Remove do banco sprints que não existem mais no Azure
+        const deleted = await prisma.sprint.deleteMany({
+            where: {
+                projectId: dbProject.id,
+                azureId: { notIn: Array.from(allAzureSprintIds) }
+            }
+        });
+        if (deleted.count > 0) {
+            step(`  🗑️  ${azProject.name} — ${deleted.count} sprint(s) removida(s) (deletadas no Azure)`);
         }
 
         step(`  ✅ ${azProject.name} — ${sprints.length} sprint(s) upsertadas`);
