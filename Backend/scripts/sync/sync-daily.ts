@@ -569,128 +569,119 @@ async function syncCapacityForSprint(
         const teams = await coreApi.getTeams(sprint.project.azureId);
         if (!teams?.length) return 0;
 
-        const team = teams[0];
-        const teamContext = {
-            project: sprint.project.name,
-            projectId: sprint.project.azureId,
-            team: team.name,
-            teamId: team.id
-        };
-
-        let capacityData: any;
-        try {
-            capacityData = await workApi.getCapacitiesWithIdentityRefAndTotals(teamContext, sprint.azureId);
-        } catch { return 0; }
-
-        let teamDaysOff: any[] = [];
-        try {
-            const teamDaysOffData = await workApi.getTeamDaysOff(teamContext, sprint.azureId);
-            teamDaysOff = teamDaysOffData?.daysOff || [];
-        } catch { /* ignora */ }
-
-        if (!capacityData?.teamMembers) return 0;
-
         const sprintStart = new Date(sprint.startDate!);
         const sprintEnd = new Date(sprint.endDate!);
         const totalSprintDays = getBusinessDaysCount(sprintStart, sprintEnd);
 
-        let teamDaysOffCount = 0;
-        for (const d of teamDaysOff) {
-            const start = new Date(d.start);
-            const end = new Date(d.end);
-            for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
-                if (dt >= sprintStart && dt <= sprintEnd) {
-                    const dow = dt.getUTCDay();
-                    if (dow !== 0 && dow !== 6) teamDaysOffCount++;
-                }
-            }
-        }
-        const netSprintDays = Math.max(0, totalSprintDays - teamDaysOffCount);
-
         let totalSynced = 0;
-        const syncedMemberIds: string[] = [];
-        for (const cap of capacityData.teamMembers) {
-            if (!cap.teamMember?.id) continue;
 
-            const existingMember = await prisma.teamMember.findFirst({
-                where: { azureId: cap.teamMember.id, projectId: sprint.projectId }
-            });
+        for (const team of teams) {
+            const teamContext = {
+                project: sprint.project.name,
+                projectId: sprint.project.azureId,
+                team: team.name,
+                teamId: team.id
+            };
 
-            let member: any;
-            if (existingMember) {
-                member = await prisma.teamMember.update({
-                    where: { id: existingMember.id },
-                    data: { displayName: cap.teamMember.displayName, imageUrl: cap.teamMember.imageUrl }
-                });
-            } else {
-                member = await prisma.teamMember.create({
-                    data: {
-                        azureId: cap.teamMember.id,
-                        displayName: cap.teamMember.displayName,
-                        uniqueName: cap.teamMember.uniqueName || cap.teamMember.displayName,
-                        imageUrl: cap.teamMember.imageUrl,
-                        projectId: sprint.projectId
-                    }
-                });
-            }
+            let capacityData: any;
+            try {
+                capacityData = await workApi.getCapacitiesWithIdentityRefAndTotals(teamContext, sprint.azureId);
+            } catch { continue; }
 
-            syncedMemberIds.push(member.id);
+            if (!capacityData?.teamMembers?.length) continue;
 
-            const capacityPerDay = (cap.activities || []).reduce(
-                (acc: number, act: any) => acc + Number(act.capacityPerDay || 0), 0
-            );
+            let teamDaysOff: any[] = [];
+            try {
+                const teamDaysOffData = await workApi.getTeamDaysOff(teamContext, sprint.azureId);
+                teamDaysOff = teamDaysOffData?.daysOff || [];
+            } catch { /* ignora */ }
 
-            let individualDaysOff = 0;
-            for (const d of (cap.daysOff || [])) {
+            let teamDaysOffCount = 0;
+            for (const d of teamDaysOff) {
                 const start = new Date(d.start);
                 const end = new Date(d.end);
                 for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
                     if (dt >= sprintStart && dt <= sprintEnd) {
                         const dow = dt.getUTCDay();
-                        if (dow !== 0 && dow !== 6) individualDaysOff++;
+                        if (dow !== 0 && dow !== 6) teamDaysOffCount++;
                     }
                 }
             }
+            const netSprintDays = Math.max(0, totalSprintDays - teamDaysOffCount);
 
-            const availableDays = Math.max(0, netSprintDays - individualDaysOff);
-            const totalHours = capacityPerDay * netSprintDays;
-            const availableHours = capacityPerDay * availableDays;
-            const mergedDaysOff = mergeDayOffRanges(cap.daysOff || [], teamDaysOff);
+            for (const cap of capacityData.teamMembers) {
+                if (!cap.teamMember?.id) continue;
 
-            await prisma.teamCapacity.upsert({
-                where: { memberId_sprintId: { memberId: member.id, sprintId: sprint.id } },
-                create: {
-                    memberId: member.id,
-                    sprintId: sprint.id,
-                    totalHours,
-                    availableHours,
-                    allocatedHours: 0,
-                    completedHours: 0,
-                    daysOff: mergedDaysOff,
-                    activitiesPerDay: cap.activities || []
-                },
-                update: {
-                    totalHours,
-                    availableHours,
-                    daysOff: mergedDaysOff,
-                    activitiesPerDay: cap.activities || []
+                const existingMember = await prisma.teamMember.findFirst({
+                    where: { azureId: cap.teamMember.id, projectId: sprint.projectId }
+                });
+
+                let member: any;
+                if (existingMember) {
+                    member = await prisma.teamMember.update({
+                        where: { id: existingMember.id },
+                        data: { displayName: cap.teamMember.displayName, imageUrl: cap.teamMember.imageUrl }
+                    });
+                } else {
+                    member = await prisma.teamMember.create({
+                        data: {
+                            azureId: cap.teamMember.id,
+                            displayName: cap.teamMember.displayName,
+                            uniqueName: cap.teamMember.uniqueName || cap.teamMember.displayName,
+                            imageUrl: cap.teamMember.imageUrl,
+                            projectId: sprint.projectId
+                        }
+                    });
                 }
-            });
 
-            totalSynced++;
-        }
+                const capacityPerDay = (cap.activities || []).reduce(
+                    (acc: number, act: any) => acc + Number(act.capacityPerDay || 0), 0
+                );
 
-        const staleCapacity = await prisma.teamCapacity.deleteMany({
-            where: {
-                sprintId: sprint.id,
-                memberId: { notIn: syncedMemberIds }
+                let individualDaysOff = 0;
+                for (const d of (cap.daysOff || [])) {
+                    const start = new Date(d.start);
+                    const end = new Date(d.end);
+                    for (let dt = new Date(start); dt <= end; dt.setUTCDate(dt.getUTCDate() + 1)) {
+                        if (dt >= sprintStart && dt <= sprintEnd) {
+                            const dow = dt.getUTCDay();
+                            if (dow !== 0 && dow !== 6) individualDaysOff++;
+                        }
+                    }
+                }
+
+                const availableDays = Math.max(0, netSprintDays - individualDaysOff);
+                const totalHours = capacityPerDay * netSprintDays;
+                const availableHours = capacityPerDay * availableDays;
+                const mergedDaysOff = mergeDayOffRanges(cap.daysOff || [], teamDaysOff);
+
+                await prisma.teamCapacity.upsert({
+                    where: { memberId_sprintId: { memberId: member.id, sprintId: sprint.id } },
+                    create: {
+                        memberId: member.id,
+                        sprintId: sprint.id,
+                        totalHours,
+                        availableHours,
+                        allocatedHours: 0,
+                        completedHours: 0,
+                        daysOff: mergedDaysOff,
+                        activitiesPerDay: cap.activities || []
+                    },
+                    update: {
+                        totalHours,
+                        availableHours,
+                        daysOff: mergedDaysOff,
+                        activitiesPerDay: cap.activities || []
+                    }
+                });
+
+                totalSynced++;
             }
-        });
-        if (staleCapacity.count > 0) {
-            step(`  -> ${staleCapacity.count} capacidade(s) obsoleta(s) removida(s)`);
         }
 
-        await capacityService.recalculateSprintCapacitySnapshot(sprint.id, prisma);
+        if (totalSynced > 0) {
+            await capacityService.recalculateSprintCapacitySnapshot(sprint.id, prisma);
+        }
 
         return totalSynced;
     } catch {
@@ -1410,11 +1401,15 @@ async function backfillNewPastSprints(
                 }
             }
 
-            // 5. Capacidade — refaz o espelho do Azure para remover membros obsoletos
+            // 5. Capacidade — sincroniza se não existir nenhum registro
             const hasCapacity = await prisma.teamCapacity.count({ where: { sprintId: sprint.id } });
-            step(`      ↳ Capacidade: ${hasCapacity} registro(s) local(is) — sincronizando via Azure...`);
-            const capSynced = await syncCapacityForSprint(coreApi, workApi, prisma, sprint);
-            step(`        ${capSynced > 0 ? `${capSynced} membro(s) sincronizados` : 'sem dados de capacidade retornados pelo Azure'}`);
+            if (hasCapacity === 0) {
+                step(`      ↳ Capacidade ausente — sincronizando via Azure...`);
+                const capSynced = await syncCapacityForSprint(coreApi, workApi, prisma, sprint);
+                step(`        ${capSynced > 0 ? `${capSynced} membro(s) sincronizados` : 'sem dados de capacidade retornados pelo Azure'}`);
+            } else {
+                step(`      ↳ Capacidade: ${hasCapacity} registro(s) já existente(s) — mantendo`);
+            }
 
             stats.itemsLoaded += newCount;
             stats.sprintsProcessed++;
