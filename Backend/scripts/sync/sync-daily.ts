@@ -74,6 +74,7 @@ import 'dotenv/config';
 import { runCorePipeline, CorePipelineResult } from './sync-core';
 import { capacityService } from '../../src/services/capacity.service';
 import { getTripleTimezoneParts } from '../../src/utils/timezone-display';
+import { reconcileHistoricalCapacities } from './capacity-reconcile';
 
 // ─── Configuração de projetos alvo ────────────────────────────────────────────
 //
@@ -513,7 +514,9 @@ async function syncCapacity(
     coreApi: any,
     workApi: any,
     prisma: PrismaClient,
-    onlyCurrentFuture = true
+    onlyCurrentFuture = true,
+    orgUrl = '',
+    pat = ''
 ): Promise<number> {
     // Busca sprints alvo
     let targetSprints = await prisma.sprint.findMany({
@@ -552,6 +555,38 @@ async function syncCapacity(
             step(`  ─ sem dados de capacidade retornados`);
         }
         totalSynced += synced;
+    }
+
+    if (onlyCurrentFuture && orgUrl && pat) {
+        step('Reconciliando capacidade historica das sprints passadas alvo...');
+        const historicalResults = await reconcileHistoricalCapacities({
+            prisma,
+            coreApi,
+            workApi,
+            orgUrl,
+            pat,
+            projectNameContains: TARGET_PROJECT_CONFIGS.map((config) => config.nameContains),
+        });
+
+        let changedHistorical = 0;
+        for (const result of historicalResults) {
+            if (result.skipped) {
+                step(`  - ${result.projectName} / ${result.sprintName}: ignorada (${result.reason})`);
+                continue;
+            }
+
+            const status = result.changed ? 'atualizada' : 'ok';
+            if (result.changed) changedHistorical++;
+            step(
+                `  - ${result.projectName} / ${result.sprintName}: ${status} | ` +
+                `local=${result.localRows}/${result.localAvailableHours}h | ` +
+                `final=${result.finalRows}/${result.finalAvailableHours}h | ` +
+                `visiveis=${result.visibleRows} | ocultos=${result.recoveredHiddenRows} | ` +
+                `+${result.addedRows} ~${result.updatedRows} -${result.removedRows}`
+            );
+        }
+
+        totalSynced += changedHistorical;
     }
 
     return totalSynced;
@@ -1541,7 +1576,7 @@ async function main(): Promise<void> {
         // ── Fase 3: Capacidade ────────────────────────────────────
         printPhaseHeader(3, 'CAPACIDADE — Sincronizando capacidade das sprints atuais/futuras');
         try {
-            stats.capacities = await syncCapacity(coreApi, workApi, prisma, true);
+            stats.capacities = await syncCapacity(coreApi, workApi, prisma, true, orgUrl, pat);
             ok(`${stats.capacities} registro(s) de capacidade sincronizados`);
         } catch (err: any) {
             warn(`Fase 3 falhou: ${err.message}`);
@@ -1630,7 +1665,7 @@ async function main(): Promise<void> {
         // ── Fase 3: Atualiza Capacidade ───────────────────────────
         printPhaseHeader(3, 'CAPACIDADE — Atualizando capacidade das sprints current/future');
         try {
-            stats.capacities = await syncCapacity(coreApi, workApi, prisma, true);
+            stats.capacities = await syncCapacity(coreApi, workApi, prisma, true, orgUrl, pat);
             ok(`${stats.capacities} registro(s) de capacidade atualizados`);
         } catch (err: any) {
             warn(`Fase 3 falhou: ${err.message}`);
